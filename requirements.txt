@@ -1,0 +1,14 @@
+# Tempo Timesheet Automation - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# HTTP requests
+requests>=2.31.0
+
+# Date/time handling (included in standard library, listed for clarity)
+# python-dateutil>=2.8.2
+
+# For enhanced configuration management (optional)
+# python-dotenv>=1.0.0
+
+# Note: All other dependencies (json, logging, smtplib, etc.) 
+# are part of Python's standard library

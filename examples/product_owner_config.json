@@ -1,0 +1,65 @@
+{
+  "_comment": "Example Configuration for PRODUCT OWNERS",
+  "_comment2": "Product Owners use manual activity configuration",
+  
+  "user": {
+    "email": "jane.po@company.com",
+    "name": "Jane ProductOwner",
+    "role": "product_owner"
+  },
+  
+  "jira": {
+    "url": "lmsportal.atlassian.net",
+    "email": "",
+    "api_token": ""
+  },
+  
+  "tempo": {
+    "api_token": "x9y8z7w6v5u4..."
+  },
+  
+  "organization": {
+    "default_issue_key": "ADMIN-001"
+  },
+  
+  "schedule": {
+    "daily_hours": 8,
+    "daily_sync_time": "18:00",
+    "monthly_submit_day": "last"
+  },
+  
+  "notifications": {
+    "email_enabled": true,
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_user": "jane.po@gmail.com",
+    "smtp_password": "qrst uvwx yzab cdef",
+    "notification_email": "jane.po@company.com"
+  },
+  
+  "manual_activities": [
+    {
+      "_comment": "Typical daily activities for Product Owners",
+      "activity": "Sprint Planning & Grooming",
+      "hours": 2
+    },
+    {
+      "activity": "Stakeholder Meetings",
+      "hours": 2.5
+    },
+    {
+      "activity": "Story Writing & Documentation",
+      "hours": 3
+    },
+    {
+      "activity": "Team Sync & Support",
+      "hours": 0.5
+    }
+  ],
+  
+  "options": {
+    "auto_submit": true,
+    "require_confirmation": false,
+    "sync_on_startup": false
+  }
+}

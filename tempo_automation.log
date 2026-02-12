@@ -1,0 +1,75 @@
+2026-02-03 12:18:57,091 - INFO - No configuration found. Starting setup wizard...
+2026-02-03 12:21:06,246 - INFO - Configuration saved successfully
+2026-02-03 12:31:30,875 - INFO - Configuration loaded successfully
+2026-02-03 12:31:30,876 - INFO - Starting daily sync for 2026-02-03
+2026-02-03 12:31:33,604 - INFO - Fetched 0 worklogs from Jira
+2026-02-03 12:31:33,604 - INFO - No Jira worklogs found for today
+2026-02-03 12:31:33,604 - INFO - Daily sync completed: 0 entries, 0.00h
+2026-02-12 12:27:25,364 - INFO - Configuration loaded successfully
+2026-02-12 12:27:25,365 - INFO - Starting daily sync for 2026-02-12
+2026-02-12 12:27:27,455 - INFO - Fetched 0 worklogs from Jira
+2026-02-12 12:27:27,455 - INFO - No Jira worklogs found for today
+2026-02-12 12:27:27,457 - INFO - Daily sync completed: 0 entries, 0.00h
+2026-02-12 12:31:29,220 - INFO - Configuration loaded successfully
+2026-02-12 12:31:29,221 - INFO - Starting daily sync for 2026-02-11
+2026-02-12 12:31:40,332 - ERROR - Error fetching Jira worklogs: HTTPSConnectionPool(host='lmsportal.atlassian.net', port=443): Max retries exceeded with url: /rest/api/3/search/jql?jql=worklogAuthor+%3D+currentUser%28%29+AND+worklogDate+%3E%3D+%222026-02-11%22+AND+worklogDate+%3C%3D+%222026-02-11%22&fields=worklog%2Csummary%2Ckey&maxResults=100 (Caused by NameResolutionError("HTTPSConnection(host='lmsportal.atlassian.net', port=443): Failed to resolve 'lmsportal.atlassian.net' ([Errno 11001] getaddrinfo failed)"))
+2026-02-12 12:31:40,333 - INFO - No Jira worklogs found for today
+2026-02-12 12:31:40,334 - INFO - Daily sync completed: 0 entries, 0.00h
+2026-02-12 12:33:23,151 - INFO - Configuration loaded successfully
+2026-02-12 12:33:23,152 - INFO - Starting daily sync for 2026-02-11
+2026-02-12 12:33:25,337 - INFO - Fetched 0 worklogs from Jira
+2026-02-12 12:33:25,337 - INFO - No Jira worklogs found for today
+2026-02-12 12:33:25,338 - INFO - Daily sync completed: 0 entries, 0.00h
+2026-02-12 15:28:06,314 - INFO - Configuration loaded successfully
+2026-02-12 15:28:06,315 - INFO - Starting daily sync for 2026-02-12
+2026-02-12 15:28:06,827 - INFO - Found 0 active issues assigned to current user
+2026-02-12 15:28:06,827 - WARNING - No active issues found (In Progress / Code Review)
+2026-02-12 15:28:06,830 - INFO - Daily sync completed: 0 entries, 0.00h
+2026-02-12 15:29:53,170 - INFO - Configuration loaded successfully
+2026-02-12 15:29:53,171 - INFO - Starting daily sync for 2026-02-12
+2026-02-12 15:29:53,965 - INFO - Found 1 active issues assigned to current user
+2026-02-12 15:29:54,443 - INFO - Created Jira worklog: TS-36308 - 28800s on 2026-02-12
+2026-02-12 15:29:54,444 - INFO - Daily sync completed: 1 entries, 8.00h
+2026-02-12 15:34:31,794 - INFO - Configuration loaded successfully
+2026-02-12 15:34:31,795 - INFO - Starting daily sync for 2026-02-12
+2026-02-12 15:34:32,918 - INFO - Found 1 active issues assigned to current user
+2026-02-12 15:34:33,561 - INFO - Created Jira worklog: TS-36308 - 28800s on 2026-02-12
+2026-02-12 15:34:33,564 - INFO - Daily sync completed: 1 entries, 8.00h
+2026-02-12 15:35:08,176 - INFO - Configuration loaded successfully
+2026-02-12 15:35:08,178 - INFO - Starting daily sync for 2026-02-12
+2026-02-12 15:35:09,135 - INFO - Found 1 active issues assigned to current user
+2026-02-12 15:35:09,738 - INFO - Created Jira worklog: TS-36308 - 28800s on 2026-02-12
+2026-02-12 15:35:09,740 - INFO - Daily sync completed: 1 entries, 8.00h
+2026-02-12 15:35:48,219 - INFO - Configuration loaded successfully
+2026-02-12 15:35:48,221 - INFO - Starting daily sync for 2026-02-12
+2026-02-12 15:35:49,563 - INFO - Found 2 active issues assigned to current user
+2026-02-12 15:35:50,265 - INFO - Created Jira worklog: TS-36320 - 14400s on 2026-02-12
+2026-02-12 15:35:50,952 - INFO - Created Jira worklog: TS-36308 - 14400s on 2026-02-12
+2026-02-12 15:35:50,954 - INFO - Daily sync completed: 2 entries, 8.00h
+2026-02-12 15:36:43,170 - INFO - Configuration loaded successfully
+2026-02-12 15:36:43,171 - INFO - Starting daily sync for 2026-02-12
+2026-02-12 15:36:44,224 - INFO - Found 2 active issues assigned to current user
+2026-02-12 15:36:44,884 - INFO - Created Jira worklog: TS-36320 - 14400s on 2026-02-12
+2026-02-12 15:36:45,346 - INFO - Created Jira worklog: TS-36308 - 14400s on 2026-02-12
+2026-02-12 15:36:45,350 - INFO - Daily sync completed: 2 entries, 8.00h
+2026-02-12 15:41:19,948 - INFO - Configuration loaded successfully
+2026-02-12 15:41:19,949 - INFO - Starting daily sync for 2026-02-12
+2026-02-12 15:41:22,705 - INFO - Fetched 5 worklogs from Jira
+2026-02-12 15:41:23,361 - INFO - Deleted worklog 1590520 from TS-36320
+2026-02-12 15:41:23,785 - INFO - Deleted worklog 1590526 from TS-36320
+2026-02-12 15:41:24,470 - INFO - Deleted worklog 1590518 from TS-36308
+2026-02-12 15:41:25,055 - INFO - Deleted worklog 1590521 from TS-36308
+2026-02-12 15:41:25,708 - INFO - Deleted worklog 1590527 from TS-36308
+2026-02-12 15:41:26,171 - INFO - Found 2 active issues assigned to current user
+2026-02-12 15:41:26,682 - INFO - Created Jira worklog: TS-36320 - 14400s on 2026-02-12
+2026-02-12 15:41:27,365 - INFO - Created Jira worklog: TS-36308 - 14400s on 2026-02-12
+2026-02-12 15:41:27,368 - INFO - Daily sync completed: 2 entries, 8.00h
+2026-02-12 16:09:40,356 - INFO - Configuration loaded successfully
+2026-02-12 16:09:40,357 - INFO - Starting daily sync for 2026-02-12
+2026-02-12 16:09:42,744 - INFO - Fetched 2 worklogs from Jira
+2026-02-12 16:09:43,202 - INFO - Deleted worklog 1590532 from TS-36320
+2026-02-12 16:09:43,821 - INFO - Deleted worklog 1590533 from TS-36308
+2026-02-12 16:09:44,284 - INFO - Found 2 active issues assigned to current user
+2026-02-12 16:09:45,321 - INFO - Created Jira worklog: TS-36320 - 14400s on 2026-02-12
+2026-02-12 16:09:46,408 - INFO - Created Jira worklog: TS-36308 - 14400s on 2026-02-12
+2026-02-12 16:09:46,409 - INFO - Daily sync completed: 2 entries, 8.00h

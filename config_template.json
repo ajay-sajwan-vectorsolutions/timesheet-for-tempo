@@ -1,0 +1,60 @@
+{
+  "_comment": "Tempo Automation Configuration Template",
+  "_comment2": "This file is created automatically by the setup wizard",
+  "_comment3": "You can edit it manually if needed",
+  
+  "user": {
+    "email": "your.email@company.com",
+    "name": "Your Full Name",
+    "role": "developer"
+  },
+  
+  "jira": {
+    "url": "lmsportal.atlassian.net",
+    "email": "your.email@company.com",
+    "api_token": "your_jira_api_token_here"
+  },
+  
+  "tempo": {
+    "api_token": "your_tempo_api_token_here"
+  },
+  
+  "organization": {
+    "_comment": "Organization-specific settings",
+    "default_issue_key": "GENERAL-001",
+    "_comment2": "Ask your Jira admin for the correct issue key to use"
+  },
+  
+  "schedule": {
+    "daily_hours": 8,
+    "daily_sync_time": "18:00",
+    "monthly_submit_day": "last"
+  },
+  
+  "notifications": {
+    "email_enabled": true,
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_user": "your.email@gmail.com",
+    "smtp_password": "your_app_password",
+    "notification_email": "your.email@company.com"
+  },
+  
+  "manual_activities": [
+    {
+      "_comment": "For Product Owners and Sales team",
+      "activity": "Stakeholder Meetings",
+      "hours": 3
+    },
+    {
+      "activity": "Planning & Documentation",
+      "hours": 5
+    }
+  ],
+  
+  "options": {
+    "auto_submit": true,
+    "require_confirmation": false,
+    "sync_on_startup": false
+  }
+}
