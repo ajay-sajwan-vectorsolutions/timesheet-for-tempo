@@ -47,13 +47,18 @@ Format: `accountId:uuid` (retrieved from Tempo API)
 ### Project Structure
 ```
 tempo-automation/
-├── tempo_automation.py          # Main script (800+ lines)
+├── tempo_automation.py          # Main script (1100+ lines)
 ├── config.json                  # User configuration (created by setup)
 ├── config_template.json         # Configuration template
 ├── requirements.txt             # Python dependencies (requests)
 ├── install.bat                  # Windows installer
 ├── install.sh                   # Mac/Linux installer
-├── tempo_automation.log         # Runtime logs
+├── run_daily.bat                # Windows scheduled task wrapper (daily sync)
+├── run_monthly.bat              # Windows scheduled task wrapper (monthly submit)
+├── tempo_automation.log         # Internal runtime logs (via logging module)
+├── daily-timesheet.log          # External execution log (appended by bat files + --logfile)
+├── CLAUDE.md                    # Claude context file (this file)
+├── FUTURE_ENHANCEMENTS.md       # Planned enhancements (exe packaging, Mac support, etc.)
 ├── README.md                    # User documentation
 ├── HANDOFF.md                   # Technical documentation
 ├── VERSION_2_RELEASE_NOTES.md   # v2.0 changes
@@ -100,20 +105,28 @@ tempo-automation/
 - Submission confirmation emails
 - HTML formatting
 
-**5. TempoAutomation (Lines ~700-970)**
+**5. DualWriter (Lines ~36-58)**
+- Wraps stdout to write to both console and an external log file simultaneously
+- Activated via `--logfile` CLI argument
+- Ensures output is visible in terminal AND appended to `daily-timesheet.log`
+
+**6. TempoAutomation (Lines ~700-970)**
 - Main orchestration engine
 - Daily sync logic
-- Monthly submission logic
+- Monthly submission logic (with last-day-of-month guard via `calendar.monthrange`)
 - Auto-log Jira worklogs across active tickets (developers, default)
+- Exact hour distribution: integer division + remainder on last ticket (no rounding error)
 - Generates smart worklog descriptions from ticket content (description + comments)
 - Overwrites existing worklogs on re-run (delete then create)
 - Legacy Jira-to-Tempo sync kept but not called by default
 - Manual activity sync (POs/Sales)
 
-**6. CLI Interface (Lines ~725-755)**
+**7. CLI Interface (Lines ~1060-1110)**
 - Command-line argument parsing
+- `--logfile` flag for dual output (console + file)
 - Entry point (main function)
 - Error handling
+- UTF-8 stdout/stderr encoding for Windows compatibility
 
 ---
 
@@ -344,10 +357,12 @@ GET /issue/{issueKey}?fields=summary,description,comment
 1. Fetch existing worklogs for target date via get_my_worklogs()
 2. Delete all existing worklogs (overwrite behavior)
 3. Query active issues via get_my_active_issues()
-4. Calculate hours_per_ticket = daily_hours / num_tickets
-5. Generate smart description for each ticket via _generate_work_summary()
-6. Create worklog on each ticket via JiraClient.create_worklog()
+4. Calculate seconds_per_ticket = total_seconds // num_tickets (integer division)
+5. Remainder seconds go to the last ticket (ensures exact total, no rounding error)
+6. Generate smart description for each ticket via _generate_work_summary()
+7. Create worklog on each ticket via JiraClient.create_worklog()
 **Idempotent:** Safe to re-run — always deletes previous entries first
+**Rounding:** 8h / 3 tickets = 2h40m + 2h40m + 2h40m = exactly 8h (no 8.01h issue)
 
 ### _generate_work_summary() [TempoAutomation]
 **Purpose:** Build a meaningful 1-3 line worklog description from a Jira ticket's content
@@ -363,10 +378,11 @@ Fixed offset calculation for edge case with empty results
 Added unit tests for boundary conditions
 ```
 
-### submit_timesheet() [Line 680-710]
-**Purpose:** Submit monthly timesheet  
-**API Call:** POST /timesheet-approvals/submit  
-**Timing:** Should run on last day of month at 11 PM
+### submit_timesheet() [TempoAutomation]
+**Purpose:** Submit monthly timesheet
+**API Call:** POST /timesheet-approvals/submit
+**Guard:** Checks `calendar.monthrange()` — only submits on the actual last day of the month
+**Timing:** Scheduled to run on days 28-31 at 11 PM, but skips non-last days automatically
 
 ---
 
@@ -419,7 +435,10 @@ python tempo_automation.py
 # Test specific date
 python tempo_automation.py --date 2026-02-01
 
-# Test monthly submission (doesn't actually submit by default)
+# Test with dual output (console + log file)
+python tempo_automation.py --logfile daily-timesheet.log
+
+# Test monthly submission (skips unless last day of month)
 python tempo_automation.py --submit
 
 # Re-run setup
@@ -457,6 +476,12 @@ python tempo_automation.py --setup
 - **Check:** Gmail requires App Password, not regular password
 - **Fix:** Generate App Password at myaccount.google.com/apppasswords
 
+**6. "UnicodeEncodeError: charmap codec can't encode character"**
+- **Cause:** Windows cp1252 encoding can't handle Unicode characters when output is redirected to a file
+- **History:** This was fixed on Feb 12 — all Unicode symbols (checkmarks, arrows, etc.) replaced with ASCII equivalents ([OK], [FAIL], [SKIP], [!], [INFO])
+- **Safety net:** Script also forces UTF-8 on stdout/stderr via `io.TextIOWrapper` at startup
+- **If it recurs:** Check for any new Unicode characters in print() statements — use ASCII only
+
 ### Logging Best Practices
 ```python
 # Always log:
@@ -475,26 +500,28 @@ logger.error(f"API response: {response.text}")
 
 ## ENHANCEMENT OPPORTUNITIES
 
-### Priority 1 (High Value)
+See `FUTURE_ENHANCEMENTS.md` for detailed analysis of each option.
+
+### Priority 1 — Packaging & Distribution (High Value)
+- [ ] **PyInstaller .exe** — bundle into single executable, no Python install needed (~30 min)
+- [ ] **System tray app** — .exe with built-in scheduler, auto-starts with Windows (~1-2 days)
 - [ ] Retry logic with exponential backoff for API calls
-- [ ] Better duplicate detection (check by date + issue key)
 - [ ] Validate API tokens on startup
 - [ ] Add --dry-run flag for testing
-- [ ] Token expiry warning (7 days before)
 
-### Priority 2 (Medium Value)
-- [ ] Offline queue (store operations, sync when online)
-- [ ] Support for multiple Jira instances
-- [ ] GUI setup wizard (instead of CLI)
-- [ ] Desktop notifications (in addition to email)
-- [ ] Weekly/monthly summary reports
+### Priority 2 — Cross-Platform & Features (Medium Value)
+- [ ] **Mac/Linux support** — shell scripts + cron jobs (Python code already cross-platform)
+- [ ] Weighted time distribution (priority-based instead of equal split)
+- [ ] Backfill mode (`--from` / `--to` for multiple days)
+- [ ] Holiday/leave calendar integration
+- [ ] Slack notifications (webhook-based, simpler than SMTP)
 
-### Priority 3 (Nice to Have)
-- [ ] Integration with company calendar for holidays
-- [ ] Slack notifications instead of email
+### Priority 3 — Nice to Have
+- [ ] Chrome extension (full JS rewrite — not recommended currently)
+- [ ] Electron desktop app (cross-platform GUI — heavy effort)
 - [ ] Web dashboard for monitoring
-- [ ] Bulk operations (backfill multiple days)
 - [ ] Custom field mapping
+- [ ] Token expiry warning (7 days before)
 
 ---
 
@@ -640,8 +667,10 @@ logger.info(f"API call to {url}: {response.status_code}")
 2. **No offline mode:** Requires internet for API calls
 3. **Manual period detection:** Simplified if API call fails
 4. **No custom fields:** Doesn't map Jira custom fields to Tempo
-5. **Windows Scheduler limitation:** Monthly task runs on days 28-31, checks if last day
+5. **Windows Scheduler limitation:** Monthly task runs on days 28-31, script checks if last day and skips otherwise
 6. **Equal distribution only:** Hours are split equally across active tickets (no weighting)
+7. **ASCII output only:** All print output uses ASCII characters for Windows cp1252 compatibility
+8. **Requires Python on machine:** No standalone .exe yet (see FUTURE_ENHANCEMENTS.md)
 
 ---
 
@@ -696,6 +725,9 @@ _sync_jira_worklogs() → old flow that synced Jira worklogs to Tempo
 ```python
 submit_timesheet()
   ↓
+calendar.monthrange() -> is today the last day?
+  ↓ (no) -> skip, print message, return
+  ↓ (yes)
 _get_current_period()
   ↓
 API call to submit
@@ -722,6 +754,49 @@ send_submission_confirmation()
 
 ---
 
+## WINDOWS TASK SCHEDULER
+
+### Scheduled Tasks
+| Task Name | Schedule | Wrapper | What it does |
+|-----------|----------|---------|-------------|
+| TempoAutomation-DailySync | Daily at 6:00 PM | `run_daily.bat` | Logs time across active tickets |
+| TempoAutomation-MonthlySubmit | Days 28-31 at 11:00 PM | `run_monthly.bat` | Submits timesheet (only on actual last day) |
+
+### Wrapper Batch Files
+- `run_daily.bat` / `run_monthly.bat` call Python with `--logfile` flag
+- Output goes to both console AND `daily-timesheet.log`
+- No `pause` — window auto-closes after completion
+- Bat file appends run timestamp header to log before each execution
+
+### Management Commands
+```cmd
+:: Create tasks (run as Administrator, use full python path)
+schtasks /Create /TN "TempoAutomation-DailySync" /SC DAILY /ST 18:00 /TR "D:\working\AI-Tempo-automation\v2\run_daily.bat" /F
+schtasks /Create /TN "TempoAutomation-MonthlySubmit" /SC MONTHLY /D 28,29,30,31 /ST 23:00 /TR "D:\working\AI-Tempo-automation\v2\run_monthly.bat" /F
+
+:: Check tasks
+schtasks /Query /TN "TempoAutomation-DailySync"
+schtasks /Query /TN "TempoAutomation-MonthlySubmit"
+
+:: Change time (will prompt for Windows password)
+schtasks /Change /TN "TempoAutomation-DailySync" /ST 17:30
+
+:: Run manually
+schtasks /Run /TN "TempoAutomation-DailySync"
+
+:: Delete tasks
+schtasks /Delete /TN "TempoAutomation-DailySync" /F
+schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
+```
+
+### Important Notes
+- Tasks must be created from an **Administrator** Command Prompt
+- Changing time prompts for Windows login password
+- Do NOT use nested quotes in /TR — use bat file wrapper instead (direct python.exe in /TR drops the script argument)
+- Python path: `C:\Users\asajwan.DESKTOP-TN8HNF1\AppData\Local\Programs\Python\Python314\python.exe`
+
+---
+
 ## QUICK REFERENCE COMMANDS
 
 ```bash
@@ -734,25 +809,29 @@ python tempo_automation.py
 # Sync specific date
 python tempo_automation.py --date 2026-02-15
 
-# Submit monthly timesheet
+# Sync with dual output (console + log file)
+python tempo_automation.py --logfile daily-timesheet.log
+
+# Submit monthly timesheet (only works on last day of month)
 python tempo_automation.py --submit
 
-# View logs
-cat tempo_automation.log           # Mac/Linux
+# View execution log
+type daily-timesheet.log           # Windows
+cat daily-timesheet.log            # Mac/Linux
+
+# View internal runtime log
 type tempo_automation.log          # Windows
+cat tempo_automation.log           # Mac/Linux
 
 # Search logs for errors
-grep ERROR tempo_automation.log    # Mac/Linux
-findstr ERROR tempo_automation.log # Windows
+findstr ERROR daily-timesheet.log  # Windows
+grep ERROR daily-timesheet.log     # Mac/Linux
 
 # Check Python version
 python --version
 
 # Install dependencies
 pip install -r requirements.txt
-
-# Reinstall dependencies
-pip install -r requirements.txt --upgrade --force-reinstall
 ```
 
 ---
@@ -769,6 +848,8 @@ pip install -r requirements.txt --upgrade --force-reinstall
 8. **Security first:** Never log API tokens or passwords
 9. **User experience:** Error messages should be clear and actionable
 10. **Document changes:** Update this file when making significant changes
+11. **ASCII only in print():** Never use Unicode symbols — Windows cp1252 will crash on file redirect
+12. **See FUTURE_ENHANCEMENTS.md:** For packaging (.exe), Mac support, Chrome extension analysis
 
 ---
 

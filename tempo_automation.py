@@ -19,9 +19,11 @@ Date: February 2026
 
 import os
 import sys
+import io
 import json
 import logging
 import argparse
+import calendar
 from datetime import datetime, timedelta, date
 from pathlib import Path
 import requests
@@ -29,6 +31,32 @@ from typing import Dict, List, Optional, Tuple
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+# Force UTF-8 output to avoid UnicodeEncodeError on Windows when redirecting to file
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+
+class DualWriter:
+    """Writes to both the console (original stdout) and an external log file."""
+
+    def __init__(self, console, logfile_path: str):
+        self.console = console
+        self.logfile = open(logfile_path, 'a', encoding='utf-8')
+
+    def write(self, text):
+        self.console.write(text)
+        self.logfile.write(text)
+        self.logfile.flush()
+
+    def flush(self):
+        self.console.flush()
+        self.logfile.flush()
+
+    def close(self):
+        self.logfile.close()
 
 # ============================================================================
 # CONFIGURATION
@@ -44,8 +72,8 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
+        logging.FileHandler(LOG_FILE, encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
@@ -96,14 +124,14 @@ class ConfigManager:
         jira_url = input("Enter your Jira URL (e.g., yourcompany.atlassian.net): ").strip()
         jira_url = jira_url.replace('https://', '').replace('http://', '')
         
-        print("\n📖 To get your Tempo API token:")
+        print("\n[INFO] To get your Tempo API token:")
         print("   1. Go to https://app.tempo.io/")
-        print("   2. Settings → API Integration")
+        print("   2. Settings -> API Integration")
         print("   3. Click 'New Token'")
         tempo_token = input("\nEnter your Tempo API token: ").strip()
         
         if user_role == "developer":
-            print("\n📖 To get your Jira API token:")
+            print("\n[INFO] To get your Jira API token:")
             print("   1. Go to https://id.atlassian.com/manage-profile/security/api-tokens")
             print("   2. Click 'Create API token'")
             jira_token = input("\nEnter your Jira API token: ").strip()
@@ -186,7 +214,7 @@ class ConfigManager:
         self.save_config(config)
         
         print("\n" + "="*60)
-        print("✓ SETUP COMPLETE!")
+        print("[OK] SETUP COMPLETE!")
         print("="*60)
         print(f"\nConfiguration saved to: {self.config_path}")
         print("You can edit this file manually if needed.\n")
@@ -693,7 +721,7 @@ class NotificationManager:
             hours = wl['time_spent_seconds'] / 3600
             body += f"<li>{wl['issue_key']}: {hours:.2f}h - {wl.get('issue_summary', '')}</li>\n"
         
-        status = "✓ Complete" if total_hours >= self.config['schedule']['daily_hours'] else "⚠ Incomplete"
+        status = "[OK] Complete" if total_hours >= self.config['schedule']['daily_hours'] else "[!] Incomplete"
         body += f"""
         </ul>
         
@@ -812,15 +840,15 @@ class TempoAutomation:
         
         # Print summary
         print(f"\n{'='*60}")
-        print(f"✓ SYNC COMPLETE")
+        print(f"[OK] SYNC COMPLETE")
         print(f"{'='*60}")
         print(f"Total entries: {len(worklogs_created)}")
         print(f"Total hours: {total_hours:.2f} / {self.config['schedule']['daily_hours']}")
         
         if total_hours >= self.config['schedule']['daily_hours']:
-            print("Status: ✓ Complete")
+            print("Status: [OK] Complete")
         else:
-            print(f"Status: ⚠ Incomplete ({total_hours:.2f}h logged)")
+            print(f"Status: [!] Incomplete ({total_hours:.2f}h logged)")
         print()
         
         logger.info(f"Daily sync completed: {len(worklogs_created)} entries, {total_hours:.2f}h")
@@ -850,12 +878,12 @@ class TempoAutomation:
                 )
                 
                 if success:
-                    print(f"✓ Created: {wl['issue_key']} - {wl['time_spent_seconds']/3600:.2f}h")
+                    print(f"  [OK] Created: {wl['issue_key']} - {wl['time_spent_seconds']/3600:.2f}h")
                     created.append(wl)
                 else:
-                    print(f"✗ Failed: {wl['issue_key']}")
+                    print(f"  [FAIL] {wl['issue_key']}")
             else:
-                print(f"⊙ Exists: {wl['issue_key']}")
+                print(f"  [SKIP] Exists: {wl['issue_key']}")
         
         return created
 
@@ -873,48 +901,55 @@ class TempoAutomation:
             for wl in existing:
                 deleted = self.jira_client.delete_worklog(wl['issue_key'], wl['worklog_id'])
                 if deleted:
-                    print(f"  ✓ Removed {wl['time_spent_seconds']/3600:.2f}h from {wl['issue_key']}")
+                    print(f"  [OK] Removed {wl['time_spent_seconds']/3600:.2f}h from {wl['issue_key']}")
                 else:
-                    print(f"  ✗ Failed to remove worklog from {wl['issue_key']}")
+                    print(f"  [FAIL] Could not remove worklog from {wl['issue_key']}")
             print()
 
         active_issues = self.jira_client.get_my_active_issues()
 
         if not active_issues:
             logger.warning("No active issues found (IN DEVELOPMENT / CODE REVIEW)")
-            print("⚠ No active tickets found. Make sure you have tickets IN DEVELOPMENT or CODE REVIEW.")
+            print("[!] No active tickets found. Make sure you have tickets IN DEVELOPMENT or CODE REVIEW.")
             return []
 
         daily_hours = self.config.get('schedule', {}).get('daily_hours', 8)
-        hours_per_ticket = daily_hours / len(active_issues)
-        seconds_per_ticket = int(hours_per_ticket * 3600)
+        total_seconds = int(daily_hours * 3600)
+        num_tickets = len(active_issues)
+        seconds_per_ticket = total_seconds // num_tickets
+        # Give remainder to the last ticket so total is exactly daily_hours
+        remainder_seconds = total_seconds - (seconds_per_ticket * num_tickets)
 
-        print(f"Found {len(active_issues)} active ticket(s):")
+        print(f"Found {num_tickets} active ticket(s):")
         for issue in active_issues:
             print(f"  - {issue['issue_key']}: {issue['issue_summary']}")
-        print(f"\n{daily_hours}h / {len(active_issues)} tickets = {hours_per_ticket:.2f}h each\n")
+        print(f"\n{daily_hours}h / {num_tickets} tickets = {seconds_per_ticket/3600:.2f}h each\n")
 
         created = []
-        for issue in active_issues:
+        for i, issue in enumerate(active_issues):
+            # Last ticket gets the remainder so total adds up exactly
+            ticket_seconds = seconds_per_ticket + (remainder_seconds if i == num_tickets - 1 else 0)
+            ticket_hours = ticket_seconds / 3600
+
             # Generate a meaningful description from ticket content
             comment = self._generate_work_summary(issue['issue_key'], issue['issue_summary'])
             success = self.jira_client.create_worklog(
                 issue_key=issue['issue_key'],
-                time_spent_seconds=seconds_per_ticket,
+                time_spent_seconds=ticket_seconds,
                 started=target_date,
                 comment=comment
             )
 
             if success:
-                print(f"  ✓ Logged {hours_per_ticket:.2f}h on {issue['issue_key']}")
+                print(f"  [OK] Logged {ticket_hours:.2f}h on {issue['issue_key']}")
                 print(f"    Description: {comment[:80]}{'...' if len(comment) > 80 else ''}")
                 created.append({
                     'issue_key': issue['issue_key'],
                     'issue_summary': issue['issue_summary'],
-                    'time_spent_seconds': seconds_per_ticket
+                    'time_spent_seconds': ticket_seconds
                 })
             else:
-                print(f"  ✗ Failed: {issue['issue_key']}")
+                print(f"  [FAIL] {issue['issue_key']}")
 
         return created
 
@@ -970,7 +1005,7 @@ class TempoAutomation:
         
         if not manual_activities:
             logger.warning("No manual activities configured")
-            print("⚠ No manual activities configured. Please edit config.json")
+            print("[!] No manual activities configured. Please edit config.json")
             return []
         
         # Check existing entries
@@ -978,7 +1013,7 @@ class TempoAutomation:
         
         if tempo_worklogs:
             logger.info("Manual entries already exist for today")
-            print("⊙ Timesheet entries already exist for today")
+            print("[SKIP] Timesheet entries already exist for today")
             return tempo_worklogs
         
         # Create entries from configuration
@@ -998,7 +1033,7 @@ class TempoAutomation:
             )
             
             if success:
-                print(f"✓ Created: {activity['activity']} - {activity['hours']}h")
+                print(f"  [OK] Created: {activity['activity']} - {activity['hours']}h")
                 created.append({
                     'issue_key': issue_key,
                     'issue_summary': activity['activity'],
@@ -1008,25 +1043,32 @@ class TempoAutomation:
         return created
     
     def submit_timesheet(self):
-        """Submit monthly timesheet."""
+        """Submit monthly timesheet. Only submits on the last day of the month."""
+        today = date.today()
+        last_day = calendar.monthrange(today.year, today.month)[1]
+
+        if today.day != last_day:
+            logger.info(f"Skipping submission — today is {today}, last day is {today.replace(day=last_day)}")
+            print(f"[SKIP] Not the last day of the month ({today.day}/{last_day}). Skipping submission.")
+            return
+
         logger.info("Starting timesheet submission")
         print(f"\n{'='*60}")
         print("TEMPO MONTHLY TIMESHEET SUBMISSION")
         print(f"{'='*60}\n")
-        
+
         # Get current period
-        today = date.today()
         period = f"{today.year}-{today.month:02d}"
-        
+
         # Submit
         success = self.tempo_client.submit_timesheet(period)
-        
+
         if success:
-            print(f"✓ Timesheet submitted successfully for {period}")
+            print(f"[OK] Timesheet submitted successfully for {period}")
             self.notifier.send_submission_confirmation(period)
         else:
-            print(f"✗ Failed to submit timesheet for {period}")
-        
+            print(f"[FAIL] Failed to submit timesheet for {period}")
+
         print()
         logger.info(f"Timesheet submission {'successful' if success else 'failed'}")
 
@@ -1055,9 +1097,15 @@ Examples:
                        help='Target date (YYYY-MM-DD)')
     parser.add_argument('--setup', action='store_true',
                        help='Run setup wizard')
-    
+    parser.add_argument('--logfile', type=str,
+                       help='Also write output to this log file (appends)')
+
     args = parser.parse_args()
-    
+
+    # Set up dual output if --logfile is provided
+    if args.logfile:
+        sys.stdout = DualWriter(sys.stdout, args.logfile)
+
     try:
         # Run setup if requested
         if args.setup:
@@ -1080,7 +1128,7 @@ Examples:
         sys.exit(1)
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
-        print(f"\n✗ Error: {e}")
+        print(f"\n[ERROR] {e}")
         print(f"See {LOG_FILE} for details")
         sys.exit(1)
 
