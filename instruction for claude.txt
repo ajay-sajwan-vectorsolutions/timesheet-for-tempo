@@ -198,3 +198,8 @@ Also read the file tempo_automation.log for the error logs
 
 Can you help me debug these errors and get the automation working?
 Let's start with understanding what went wrong.
+----------------------------------------------------------------------
+1. I want to run a weekly scheduler task which verifies that the timesheet entries were added for that week. if for any reason it could not found any entries in tempo, then I want the program to read all the stories developer worked in that week and add hours against those stories for the whole week. Tell me what logic you would apply to add hours so that the hours are not duplicated. Number of hours for a given day cannot be more than 8 in total. Also check that if developer worked on multiple stories, the hours should be only logged for those days the story was in development of code review stage.
+2. In case there are no stories for any developer, I want script to read developers calendar and add time as per the meetings. Use the meeting title and duration to log details in tempo. If all meeting time is less than 8 hrs, then add the remaining time under this task for now https://lmsportal.atlassian.net/browse/OVERHEAD-329. We will optimize this part later. Please suggest how we can do it as part of initial setup.
+3. What do you need to read the Microsoft office calendar of a developer
+

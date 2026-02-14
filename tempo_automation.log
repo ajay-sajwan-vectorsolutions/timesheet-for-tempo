@@ -150,3 +150,58 @@
 2026-02-12 23:34:08,319 - INFO - Created Jira worklog: TS-36320 - 9600s on 2026-02-12
 2026-02-12 23:34:09,191 - INFO - Created Jira worklog: TS-36308 - 9600s on 2026-02-12
 2026-02-12 23:34:09,195 - INFO - Daily sync completed: 3 entries, 8.00h
+2026-02-13 10:30:06,607 - INFO - Configuration loaded successfully
+2026-02-13 10:30:06,610 - INFO - Starting daily sync for 2026-02-13
+2026-02-13 10:30:07,964 - INFO - Fetched 0 worklogs from Jira
+2026-02-13 10:30:08,287 - INFO - Found 3 active issues assigned to current user
+2026-02-13 10:30:09,255 - INFO - Created Jira worklog: TS-36344 - 9600s on 2026-02-13
+2026-02-13 10:30:10,080 - INFO - Created Jira worklog: TS-36320 - 9600s on 2026-02-13
+2026-02-13 10:30:10,951 - INFO - Created Jira worklog: TS-36308 - 9600s on 2026-02-13
+2026-02-13 10:30:10,963 - INFO - Daily sync completed: 3 entries, 8.00h
+2026-02-13 10:35:08,536 - INFO - Configuration loaded successfully
+2026-02-13 10:35:08,540 - INFO - Starting daily sync for 2026-02-13
+2026-02-13 10:35:10,527 - INFO - Fetched 3 worklogs from Jira
+2026-02-13 10:35:11,168 - INFO - Deleted worklog 1591488 from TS-36344
+2026-02-13 10:35:11,877 - INFO - Deleted worklog 1591489 from TS-36320
+2026-02-13 10:35:12,544 - INFO - Deleted worklog 1591490 from TS-36308
+2026-02-13 10:35:12,850 - INFO - Found 3 active issues assigned to current user
+2026-02-13 10:35:13,976 - INFO - Created Jira worklog: TS-36344 - 9600s on 2026-02-13
+2026-02-13 10:35:14,927 - INFO - Created Jira worklog: TS-36320 - 9600s on 2026-02-13
+2026-02-13 10:35:15,921 - INFO - Created Jira worklog: TS-36308 - 9600s on 2026-02-13
+2026-02-13 10:35:15,923 - INFO - Daily sync completed: 3 entries, 8.00h
+2026-02-13 10:39:05,690 - INFO - Configuration loaded successfully
+2026-02-13 10:39:05,693 - INFO - Starting daily sync for 2026-02-13
+2026-02-13 10:39:08,070 - INFO - Fetched 3 worklogs from Jira
+2026-02-13 10:39:08,562 - INFO - Deleted worklog 1591516 from TS-36344
+2026-02-13 10:39:09,280 - INFO - Deleted worklog 1591517 from TS-36320
+2026-02-13 10:39:09,733 - INFO - Deleted worklog 1591518 from TS-36308
+2026-02-13 10:39:10,010 - INFO - Found 3 active issues assigned to current user
+2026-02-13 10:39:10,962 - INFO - Created Jira worklog: TS-36344 - 9600s on 2026-02-13
+2026-02-13 10:39:11,955 - INFO - Created Jira worklog: TS-36320 - 9600s on 2026-02-13
+2026-02-13 10:39:12,798 - INFO - Created Jira worklog: TS-36308 - 9600s on 2026-02-13
+2026-02-13 10:39:12,805 - INFO - Daily sync completed: 3 entries, 8.00h
+2026-02-13 10:40:05,724 - INFO - Configuration loaded successfully
+2026-02-13 10:40:05,745 - INFO - Starting daily sync for 2026-02-13
+2026-02-13 10:40:08,263 - INFO - Fetched 3 worklogs from Jira
+2026-02-13 10:40:08,882 - INFO - Deleted worklog 1591522 from TS-36344
+2026-02-13 10:40:09,381 - INFO - Deleted worklog 1591523 from TS-36320
+2026-02-13 10:40:10,034 - INFO - Deleted worklog 1591524 from TS-36308
+2026-02-13 10:40:10,375 - INFO - Found 4 active issues assigned to current user
+2026-02-13 10:40:11,424 - INFO - Created Jira worklog: TS-36389 - 7200s on 2026-02-13
+2026-02-13 10:40:12,304 - INFO - Created Jira worklog: TS-36344 - 7200s on 2026-02-13
+2026-02-13 10:40:13,101 - INFO - Created Jira worklog: TS-36320 - 7200s on 2026-02-13
+2026-02-13 10:40:14,159 - INFO - Created Jira worklog: TS-36308 - 7200s on 2026-02-13
+2026-02-13 10:40:14,166 - INFO - Daily sync completed: 4 entries, 8.00h
+2026-02-13 14:00:06,539 - INFO - Configuration loaded successfully
+2026-02-13 14:00:06,541 - INFO - Starting daily sync for 2026-02-13
+2026-02-13 14:00:09,099 - INFO - Fetched 4 worklogs from Jira
+2026-02-13 14:00:09,799 - INFO - Deleted worklog 1591525 from TS-36389
+2026-02-13 14:00:10,496 - INFO - Deleted worklog 1591526 from TS-36344
+2026-02-13 14:00:10,962 - INFO - Deleted worklog 1591527 from TS-36320
+2026-02-13 14:00:11,554 - INFO - Deleted worklog 1591528 from TS-36308
+2026-02-13 14:00:11,990 - INFO - Found 4 active issues assigned to current user
+2026-02-13 14:00:12,866 - INFO - Created Jira worklog: TS-36389 - 7200s on 2026-02-13
+2026-02-13 14:00:13,764 - INFO - Created Jira worklog: TS-36344 - 7200s on 2026-02-13
+2026-02-13 14:00:14,576 - INFO - Created Jira worklog: TS-36320 - 7200s on 2026-02-13
+2026-02-13 14:00:15,431 - INFO - Created Jira worklog: TS-36308 - 7200s on 2026-02-13
+2026-02-13 14:00:15,439 - INFO - Daily sync completed: 4 entries, 8.00h

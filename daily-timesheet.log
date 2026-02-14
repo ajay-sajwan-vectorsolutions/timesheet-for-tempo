@@ -1,173 +1,12 @@
 ============================================ 
-Run: Thu 02/12/2026 23:14:01.38 
-============================================ 
-2026-02-12 23:14:01,903 - INFO - Configuration loaded successfully
-2026-02-12 23:14:01,903 - INFO - Starting daily sync for 2026-02-12
-2026-02-12 23:14:05,063 - INFO - Fetched 3 worklogs from Jira
-2026-02-12 23:14:05,705 - INFO - Deleted worklog 1590723 from TS-36344
---- Logging error ---
-Traceback (most recent call last):
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 1084, in main
-    automation.sync_daily(args.date)
-    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 803, in sync_daily
-    worklogs_created = self._auto_log_jira_worklogs(target_date)
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 877, in _auto_log_jira_worklogs
-    print(f"  \u2713 Removed {wl['time_spent_seconds']/3600:.2f}h from {wl['issue_key']}")
-    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\asajwan.DESKTOP-TN8HNF1\AppData\Local\Programs\Python\Python314\Lib\encodings\cp1252.py", line 19, in encode
-    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
-           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 2: character maps to <undefined>
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "C:\Users\asajwan.DESKTOP-TN8HNF1\AppData\Local\Programs\Python\Python314\Lib\logging\__init__.py", line 1154, in emit
-    stream.write(msg + self.terminator)
-    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\asajwan.DESKTOP-TN8HNF1\AppData\Local\Programs\Python\Python314\Lib\encodings\cp1252.py", line 19, in encode
-    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
-           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 608: character maps to <undefined>
-Call stack:
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 1097, in <module>
-    main()
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 1090, in main
-    logger.error(f"Fatal error: {e}", exc_info=True)
-Message: "Fatal error: 'charmap' codec can't encode character '\\u2713' in position 2: character maps to <undefined>"
-Arguments: ()
-2026-02-12 23:14:05,706 - ERROR - Fatal error: 'charmap' codec can't encode character '\u2713' in position 2: character maps to <undefined>
-Traceback (most recent call last):
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 1084, in main
-    automation.sync_daily(args.date)
-    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 803, in sync_daily
-    worklogs_created = self._auto_log_jira_worklogs(target_date)
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 877, in _auto_log_jira_worklogs
-    print(f"  \u2713 Removed {wl['time_spent_seconds']/3600:.2f}h from {wl['issue_key']}")
-    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\asajwan.DESKTOP-TN8HNF1\AppData\Local\Programs\Python\Python314\Lib\encodings\cp1252.py", line 19, in encode
-    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
-           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 2: character maps to <undefined>
-
-============================================================
-TEMPO DAILY SYNC - 2026-02-12
-============================================================
-
-Removing 3 existing worklog(s) for 2026-02-12...
-Traceback (most recent call last):
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 1084, in main
-    automation.sync_daily(args.date)
-    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 803, in sync_daily
-    worklogs_created = self._auto_log_jira_worklogs(target_date)
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 877, in _auto_log_jira_worklogs
-    print(f"  \u2713 Removed {wl['time_spent_seconds']/3600:.2f}h from {wl['issue_key']}")
-    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\asajwan.DESKTOP-TN8HNF1\AppData\Local\Programs\Python\Python314\Lib\encodings\cp1252.py", line 19, in encode
-    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
-           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 2: character maps to <undefined>
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 1097, in <module>
-    main()
-    ~~~~^^
-  File "D:\working\AI-Tempo-automation\v2\tempo_automation.py", line 1091, in main
-    print(f"\n\u2717 Error: {e}")
-    ~~~~~^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\asajwan.DESKTOP-TN8HNF1\AppData\Local\Programs\Python\Python314\Lib\encodings\cp1252.py", line 19, in encode
-    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
-           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-UnicodeEncodeError: 'charmap' codec can't encode character '\u2717' in position 2: character maps to <undefined>
-============================================ 
-Run: Thu 02/12/2026 23:24:01.77 
-============================================ 
-2026-02-12 23:24:02,605 - INFO - Configuration loaded successfully
-2026-02-12 23:24:02,606 - INFO - Starting daily sync for 2026-02-12
-
-============================================================
-TEMPO DAILY SYNC - 2026-02-12
-============================================================
-
-2026-02-12 23:24:05,328 - INFO - Fetched 2 worklogs from Jira
-Removing 2 existing worklog(s) for 2026-02-12...
-2026-02-12 23:24:05,994 - INFO - Deleted worklog 1590724 from TS-36320
-  [OK] Removed 2.67h from TS-36320
-2026-02-12 23:24:06,454 - INFO - Deleted worklog 1590725 from TS-36308
-  [OK] Removed 2.67h from TS-36308
-
-2026-02-12 23:24:06,890 - INFO - Found 3 active issues assigned to current user
-Found 3 active ticket(s):
-  - TS-36344: Test - Sample 3
-  - TS-36320: Test - Sample 2
-  - TS-36308: Test - Sample 1
-
-8.0h / 3 tickets = 2.67h each
-
-2026-02-12 23:24:07,914 - INFO - Created Jira worklog: TS-36344 - 9600s on 2026-02-12
-  [OK] Logged 2.67h on TS-36344
-    Description: Acceptance Criteria Remove extra space from right side of the button Add rounded...
-2026-02-12 23:24:08,788 - INFO - Created Jira worklog: TS-36320 - 9600s on 2026-02-12
-  [OK] Logged 2.67h on TS-36320
-    Description: Acceptance Criteria Add validation for form field Validate the user cannot enter...
-2026-02-12 23:24:09,599 - INFO - Created Jira worklog: TS-36308 - 9600s on 2026-02-12
-  [OK] Logged 2.67h on TS-36308
-    Description: Acceptance Criteria Change background color of the icon Select the icon from the...
-
-============================================================
-[OK] SYNC COMPLETE
-============================================================
-Total entries: 3
-Total hours: 8.00 / 8.0
-Status: [OK] Complete
-
-2026-02-12 23:24:09,599 - INFO - Daily sync completed: 3 entries, 8.00h
-============================================ 
-Run: Thu 02/12/2026 23:27:01.56 
-============================================ 
-============================================ 
-Run: Thu 02/12/2026 23:31:01.63 
+Run: Fri 02/13/2026 10:35:04.23 
 ============================================ 
 
 ============================================================
-TEMPO DAILY SYNC - 2026-02-12
+TEMPO DAILY SYNC - 2026-02-13
 ============================================================
 
-Found 3 active ticket(s):
-  - TS-36344: Test - Sample 3
-  - TS-36320: Test - Sample 2
-  - TS-36308: Test - Sample 1
-
-8.0h / 3 tickets = 2.67h each
-
-  [OK] Logged 2.67h on TS-36344
-    Description: Acceptance Criteria Remove extra space from right side of the button Add rounded...
-  [OK] Logged 2.67h on TS-36320
-    Description: Acceptance Criteria Add validation for form field Validate the user cannot enter...
-  [OK] Logged 2.67h on TS-36308
-    Description: Acceptance Criteria Change background color of the icon Select the icon from the...
-
-============================================================
-[OK] SYNC COMPLETE
-============================================================
-Total entries: 3
-Total hours: 8.00 / 8.0
-Status: [OK] Complete
-
-============================================ 
-Run: Thu 02/12/2026 23:34:01.08 
-============================================ 
-
-============================================================
-TEMPO DAILY SYNC - 2026-02-12
-============================================================
-
-Removing 3 existing worklog(s) for 2026-02-12...
+Removing 3 existing worklog(s) for 2026-02-13...
   [OK] Removed 2.67h from TS-36344
   [OK] Removed 2.67h from TS-36320
   [OK] Removed 2.67h from TS-36308
@@ -190,6 +29,115 @@ Found 3 active ticket(s):
 [OK] SYNC COMPLETE
 ============================================================
 Total entries: 3
+Total hours: 8.00 / 8.0
+Status: [OK] Complete
+
+============================================ 
+Run: Fri 02/13/2026 10:39:03.63 
+============================================ 
+
+============================================================
+TEMPO DAILY SYNC - 2026-02-13
+============================================================
+
+Removing 3 existing worklog(s) for 2026-02-13...
+  [OK] Removed 2.67h from TS-36344
+  [OK] Removed 2.67h from TS-36320
+  [OK] Removed 2.67h from TS-36308
+
+Found 3 active ticket(s):
+  - TS-36344: Test - Sample 3
+  - TS-36320: Test - Sample 2
+  - TS-36308: Test - Sample 1
+
+8.0h / 3 tickets = 2.67h each
+
+  [OK] Logged 2.67h on TS-36344
+    Description: Acceptance Criteria Remove extra space from right side of the button Add rounded...
+  [OK] Logged 2.67h on TS-36320
+    Description: Acceptance Criteria Add validation for form field Validate the user cannot enter...
+  [OK] Logged 2.67h on TS-36308
+    Description: Acceptance Criteria Change background color of the icon Select the icon from the...
+
+============================================================
+[OK] SYNC COMPLETE
+============================================================
+Total entries: 3
+Total hours: 8.00 / 8.0
+Status: [OK] Complete
+
+============================================ 
+Run: Fri 02/13/2026 10:40:03.30 
+============================================ 
+
+============================================================
+TEMPO DAILY SYNC - 2026-02-13
+============================================================
+
+Removing 3 existing worklog(s) for 2026-02-13...
+  [OK] Removed 2.67h from TS-36344
+  [OK] Removed 2.67h from TS-36320
+  [OK] Removed 2.67h from TS-36308
+
+Found 4 active ticket(s):
+  - TS-36389: Test - Sample 4
+  - TS-36344: Test - Sample 3
+  - TS-36320: Test - Sample 2
+  - TS-36308: Test - Sample 1
+
+8.0h / 4 tickets = 2.00h each
+
+  [OK] Logged 2.00h on TS-36389
+    Description: Add title to “Add Section URL” modal Add title to “Add font” modal Remove Delete...
+  [OK] Logged 2.00h on TS-36344
+    Description: Acceptance Criteria Remove extra space from right side of the button Add rounded...
+  [OK] Logged 2.00h on TS-36320
+    Description: Acceptance Criteria Add validation for form field Validate the user cannot enter...
+  [OK] Logged 2.00h on TS-36308
+    Description: Acceptance Criteria Change background color of the icon Select the icon from the...
+
+============================================================
+[OK] SYNC COMPLETE
+============================================================
+Total entries: 4
+Total hours: 8.00 / 8.0
+Status: [OK] Complete
+
+============================================ 
+Run: Fri 02/13/2026 14:00:04.22 
+============================================ 
+
+============================================================
+TEMPO DAILY SYNC - 2026-02-13
+============================================================
+
+Removing 4 existing worklog(s) for 2026-02-13...
+  [OK] Removed 2.00h from TS-36389
+  [OK] Removed 2.00h from TS-36344
+  [OK] Removed 2.00h from TS-36320
+  [OK] Removed 2.00h from TS-36308
+
+Found 4 active ticket(s):
+  - TS-36389: Test - Sample 4
+  - TS-36344: Test - Sample 3
+  - TS-36320: Test - Sample 2
+  - TS-36308: Test - Sample 1
+
+8.0h / 4 tickets = 2.00h each
+
+  [OK] Logged 2.00h on TS-36389
+    Description: Add title to “Add Section URL” modal Add title to “Add font” modal Remove Delete...
+  [OK] Logged 2.00h on TS-36344
+    Description: Acceptance Criteria Remove extra space from right side of the button Add rounded...
+  [OK] Logged 2.00h on TS-36320
+    Description: Acceptance Criteria Add validation for form field Validate the user cannot enter...
+  [OK] Logged 2.00h on TS-36308
+    Description: Acceptance Criteria Change background color of the icon Select the icon from the...
+
+============================================================
+[OK] SYNC COMPLETE
+============================================================
+Total entries: 4
 Total hours: 8.00 / 8.0
 Status: [OK] Complete
 

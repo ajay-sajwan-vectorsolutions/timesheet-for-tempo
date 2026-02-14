@@ -1,9 +1,31 @@
 # Tempo Timesheet Automation - Claude Context File
 
-**Project:** Tempo Timesheet Automation  
-**Version:** 2.0  
-**Status:** In Testing/Enhancement Phase  
-**Last Updated:** February 12, 2026
+**Project:** Tempo Timesheet Automation
+**Version:** 2.0
+**Status:** Production — Active Daily Use
+**Last Updated:** February 13, 2026
+**Active User:** Ajay Sajwan (ajay.sajwan-ctr@vectorsolutions.com, developer role)
+
+---
+
+## CLAUDE CODE INSTRUCTIONS (MANDATORY)
+
+### Memory & Context Management
+- **At session start:** Read this file (`CLAUDE.md`) + the memory file for cross-session knowledge
+- **During session:** Update this file and memory when bugs are fixed, features added, line numbers change, or status changes
+- **At session end:** Save any new facts, patterns, or status changes to memory + this file
+- **Memory file location:** Auto memory directory (loaded into system prompt automatically)
+- **MEMORY.md must stay under 200 lines** (truncated beyond that in system prompt)
+- Never put API tokens, passwords, or secrets in CLAUDE.md or memory files
+- When line numbers change due to edits, update the class/method map below
+- Remove outdated information rather than letting it accumulate
+
+### Coding Standards
+- ASCII only in print() — no Unicode symbols (Windows cp1252 compatibility)
+- Always use `.get()` with fallback for config access
+- Always set `timeout=30` on API calls
+- Follow PEP 8, use f-strings, max 100 char lines
+- Log everything meaningful but never log credentials
 
 ---
 
@@ -37,8 +59,8 @@ Local Python script that:
 - **Tempo:** Cloud version (Jira plugin)
 - **Tempo API:** v4 (https://api.tempo.io/4/)
 - **Jira API:** v3 REST
-- **Python:** 3.7+
-- **OS Support:** Windows, Mac, Linux
+- **Python:** 3.7+ (Ajay's machine: Python 3.14 at `C:\Users\asajwan.DESKTOP-TN8HNF1\AppData\Local\Programs\Python\Python314\python.exe`)
+- **OS Support:** Windows (active), Mac/Linux (untested, Python code is cross-platform)
 
 ### Account ID Format
 User's Tempo worker ID: `712020:66c372bc-e38f-414e-b5d3-fd8ff7513a44`
@@ -46,11 +68,11 @@ Format: `accountId:uuid` (retrieved from Tempo API)
 
 ### Project Structure
 ```
-tempo-automation/
-├── tempo_automation.py          # Main script (1100+ lines)
-├── config.json                  # User configuration (created by setup)
+tempo-automation/ (D:\working\AI-Tempo-automation\v2\)
+├── tempo_automation.py          # Main script (1,137 lines)
+├── config.json                  # User configuration (Ajay's live config)
 ├── config_template.json         # Configuration template
-├── requirements.txt             # Python dependencies (requests)
+├── requirements.txt             # Python dependencies (requests>=2.31.0)
 ├── install.bat                  # Windows installer
 ├── install.sh                   # Mac/Linux installer
 ├── run_daily.bat                # Windows scheduled task wrapper (daily sync)
@@ -59,10 +81,13 @@ tempo-automation/
 ├── daily-timesheet.log          # External execution log (appended by bat files + --logfile)
 ├── CLAUDE.md                    # Claude context file (this file)
 ├── FUTURE_ENHANCEMENTS.md       # Planned enhancements (exe packaging, Mac support, etc.)
+├── SETUP_GUIDE.md               # Step-by-step installation guide
 ├── README.md                    # User documentation
 ├── HANDOFF.md                   # Technical documentation
 ├── VERSION_2_RELEASE_NOTES.md   # v2.0 changes
 ├── QUICK_REFERENCE.md           # Command cheat sheet
+├── instruction for claude.txt   # Original requirements document
+├── docs/                        # Business case & analysis documents
 └── examples/
     ├── developer_config.json
     ├── product_owner_config.json
@@ -73,57 +98,54 @@ tempo-automation/
 
 ## CODE ARCHITECTURE
 
-### Main Components (tempo_automation.py)
+### Main Components (tempo_automation.py — 1,137 lines)
 
-**1. ConfigManager (Lines ~50-230)**
-- Interactive setup wizard
-- Configuration loading/saving
-- Credential management
-- First-time user experience
-
-**2. JiraClient (Lines ~255-505)**
-- Jira REST API v3 integration
-- Fetches worklogs for date range (with worklog_id for deletion)
-- Deletes worklogs by ID (for overwrite-on-rerun)
-- Queries active issues (IN DEVELOPMENT / CODE REVIEW) via JQL
-- Fetches issue details (description + comments) for smart worklog descriptions
-- Extracts plain text from ADF (Atlassian Document Format) content
-- Creates worklogs directly on Jira issues (multi-line ADF comment format)
-- Basic auth (email + API token)
-
-**3. TempoClient (Lines ~315-490)**
-- Tempo API v4 integration
-- Get user worklogs
-- Create worklog entries
-- Submit timesheets
-- Get current period
-- Bearer token authentication
-
-**4. NotificationManager (Lines ~495-570)**
-- Email notifications via SMTP
-- Daily summary emails
-- Submission confirmation emails
-- HTML formatting
-
-**5. DualWriter (Lines ~36-58)**
+**1. DualWriter (Lines 42-60)**
 - Wraps stdout to write to both console and an external log file simultaneously
 - Activated via `--logfile` CLI argument
 - Ensures output is visible in terminal AND appended to `daily-timesheet.log`
 
-**6. TempoAutomation (Lines ~700-970)**
-- Main orchestration engine
-- Daily sync logic
-- Monthly submission logic (with last-day-of-month guard via `calendar.monthrange`)
-- Auto-log Jira worklogs across active tickets (developers, default)
-- Exact hour distribution: integer division + remainder on last ticket (no rounding error)
-- Generates smart worklog descriptions from ticket content (description + comments)
-- Overwrites existing worklogs on re-run (delete then create)
-- Legacy Jira-to-Tempo sync kept but not called by default
-- Manual activity sync (POs/Sales)
+**2. ConfigManager (Lines 86-277)**
+- Interactive setup wizard (`setup_wizard()` at Line 108)
+- Configuration loading/saving
+- Credential management
+- Role selection (developer/product_owner/sales) at Line 224
+- Account ID retrieval from Tempo API (`get_account_id()` at Line 252)
 
-**7. CLI Interface (Lines ~1060-1110)**
-- Command-line argument parsing
-- `--logfile` flag for dual output (console + file)
+**3. JiraClient (Lines 283-535)**
+- Jira REST API v3 integration
+- `get_my_worklogs()` (Line 295) — fetches worklogs for date range with worklog_id for deletion
+- `delete_worklog()` (Line 355) — deletes worklogs by ID (for overwrite-on-rerun)
+- `get_my_active_issues()` (Line 378) — queries via JQL: status IN ("IN DEVELOPMENT", "CODE REVIEW")
+- `get_issue_details()` (Line 414) — fetches description + comments for smart descriptions
+- `_extract_adf_text()` (Line 457, static) — extracts plain text from ADF JSON
+- `create_worklog()` (Line 481) — creates worklogs on Jira issues (multi-line ADF comment format)
+- Basic auth (email + API token)
+
+**4. TempoClient (Lines 541-689)**
+- Tempo API v4 integration
+- `get_user_worklogs()` (Line 554) — legacy, not used in v2 developer flow
+- `create_worklog()` (Line 583) — used by manual activities and legacy sync only
+- `submit_timesheet()` (Line 619) — submits timesheet for approval
+- `_get_current_period()` (Line 655) — fetches period from API with YYYY-MM fallback
+- Bearer token authentication
+
+**5. NotificationManager (Lines 695-791)**
+- `send_daily_summary()` (Line 702) — HTML email with daily summary table
+- `send_submission_confirmation()` (Line 740) — confirmation email after monthly submit
+- `_send_email()` (Line 765) — SMTP connection and send (TLS on port 587)
+
+**6. TempoAutomation (Lines 797-1074)**
+- Main orchestration engine
+- `sync_daily()` (Line 811) — main daily sync entry point, branches by role
+- `_sync_jira_worklogs()` (Line 856) — legacy Jira-to-Tempo sync (kept but NOT called by default)
+- `_auto_log_jira_worklogs()` (Line 890) — **PRIMARY DEVELOPER METHOD**: delete old + create new in Jira
+- `_generate_work_summary()` (Line 956) — builds 1-3 line description from ticket content
+- `_sync_manual_activities()` (Line 1002) — PO/Sales manual activity sync via Tempo API
+- `submit_timesheet()` (Line 1045) — monthly submission with last-day-of-month guard
+
+**7. CLI Interface (Lines 1082-1137)**
+- Command-line argument parsing (--submit, --date, --setup, --logfile)
 - Entry point (main function)
 - Error handling
 - UTF-8 stdout/stderr encoding for Windows compatibility
@@ -502,6 +524,11 @@ logger.error(f"API response: {response.text}")
 
 See `FUTURE_ENHANCEMENTS.md` for detailed analysis of each option.
 
+### Priority 0 — In Progress (Next Implementation)
+- [ ] **Weekly verification & backfill** (`--verify-week`) — see `WEEKLY_VERIFY_PLAN.md` for full plan
+- [ ] **Calendar integration fallback** — Microsoft Outlook via Graph API for days with no stories
+- [ ] **OVERHEAD-329 fallback** — log remaining hours when meetings < 8h
+
 ### Priority 1 — Packaging & Distribution (High Value)
 - [ ] **PyInstaller .exe** — bundle into single executable, no Python install needed (~30 min)
 - [ ] **System tray app** — .exe with built-in scheduler, auto-starts with Windows (~1-2 days)
@@ -512,7 +539,6 @@ See `FUTURE_ENHANCEMENTS.md` for detailed analysis of each option.
 ### Priority 2 — Cross-Platform & Features (Medium Value)
 - [ ] **Mac/Linux support** — shell scripts + cron jobs (Python code already cross-platform)
 - [ ] Weighted time distribution (priority-based instead of equal split)
-- [ ] Backfill mode (`--from` / `--to` for multiple days)
 - [ ] Holiday/leave calendar integration
 - [ ] Slack notifications (webhook-based, simpler than SMTP)
 
@@ -522,6 +548,50 @@ See `FUTURE_ENHANCEMENTS.md` for detailed analysis of each option.
 - [ ] Web dashboard for monitoring
 - [ ] Custom field mapping
 - [ ] Token expiry warning (7 days before)
+
+---
+
+## CURRENT STATUS (as of February 13, 2026)
+
+### Active Production Use
+- **User:** Ajay Sajwan (developer role, Frontend Team Lead)
+- **Config:** Fully configured with live Jira + Tempo API tokens
+- **Email notifications:** Disabled (Ajay's preference)
+- **Scheduling:** Windows Task Scheduler configured:
+  - `TempoAutomation-DailySync` — daily at 6:00 PM
+  - `TempoAutomation-MonthlySubmit` — days 28-31 at 11:00 PM
+
+### Last Successful Run (Feb 13, 2026 at 14:00)
+- 4 active Jira tickets found: TS-36389, TS-36344, TS-36320, TS-36308
+- 4 previous worklogs deleted (overwrite behavior)
+- 8.0 hours distributed evenly (2.00h per ticket)
+- Smart worklog descriptions generated from ticket content
+- All 4 new worklogs created successfully in Jira
+- Tempo auto-synced from Jira
+
+### What's Working
+- [x] Daily auto-sync via scheduled task
+- [x] Overwrite-on-rerun (idempotent)
+- [x] Smart worklog descriptions from ticket content
+- [x] Active issue detection (IN DEVELOPMENT / CODE REVIEW)
+- [x] Exact hour distribution (no rounding errors)
+- [x] Dual logging (console + file)
+- [x] ASCII-only output (Windows cp1252 safe)
+- [x] Monthly submission guard (last day only)
+
+### Not Yet Tested / Deployed
+- [ ] Monthly submission (waiting for end of month)
+- [ ] Product Owner / Sales roles (only developer tested)
+- [ ] Email notifications (disabled in current config)
+- [ ] Multi-user pilot (only Ajay using it)
+- [ ] Mac/Linux deployment
+- [ ] PyInstaller .exe packaging
+
+### Version History
+- **v1.0 (Feb 3, 2026):** Initial development — 3 TODOs (account ID, issue key, period API)
+- **v2.0 (Feb 3, 2026):** All 3 TODOs fixed, Jira URL updated to lmsportal, error handling improved
+- **v2.0+ (Feb 12, 2026):** Unicode fix (ASCII-only output), DualWriter for --logfile, bat wrappers added
+- **v2.0+ (Feb 13, 2026):** Active daily use, confirmed working with real Jira/Tempo data
 
 ---
 
@@ -838,18 +908,20 @@ pip install -r requirements.txt
 
 ## REMEMBER WHEN HELPING
 
-1. **Always check logs first:** Most issues are visible in tempo_automation.log
+1. **Always check logs first:** Most issues are visible in tempo_automation.log and daily-timesheet.log
 2. **Verify API tokens:** Many errors are authentication-related
 3. **Test incrementally:** Fix one thing, test, then move to next
-4. **Keep user context:** Remember user is at lmsportal.atlassian.net
+4. **Keep user context:** Ajay at lmsportal.atlassian.net, developer role, email notifications off
 5. **Use fallbacks:** Code should degrade gracefully if APIs fail
 6. **Log everything:** Better to have too much logging than too little
 7. **Consider all roles:** Solutions should work for developers, POs, and sales
 8. **Security first:** Never log API tokens or passwords
 9. **User experience:** Error messages should be clear and actionable
-10. **Document changes:** Update this file when making significant changes
+10. **Document changes:** Update this file AND memory files when making significant changes
 11. **ASCII only in print():** Never use Unicode symbols — Windows cp1252 will crash on file redirect
 12. **See FUTURE_ENHANCEMENTS.md:** For packaging (.exe), Mac support, Chrome extension analysis
+13. **Working directory:** `D:\working\AI-Tempo-automation\v2\` — all relative paths from here
+14. **v2 is the active version:** Ignore tempo-automation/ (v1) and tempo-automation-v2-FIXED/ (intermediate)
 
 ---
 
@@ -869,4 +941,4 @@ pip install -r requirements.txt
 - Answering questions about the project
 - Onboarding new team members
 
-*Last updated: February 12, 2026*
+*Last updated: February 13, 2026*
