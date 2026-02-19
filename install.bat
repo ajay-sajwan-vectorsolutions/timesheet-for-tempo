@@ -6,8 +6,8 @@ REM This script will:
 REM 1. Check Python installation
 REM 2. Install dependencies
 REM 3. Run setup wizard
-REM 4. Schedule daily and monthly tasks
-REM 5. Optionally set up system tray app
+REM 4. Schedule daily, weekly, and monthly tasks
+REM 5. Set up system tray app (auto-start on login)
 REM 6. Optionally run a test sync
 REM ============================================================================
 
@@ -40,7 +40,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo ✓ Python found
+echo [OK] Python found
 python --version
 echo.
 
@@ -59,7 +59,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo ✓ Dependencies installed
+echo [OK] Dependencies installed (requests, holidays, pystray, Pillow, winotify)
 echo.
 
 REM ============================================================================
@@ -78,7 +78,7 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo ✓ Setup complete
+echo [OK] Setup complete
 echo.
 
 REM ============================================================================
@@ -88,62 +88,83 @@ REM ============================================================================
 echo [4/6] Setting up scheduled tasks...
 echo.
 
-REM Get full path to Python and script
-for %%i in (python.exe) do set PYTHON_PATH=%%~$PATH:i
-set SCRIPT_PATH=%SCRIPT_DIR%tempo_automation.py
-
-REM Daily sync task (6:00 PM every day)
-echo Creating daily sync task (runs at 6:00 PM)...
-schtasks /Create /TN "TempoAutomation-DailySync" /TR "\"%PYTHON_PATH%\" \"%SCRIPT_PATH%\"" /SC DAILY /ST 18:00 /F >nul 2>&1
+REM Daily sync task (weekdays only at 6:00 PM, uses OK/Cancel dialog wrapper)
+echo Creating daily sync task (Mon-Fri at 6:00 PM)...
+schtasks /Create /TN "TempoAutomation-DailySync" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 18:00 /TR "\"%SCRIPT_DIR%run_daily.bat\"" /F >nul 2>&1
 
 if %errorlevel% equ 0 (
-    echo ✓ Daily sync task created
+    echo [OK] Daily sync task created (weekdays only)
 ) else (
-    echo ✗ Failed to create daily sync task
+    echo [FAIL] Failed to create daily sync task
     echo   You may need to run this as Administrator
 )
 
-REM Monthly submission task (11:00 PM on last day of month)
-echo Creating monthly submission task (runs at 11:00 PM on last day)...
-
-REM Note: Windows Task Scheduler doesn't have direct "last day of month" trigger
-REM So we create a task that runs on the 28th-31st and the script will check if it's the last day
-schtasks /Create /TN "TempoAutomation-MonthlySubmit" /TR "\"%PYTHON_PATH%\" \"%SCRIPT_PATH%\" --submit" /SC MONTHLY /D 28,29,30,31 /ST 23:00 /F >nul 2>&1
+REM Weekly verification task (Friday at 4:00 PM)
+echo Creating weekly verification task (Fridays at 4:00 PM)...
+schtasks /Create /TN "TempoAutomation-WeeklyVerify" /SC WEEKLY /D FRI /ST 16:00 /TR "\"%SCRIPT_DIR%run_weekly.bat\"" /F >nul 2>&1
 
 if %errorlevel% equ 0 (
-    echo ✓ Monthly submission task created
+    echo [OK] Weekly verification task created
 ) else (
-    echo ✗ Failed to create monthly submission task
+    echo [FAIL] Failed to create weekly verification task
+    echo   You may need to run this as Administrator
+)
+
+REM Monthly submission task (11:00 PM on days 28-31, script checks if last day)
+echo Creating monthly submission task (last day of month at 11:00 PM)...
+schtasks /Create /TN "TempoAutomation-MonthlySubmit" /SC MONTHLY /D 28,29,30,31 /ST 23:00 /TR "\"%SCRIPT_DIR%run_monthly.bat\"" /F >nul 2>&1
+
+if %errorlevel% equ 0 (
+    echo [OK] Monthly submission task created
+) else (
+    echo [FAIL] Failed to create monthly submission task
     echo   You may need to run this as Administrator
 )
 
 echo.
 
 REM ============================================================================
-REM Tray App Setup (optional)
+REM Tray App Setup (recommended)
 REM ============================================================================
 
-echo [5/6] System Tray App (optional)
+echo [5/6] Setting up System Tray App...
 echo.
-echo The tray app shows a notification at your configured sync time
-echo and lives in your system tray for quick access.
+echo The tray app lives in your system tray, shows a notification at your
+echo configured sync time, and lets you sync with one click.
+echo It will start automatically every time you log in to Windows.
 echo.
-set /p TRAY_SETUP="Set up tray app? (y/n): "
 
-if /i "%TRAY_SETUP%"=="y" (
-    echo.
-    echo Installing tray app dependencies...
-    python -m pip install pystray Pillow --quiet
-    echo Registering auto-start on login...
-    for %%i in (python.exe) do set PYTHONW_PATH=%%~dp$PATH:ipythonw.exe
-    "%PYTHON_PATH%" "%SCRIPT_DIR%tray_app.py" --register
-    echo Starting tray app...
-    start "" "%PYTHONW_PATH%" "%SCRIPT_DIR%tray_app.py"
-    echo [OK] Tray app is running
-    echo.
-    echo NOTE: If using the tray app only, you can disable the Task Scheduler daily task:
-    echo   schtasks /Change /TN "TempoAutomation-DailySync" /DISABLE
+REM Find pythonw.exe using 'where' command (most reliable on Windows)
+for /f "tokens=*" %%a in ('where pythonw.exe 2^>nul') do (
+    set PYTHONW_PATH=%%a
+    goto :found_pythonw
 )
+REM Fallback: look alongside python.exe
+for %%i in (python.exe) do set PYTHONW_PATH=%%~dp$PATH:ipythonw.exe
+:found_pythonw
+
+if not exist "%PYTHONW_PATH%" (
+    echo [!] pythonw.exe not found
+    echo     Falling back to python.exe (a console window will appear)
+    for %%i in (python.exe) do set PYTHONW_PATH=%%~$PATH:i
+)
+
+REM Stop any existing tray app instance before starting fresh
+echo Stopping any existing tray app...
+python "%SCRIPT_DIR%tray_app.py" --stop >nul 2>&1
+timeout /t 2 /nobreak >nul
+
+REM Register auto-start on login
+python "%SCRIPT_DIR%tray_app.py" --register
+
+REM Start the tray app now
+echo Starting tray app...
+start "" "%PYTHONW_PATH%" "%SCRIPT_DIR%tray_app.py"
+timeout /t 3 /nobreak >nul
+echo [OK] Tray app is running in the system tray
+echo.
+echo NOTE: The tray app and Task Scheduler can coexist safely.
+echo       The sync is idempotent (re-running overwrites previous entries).
 
 echo.
 
@@ -151,14 +172,17 @@ REM ============================================================================
 REM Test run
 REM ============================================================================
 
-echo [6/6] Running test...
+echo [6/6] Test sync (optional)
 echo.
-echo Would you like to test the automation now? (This will sync today's timesheet)
+echo Would you like to test the automation now?
+echo This will sync today's timesheet to verify everything works.
+echo.
 set /p TEST_RUN="Run test? (y/n): "
 
 if /i "%TEST_RUN%"=="y" (
     echo.
     echo Running test sync...
+    echo.
     python tempo_automation.py
 )
 
@@ -170,33 +194,45 @@ REM ============================================================================
 
 echo.
 echo ============================================================
-echo ✓ INSTALLATION COMPLETE!
+echo [OK] INSTALLATION COMPLETE!
 echo ============================================================
 echo.
 echo Your automation is now set up and will run automatically:
-echo   - Daily: 6:00 PM (sync timesheets via dialog or tray app)
-echo   - Monthly: 11:00 PM on last day (submit for approval)
 echo.
-echo Configuration file: %SCRIPT_DIR%config.json
-echo Log file: %SCRIPT_DIR%tempo_automation.log
+echo   Tray App:
+echo     - Starts on Windows login (system tray icon)
+echo     - Notifies at your configured sync time (default 6:00 PM)
+echo     - Right-click for menu: Sync Now, Add PTO, View Schedule, etc.
 echo.
-echo You can manually run the script anytime:
-echo   python tempo_automation.py          (sync today)
-echo   python tempo_automation.py --submit (submit timesheet)
+echo   Task Scheduler:
+echo     - Daily:   Mon-Fri at 6:00 PM (sync via OK/Cancel dialog)
+echo     - Weekly:  Fridays at 4:00 PM (verify hours, backfill gaps)
+echo     - Monthly: Last day at 11:00 PM (verify + submit timesheet)
 echo.
-echo Tray app commands:
-echo   python tray_app.py --register       (auto-start on login)
-echo   python tray_app.py --unregister     (remove auto-start)
+echo Files:
+echo   Config:  %SCRIPT_DIR%config.json
+echo   Log:     %SCRIPT_DIR%daily-timesheet.log
+echo   Runtime: %SCRIPT_DIR%tempo_automation.log
 echo.
-echo To view scheduled tasks:
-echo   Open Task Scheduler and look for "TempoAutomation-*"
+echo Manual commands:
+echo   python tempo_automation.py              (sync today)
+echo   python tempo_automation.py --date DATE  (sync specific date)
+echo   python tempo_automation.py --verify-week (verify this week)
+echo   python tempo_automation.py --submit     (submit monthly)
+echo   python tempo_automation.py --show-schedule (view calendar)
+echo   python tempo_automation.py --manage     (schedule menu)
 echo.
-echo To uninstall:
-echo   Run: schtasks /Delete /TN "TempoAutomation-DailySync" /F
-echo   Run: schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
-echo   Run: python tray_app.py --unregister
+echo Uninstall:
+echo   python tray_app.py --unregister
+echo   schtasks /Delete /TN "TempoAutomation-DailySync" /F
+echo   schtasks /Delete /TN "TempoAutomation-WeeklyVerify" /F
+echo   schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
+echo   Then delete this folder.
 echo.
 echo ============================================================
 echo.
-
-pause
+echo This window will close in:
+for /l %%i in (5,-1,1) do (
+    echo   %%i...
+    timeout /t 1 /nobreak >nul
+)

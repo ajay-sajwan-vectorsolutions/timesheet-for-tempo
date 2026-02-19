@@ -49,6 +49,7 @@ INTERNAL_LOG = SCRIPT_DIR / "tempo_automation.log"
 REG_KEY = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
 REG_VALUE = 'TempoTrayApp'
 MUTEX_NAME = 'TempoTrayApp_SingleInstance_Mutex'
+STOP_FILE = SCRIPT_DIR / '_tray_stop.signal'
 
 # Tray app logger (separate from tempo_automation logger)
 tray_logger = logging.getLogger('tray_app')
@@ -606,6 +607,28 @@ class TrayApp:
         except Exception as e:
             tray_logger.error(f"Toast notification failed: {e}")
 
+    def _ensure_autostart(self):
+        """Register auto-start if not already present."""
+        import winreg
+        try:
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, REG_KEY,
+                0, winreg.KEY_READ
+            )
+            try:
+                winreg.QueryValueEx(key, REG_VALUE)
+                winreg.CloseKey(key)
+                # Already registered
+                return
+            except FileNotFoundError:
+                winreg.CloseKey(key)
+        except Exception:
+            pass
+
+        # Not registered -- register now
+        tray_logger.info("Auto-start not found, registering...")
+        register_autostart()
+
     def run(self):
         """Main entry point -- blocks on pystray message pump."""
         if not PYSTRAY_OK:
@@ -615,9 +638,16 @@ class TrayApp:
             )
             sys.exit(1)
 
+        # Clean up stale stop signal from previous runs
+        if STOP_FILE.exists():
+            STOP_FILE.unlink()
+
         if not self._check_single_instance():
             print("Another instance of Tempo Tray App is already running.")
             sys.exit(0)
+
+        # Ensure auto-start is registered (default behavior)
+        self._ensure_autostart()
 
         # Load automation (deferred import)
         self._load_automation()
@@ -645,7 +675,57 @@ class TrayApp:
             capture_output=True
         )
 
+        # Start stop-file watcher (allows --stop from another process)
+        self._stop_watcher_running = True
+
+        def _watch_stop_file():
+            while self._stop_watcher_running:
+                if STOP_FILE.exists():
+                    tray_logger.info(
+                        "Stop signal received, shutting down"
+                    )
+                    try:
+                        STOP_FILE.unlink()
+                    except OSError:
+                        pass
+                    self._stop_sync_animation()
+                    if self._timer:
+                        self._timer.cancel()
+                    if self._icon:
+                        self._icon.stop()
+                    return
+                import time
+                time.sleep(1)
+
+        watcher = threading.Thread(
+            target=_watch_stop_file, daemon=True
+        )
+        watcher.start()
+
         tray_logger.info("Tray app started")
+
+        # Show welcome toast after icon is visible (slight delay
+        # so the icon renders before the notification fires)
+        if not self._import_error:
+            def _welcome():
+                sync_time = self._get_sync_time()
+                user_name = ''
+                if self._config:
+                    user_name = self._config.get(
+                        'user', {}
+                    ).get('name', '')
+                greeting = f'Hi {user_name}! ' if user_name else ''
+                self._show_toast(
+                    'Tempo Automation is Running',
+                    f'{greeting}The app is now running in your '
+                    f'system tray. You will be notified at '
+                    f'{sync_time} to log your hours.\n'
+                    f'Right-click the tray icon for options.'
+                )
+            welcome_timer = threading.Timer(2.0, _welcome)
+            welcome_timer.daemon = True
+            welcome_timer.start()
+
         self._icon.run()  # Blocks (Win32 message pump)
 
 
@@ -691,6 +771,28 @@ def unregister_autostart():
         tray_logger.error(f"Auto-start removal failed: {e}")
 
 
+def stop_app():
+    """Signal a running tray app instance to shut down via stop file."""
+    STOP_FILE.write_text('stop')
+    print("[OK] Stop signal sent to running tray app")
+    tray_logger.info("Stop signal file created")
+
+    # Wait up to 5 seconds for the process to exit
+    import time
+    for _ in range(10):
+        time.sleep(0.5)
+        if not STOP_FILE.exists():
+            print("[OK] Tray app stopped")
+            return
+    # Clean up if it didn't pick up the signal
+    if STOP_FILE.exists():
+        try:
+            STOP_FILE.unlink()
+        except OSError:
+            pass
+    print("[OK] Stop signal sent (app may take a moment to exit)")
+
+
 # ============================================================================
 # ENTRY POINT
 # ============================================================================
@@ -708,12 +810,18 @@ def main():
         '--unregister', action='store_true',
         help='Remove auto-start from Windows login'
     )
+    parser.add_argument(
+        '--stop', action='store_true',
+        help='Stop a running tray app instance'
+    )
     args = parser.parse_args()
 
     if args.register:
         register_autostart()
     elif args.unregister:
         unregister_autostart()
+    elif args.stop:
+        stop_app()
     else:
         app = TrayApp()
         app.run()

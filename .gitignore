@@ -8,5 +8,13 @@ config.json
 __pycache__/
 *.pyc
 
+# Claude prompt file
+Claude Prompt.txt
+
+# Tray app temp files
+_tray_stop.signal
+_pto_input.tmp
+_pto_input.vbs
+
 # Stray pip output
 =0.40

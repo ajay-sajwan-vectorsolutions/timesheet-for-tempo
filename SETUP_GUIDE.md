@@ -10,20 +10,19 @@ Runs daily at a scheduled time and:
 1. Finds all Jira tickets assigned to you in **IN DEVELOPMENT** or **CODE REVIEW** status
 2. Splits your 8-hour workday equally across those tickets
 3. Logs the time directly in Jira (with a meaningful description pulled from the ticket)
-4. Tempo auto-syncs from Jira — no manual entry needed
+4. Tempo auto-syncs from Jira -- no manual entry needed
 5. Skips weekends, holidays, and PTO days automatically
 6. Runs a weekly verification every Friday to catch any missed days
 7. At the end of the month, verifies total hours and submits your timesheet for approval
-8. Sends a Teams/email notification if hours are short
 
 ---
 
 ## Prerequisites
 
-- Windows 10/11 or Mac
+- Windows 10/11 (Mac/Linux: Python code is cross-platform, but tray app is Windows-only)
 - Python 3.7 or higher
-- A Jira API token
-- A Tempo API token
+- A Jira API token (developers)
+- A Tempo API token (all users)
 
 ---
 
@@ -35,11 +34,11 @@ If you already have Python installed, skip to Step 2.
 2. Run the installer
 3. **IMPORTANT: Check the box "Add Python to PATH"** at the bottom of the installer
 4. Click "Install Now"
-5. Verify it works — open Command Prompt and run:
+5. Verify it works -- open Command Prompt and run:
    ```cmd
    python --version
    ```
-   You should see something like `Python 3.14.x`
+   You should see something like `Python 3.12.x` or higher.
 
 ---
 
@@ -48,13 +47,21 @@ If you already have Python installed, skip to Step 2.
 Get the following files from your team lead and place them all in one folder (e.g., `C:\tempo-automation\`):
 
 ```
-tempo_automation.py
-org_holidays.json
-requirements.txt
-run_daily.bat
-run_monthly.bat
-run_weekly.bat
+tempo_automation.py          # Main automation script
+tray_app.py                  # System tray app (Windows)
+confirm_and_run.py           # OK/Cancel dialog for Task Scheduler
+org_holidays.json            # Organization holiday definitions
+requirements.txt             # Python dependencies
+config_template.json         # Configuration template
+run_daily.bat                # Batch wrapper for daily sync
+run_weekly.bat               # Batch wrapper for weekly verification
+run_monthly.bat              # Batch wrapper for monthly submission
+install.bat                  # Automated installer (recommended)
+assets/
+  favicon.ico                # Company icon for tray app
 ```
+
+**Quick install option:** Instead of Steps 3-7, you can right-click `install.bat` and select **"Run as Administrator"**. It handles everything automatically.
 
 ---
 
@@ -66,21 +73,26 @@ Open Command Prompt, navigate to your folder, and run:
 pip install -r requirements.txt
 ```
 
-This installs `requests` (for API calls) and `holidays` (for country-specific holiday detection).
+This installs:
+- `requests` -- HTTP API calls
+- `holidays` -- country/state holiday detection (US, India, 100+ countries)
+- `pystray` -- system tray icon
+- `Pillow` -- image processing for tray icon
+- `winotify` -- Windows toast notifications
 
 ---
 
 ## Step 4: Generate API Tokens
 
-You need two tokens. Keep them safe — you'll enter them in the next step.
+You need two tokens. Keep them safe -- you'll enter them in the next step.
 
-### Jira API Token
+### Jira API Token (developers only)
 1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
 2. Click **"Create API token"**
 3. Give it a label like "Tempo Automation"
 4. Copy the token and save it somewhere
 
-### Tempo API Token
+### Tempo API Token (everyone)
 1. Go to https://app.tempo.io/
 2. Go to **Settings -> API Integration**
 3. Click **"New Token"**
@@ -98,37 +110,22 @@ python C:\tempo-automation\tempo_automation.py --setup
 ```
 
 The wizard will ask you:
-- **Email:** Your work email
-- **Full name:** Your name
-- **Role:** Choose `1` (Developer)
-- **Jira URL:** `lmsportal.atlassian.net`
-- **Tempo API token:** Paste the Tempo token from Step 4
-- **Jira API token:** Paste the Jira token from Step 4
-- **Jira account email:** Your Jira login email
-- **Daily hours:** `8` (or your standard work hours)
-- **Country code:** `US` or `IN` (for holiday detection)
-- **State/province:** Optional — for regional holidays (e.g., `KA` for Karnataka, `TX` for Texas)
-- **MS Teams webhook URL:** Optional — for shortfall notifications (see Step 5b)
-- **Email notifications:** `no` (unless you want email summaries)
 
-This creates a `config.json` file in the same folder. **Do not share this file** — it contains your API tokens.
+| Prompt | What to enter |
+|--------|--------------|
+| **Email** | Your work email |
+| **Full name** | Your name |
+| **Role** | Choose `1` (Developer), `2` (Product Owner), or `3` (Sales) |
+| **Jira URL** | Auto-configured: `lmsportal.atlassian.net` (not prompted) |
+| **Tempo API token** | Paste the Tempo token from Step 4 |
+| **Jira API token** | Paste the Jira token from Step 4 (developers only) |
+| **Jira account email** | Your Jira login email (developers only) |
+| **Daily hours** | `8` (or your standard work hours) |
+| **Country/city** | Select your country and city for holiday detection |
+| **Holidays URL** | Auto-configured (not prompted) |
+| **Email notifications** | `yes` or `no` (if yes, enter your email/app password) |
 
-### Step 5b: Set Up MS Teams Webhook (Optional)
-
-If you want to receive notifications in Teams when hours are short:
-
-1. Open Microsoft Teams
-2. Go to the channel where you want notifications (or create a personal channel)
-3. Click the **...** menu on the channel -> **Connectors** (or **Workflows**)
-4. Search for **"Incoming Webhook"**
-5. Click **Configure**, give it a name like "Tempo Automation"
-6. Copy the webhook URL
-7. Paste it when the setup wizard asks, or add it later to `config.json`:
-   ```json
-   "notifications": {
-       "teams_webhook_url": "https://outlook.office.com/webhook/..."
-   }
-   ```
+This creates a `config.json` file in the same folder. **Do not share this file** -- it contains your API tokens (encrypted with Windows DPAPI).
 
 ---
 
@@ -146,7 +143,7 @@ You should see output like:
 
 ```
 ============================================================
-TEMPO DAILY SYNC - 2026-02-17
+TEMPO DAILY SYNC - 2026-02-19 (started 2026-02-19 18:00:05)
 ============================================================
 
 Found 3 active ticket(s):
@@ -164,7 +161,7 @@ Found 3 active ticket(s):
     Description: Update API endpoint response format...
 
 ============================================================
-[OK] SYNC COMPLETE
+[OK] SYNC COMPLETE (18:00:12)
 ============================================================
 Total entries: 3
 Total hours: 8.00 / 8
@@ -183,55 +180,86 @@ Verify in Jira that the worklogs appear on your tickets.
 
 ## Step 7: Set Up Automatic Scheduling
 
-This makes the script run automatically so you never have to think about it.
+Choose **one** of these two options. The tray app is recommended for most users.
 
-### Find Your Python Path
+### Option A: System Tray App (Recommended)
 
-Open Command Prompt and run:
+The tray app sits in your system tray, shows a notification at your configured sync time, and lets you confirm before syncing. It auto-starts on Windows login.
 
+**Start the tray app:**
+```cmd
+pythonw C:\tempo-automation\tray_app.py
+```
+
+That's it. The tray app will:
+- Auto-register itself to start on every Windows login
+- Show a toast notification at 6:00 PM (configurable in `config.json`)
+- Let you sync, add PTO, view logs, and view your schedule from the tray menu
+- Warn you if you try to exit without logging hours
+
+**Tray icon colors:**
+- Green = idle, ready
+- Orange = time to log hours (notification pending)
+- Orange/red animated = sync in progress
+- Red = error (check logs)
+
+**Tray menu options:**
+- **Sync Now** -- run daily sync immediately (also activates on double-click)
+- **Add PTO** -- enter PTO dates via a dialog
+- **View Log** -- open the log file in Notepad
+- **View Schedule** -- show the month calendar
+- **Settings** -- open config.json for editing
+- **Exit** -- checks hours before closing, warns if not logged
+
+**Note:** The tray app auto-registers itself for auto-start on first run. You don't need to run `--register` manually.
+
+**Manual tray app commands:**
+```cmd
+python tray_app.py --register      # Manually register auto-start
+python tray_app.py --unregister    # Remove auto-start
+python tray_app.py --stop          # Stop a running tray app instance
+```
+
+### Option B: Windows Task Scheduler
+
+If you prefer a fully hands-off approach without a tray icon, use Task Scheduler.
+
+**Find your Python path:**
 ```cmd
 where python
 ```
+Pick the path like `C:\Users\YourName\AppData\Local\Programs\Python\...\python.exe` (NOT the WindowsApps one).
 
-Pick the path that looks like `C:\Users\YourName\AppData\Local\Programs\Python\...\python.exe` (NOT the WindowsApps one).
+**Update the batch files:**
+Open `run_daily.bat`, `run_weekly.bat`, and `run_monthly.bat` in a text editor. Replace the Python path and script folder path with YOUR paths.
 
-### Update the Batch Files
+**Create scheduled tasks** (open Command Prompt as Administrator):
 
-Open `run_daily.bat`, `run_monthly.bat`, and `run_weekly.bat` in a text editor (Notepad). Replace the Python path with YOUR path. Replace the script folder path with YOUR folder path.
-
-### Create Scheduled Tasks
-
-Open **Command Prompt as Administrator** and run:
-
-**Daily sync (weekdays only at 6 PM):**
+Daily sync (weekdays only at 6 PM):
 ```cmd
 schtasks /Create /TN "TempoAutomation-DailySync" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 18:00 /TR "C:\tempo-automation\run_daily.bat" /F
 ```
 
-**Weekly verification (Friday at 4 PM):**
+Weekly verification (Friday at 4 PM):
 ```cmd
 schtasks /Create /TN "TempoAutomation-WeeklyVerify" /SC WEEKLY /D FRI /ST 16:00 /TR "C:\tempo-automation\run_weekly.bat" /F
 ```
 
-**Monthly submission (last days of month at 11 PM):**
+Monthly submission (last days of month at 11 PM):
 ```cmd
 schtasks /Create /TN "TempoAutomation-MonthlySubmit" /SC MONTHLY /D 28,29,30,31 /ST 23:00 /TR "C:\tempo-automation\run_monthly.bat" /F
 ```
 
-Replace `C:\tempo-automation\` with whatever folder you used.
+Replace `C:\tempo-automation\` with your actual folder.
 
-### Verify
-
+**Verify:**
 ```cmd
 schtasks /Query /TN "TempoAutomation-DailySync"
 schtasks /Query /TN "TempoAutomation-WeeklyVerify"
 schtasks /Query /TN "TempoAutomation-MonthlySubmit"
 ```
 
-That's it! The script will:
-- Run Mon-Fri at 6:00 PM and log your time (skips holidays and PTO)
-- Run every Friday at 4:00 PM to verify the week's hours and backfill gaps
-- Run on the last day of each month at 11:00 PM to verify monthly hours and submit
+**Note:** Both options can coexist safely -- the sync is idempotent (re-running overwrites previous entries).
 
 ---
 
@@ -243,11 +271,13 @@ Before going on leave, add your PTO dates:
 
 ```cmd
 :: Add multiple PTO days at once
-python C:\tempo-automation\tempo_automation.py --add-pto 2026-03-10 2026-03-11 2026-03-12
+python C:\tempo-automation\tempo_automation.py --add-pto 2026-03-10,2026-03-11,2026-03-12
 
 :: Remove a PTO day (plans changed)
 python C:\tempo-automation\tempo_automation.py --remove-pto 2026-03-12
 ```
+
+Or use the tray app: right-click the tray icon -> **Add PTO**.
 
 ### Adding Extra Holidays (Org-Declared)
 
@@ -313,35 +343,43 @@ Summary:
 
 ---
 
-## Useful Commands
+## All Commands Reference
 
 ```cmd
 :: --- Core Operations ---
-python C:\tempo-automation\tempo_automation.py                        :: Daily sync (today)
-python C:\tempo-automation\tempo_automation.py --date 2026-02-15      :: Sync specific date
-python C:\tempo-automation\tempo_automation.py --verify-week           :: Weekly verification
-python C:\tempo-automation\tempo_automation.py --submit               :: Monthly submit
+python tempo_automation.py                        :: Daily sync (today)
+python tempo_automation.py --date 2026-02-15      :: Sync specific date
+python tempo_automation.py --verify-week           :: Verify & backfill this week
+python tempo_automation.py --submit               :: Monthly submit
+python tempo_automation.py --setup                :: Re-run setup wizard
 
 :: --- Schedule Management ---
-python C:\tempo-automation\tempo_automation.py --add-pto 2026-03-10 2026-03-11
-python C:\tempo-automation\tempo_automation.py --remove-pto 2026-03-10
-python C:\tempo-automation\tempo_automation.py --add-holiday 2026-04-14
-python C:\tempo-automation\tempo_automation.py --remove-holiday 2026-04-14
-python C:\tempo-automation\tempo_automation.py --add-workday 2026-11-08
-python C:\tempo-automation\tempo_automation.py --remove-workday 2026-11-08
-python C:\tempo-automation\tempo_automation.py --show-schedule 2026-03
-python C:\tempo-automation\tempo_automation.py --manage
+python tempo_automation.py --add-pto 2026-03-10,2026-03-11
+python tempo_automation.py --remove-pto 2026-03-10
+python tempo_automation.py --add-holiday 2026-04-14
+python tempo_automation.py --remove-holiday 2026-04-14
+python tempo_automation.py --add-workday 2026-11-08
+python tempo_automation.py --remove-workday 2026-11-08
+python tempo_automation.py --show-schedule 2026-03
+python tempo_automation.py --manage
+
+:: --- Logging ---
+python tempo_automation.py --logfile daily-timesheet.log   :: Dual output
 
 :: --- Maintenance ---
-python C:\tempo-automation\tempo_automation.py --setup                :: Re-run setup
-type C:\tempo-automation\daily-timesheet.log                         :: View logs
+type daily-timesheet.log                         :: View execution log
+type tempo_automation.log                        :: View runtime log
 
-:: --- Scheduler Management ---
-schtasks /Change /TN "TempoAutomation-DailySync" /ST 17:30           :: Change time
-schtasks /Run /TN "TempoAutomation-DailySync"                        :: Run now
-schtasks /Delete /TN "TempoAutomation-DailySync" /F                  :: Remove task
-schtasks /Delete /TN "TempoAutomation-WeeklyVerify" /F
-schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
+:: --- Task Scheduler Management ---
+schtasks /Change /TN "TempoAutomation-DailySync" /ST 17:30  :: Change time
+schtasks /Run /TN "TempoAutomation-DailySync"               :: Run now
+schtasks /Delete /TN "TempoAutomation-DailySync" /F         :: Remove task
+
+:: --- Tray App ---
+pythonw tray_app.py                :: Run tray app (no console)
+python tray_app.py --register      :: Register auto-start (auto on first run)
+python tray_app.py --unregister    :: Remove auto-start
+python tray_app.py --stop          :: Stop running tray app
 ```
 
 ---
@@ -349,14 +387,14 @@ schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
 ## How Holidays Work
 
 ### Automatic (No Setup Needed)
-- **Org holidays** are loaded from `org_holidays.json` (ships with the script, updated centrally)
-- **National/state holidays** are detected automatically based on your `country_code` setting
-- The script auto-fetches the latest org holiday list if a central URL is configured
+- **Org holidays** are loaded from `org_holidays.json` (ships with the script, auto-fetched from central URL)
+- **National/state holidays** are detected automatically based on your `country_code` and `state` settings
+- The script auto-fetches the latest org holiday list on every run (if a central URL is configured)
 
 ### What You Manage
-- **PTO days** — add before going on leave (`--add-pto`)
-- **Extra holidays** — when HR declares an ad-hoc holiday (`--add-holiday`)
-- **Compensatory working days** — when asked to work a weekend (`--add-workday`)
+- **PTO days** -- add before going on leave (`--add-pto`)
+- **Extra holidays** -- when HR declares an ad-hoc holiday (`--add-holiday`)
+- **Compensatory working days** -- when asked to work a weekend (`--add-workday`)
 
 ### Priority Rules
 When dates conflict, this priority order applies:
@@ -382,27 +420,40 @@ When dates conflict, this priority order applies:
 You don't have any tickets assigned to you with status **IN DEVELOPMENT** or **CODE REVIEW**. Check your Jira board.
 
 ### Script runs but logs wrong hours
-Re-run the script — it automatically deletes previous entries for that day and creates fresh ones.
+Re-run the script -- it automatically deletes previous entries for that day and creates fresh ones. Safe to re-run anytime.
 
 ### "401 Unauthorized" error
-Your API token is invalid or expired. Generate a new one and update `config.json`.
+Your API token is invalid or expired. Generate a new one and update `config.json`, or re-run `--setup`.
 
-### Script logged time on a weekend or holiday
-Run the script again for that date after the fix. The overwrite behavior will handle cleanup. Or delete the worklogs manually in Jira/Tempo.
+### Tray app icon not appearing after reboot
+Start it manually with `pythonw tray_app.py` -- it auto-registers for auto-start on first run. Or run `python tray_app.py --register` explicitly.
 
-### Scheduled task opens Python but does nothing
+### Scheduled task opens but does nothing
 Make sure the Python path in the batch files is correct. Run `where python` to check.
-
-### Teams notification not working
-- Verify the webhook URL is correct in `config.json`
-- Test by visiting the URL in a browser (should return an error page, not 404)
-- Check if the webhook connector is still active in Teams
 
 ### Need help?
 Contact your team lead or check the logs:
-- `daily-timesheet.log` — execution output
-- `tempo_automation.log` — detailed runtime logs
+- `daily-timesheet.log` -- execution output (what the script did)
+- `tempo_automation.log` -- detailed runtime logs (API calls, errors)
 
 ---
 
-**IMPORTANT: Never share your `config.json` file — it contains your personal API tokens.**
+## Uninstall
+
+To remove the automation completely:
+
+```cmd
+:: Remove tray app auto-start
+python tray_app.py --unregister
+
+:: Remove scheduled tasks (if using Task Scheduler)
+schtasks /Delete /TN "TempoAutomation-DailySync" /F
+schtasks /Delete /TN "TempoAutomation-WeeklyVerify" /F
+schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
+
+:: Then delete the installation folder
+```
+
+---
+
+**IMPORTANT: Never share your `config.json` file -- it contains your personal API tokens.**

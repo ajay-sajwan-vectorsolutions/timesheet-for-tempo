@@ -241,8 +241,8 @@ class ConfigManager:
         
         # Jira/Tempo configuration
         print("\n--- JIRA/TEMPO CONFIGURATION ---")
-        jira_url = input("Enter your Jira URL (e.g., yourcompany.atlassian.net): ").strip()
-        jira_url = jira_url.replace('https://', '').replace('http://', '')
+        jira_url = "lmsportal.atlassian.net"
+        print(f"Jira URL: {jira_url} (organization default)")
         
         print("\n[INFO] To get your Tempo API token:")
         print("   1. Go to https://app.tempo.io/")
@@ -270,12 +270,8 @@ class ConfigManager:
         country_code, state_code = self._select_location()
 
         # Organization holidays URL
-        print("\n--- ORGANIZATION HOLIDAYS ---")
-        print(
-            "Enter the URL for your org's central holiday file "
-            "(or Enter to skip):"
-        )
-        holidays_url = input("Holidays URL: ").strip()
+        holidays_url = "https://ajay-sajwan-vectorsolutions.github.io/local-assets/org_holidays.json"
+        print(f"\nOrg holidays URL: {holidays_url} (organization default)")
 
         # Teams webhook for notifications (disabled — pending Graph API)
         # print("\n--- MS TEAMS NOTIFICATIONS (OPTIONAL) ---")
@@ -2552,8 +2548,9 @@ Examples:
     try:
         # Run setup if requested
         if args.setup:
-            config_manager = ConfigManager()
-            config_manager.setup_wizard()
+            config_manager = ConfigManager.__new__(ConfigManager)
+            config_manager.config_path = CONFIG_FILE
+            config_manager.config = config_manager.setup_wizard()
             return
 
         # Schedule management commands that only need ScheduleManager
