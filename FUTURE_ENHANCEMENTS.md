@@ -108,14 +108,24 @@ Start with **Option A** (PyInstaller .exe) for immediate wins. Upgrade to **Opti
 - e.g., higher priority tickets get more hours
 - Could read from ticket priority field or custom config
 
-### Holiday/Leave Calendar
-- Skip logging on holidays and leave days
-- Integrate with company calendar or manual config
-- Avoid unnecessary API calls on non-work days
+### Holiday/Leave Calendar -- IN PROGRESS (see IMPLEMENTATION_PLAN_V3.md)
+- ~~Skip logging on holidays and leave days~~
+- ~~Integrate with company calendar or manual config~~
+- ~~Avoid unnecessary API calls on non-work days~~
+- **Status:** Being implemented as part of v3. Includes:
+  - Weekend guard (skip Sat/Sun)
+  - Org-level holidays (org_holidays.json with auto-fetch)
+  - `holidays` library for country/state holidays (US + India)
+  - PTO management (--add-pto, --remove-pto)
+  - Override system (extra_holidays, working_days for compensatory days)
+  - Schedule management CLI + interactive menu
+  - Weekly/monthly hours verification
+  - MS Teams webhook notifications for shortfalls
 
-### Backfill Mode
-- `--from 2026-02-01 --to 2026-02-10` to log multiple days at once
-- Useful for catching up after vacation
+### Backfill Mode -- PARTIALLY IN PROGRESS (see IMPLEMENTATION_PLAN_V3.md)
+- ~~`--from 2026-02-01 --to 2026-02-10` to log multiple days at once~~
+- ~~Useful for catching up after vacation~~
+- **Status:** `--verify-week` handles weekly backfill automatically. Date-range backfill deferred.
 
 ### Slack Notifications
 - Alternative to email notifications

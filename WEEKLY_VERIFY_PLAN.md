@@ -1,8 +1,8 @@
 # Plan: Weekly Verification/Backfill + Calendar Fallback
 
-**Status:** Approved — ready for implementation
+**Status:** SUPERSEDED by `IMPLEMENTATION_PLAN_V3.md` (February 17, 2026)
 **Created:** February 13, 2026
-**Scheduled for:** Next coding session
+**Note:** All features from this plan are included in the v3 plan, plus weekend/holiday guards, org holidays, PTO management, hours verification, MS Teams notifications, and schedule management CLI.
 
 ---
 

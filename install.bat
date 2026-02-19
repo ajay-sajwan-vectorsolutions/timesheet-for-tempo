@@ -7,6 +7,8 @@ REM 1. Check Python installation
 REM 2. Install dependencies
 REM 3. Run setup wizard
 REM 4. Schedule daily and monthly tasks
+REM 5. Optionally set up system tray app
+REM 6. Optionally run a test sync
 REM ============================================================================
 
 echo.
@@ -23,7 +25,7 @@ REM ============================================================================
 REM Check Python installation
 REM ============================================================================
 
-echo [1/5] Checking Python installation...
+echo [1/6] Checking Python installation...
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo.
@@ -46,7 +48,7 @@ REM ============================================================================
 REM Install dependencies
 REM ============================================================================
 
-echo [2/5] Installing Python dependencies...
+echo [2/6] Installing Python dependencies...
 python -m pip install --upgrade pip --quiet
 python -m pip install -r requirements.txt --quiet
 
@@ -64,7 +66,7 @@ REM ============================================================================
 REM Run setup wizard
 REM ============================================================================
 
-echo [3/5] Running setup wizard...
+echo [3/6] Running setup wizard...
 echo.
 python tempo_automation.py --setup
 
@@ -83,7 +85,7 @@ REM ============================================================================
 REM Create scheduled tasks
 REM ============================================================================
 
-echo [4/5] Setting up scheduled tasks...
+echo [4/6] Setting up scheduled tasks...
 echo.
 
 REM Get full path to Python and script
@@ -118,10 +120,38 @@ if %errorlevel% equ 0 (
 echo.
 
 REM ============================================================================
+REM Tray App Setup (optional)
+REM ============================================================================
+
+echo [5/6] System Tray App (optional)
+echo.
+echo The tray app shows a notification at your configured sync time
+echo and lives in your system tray for quick access.
+echo.
+set /p TRAY_SETUP="Set up tray app? (y/n): "
+
+if /i "%TRAY_SETUP%"=="y" (
+    echo.
+    echo Installing tray app dependencies...
+    python -m pip install pystray Pillow --quiet
+    echo Registering auto-start on login...
+    for %%i in (python.exe) do set PYTHONW_PATH=%%~dp$PATH:ipythonw.exe
+    "%PYTHON_PATH%" "%SCRIPT_DIR%tray_app.py" --register
+    echo Starting tray app...
+    start "" "%PYTHONW_PATH%" "%SCRIPT_DIR%tray_app.py"
+    echo [OK] Tray app is running
+    echo.
+    echo NOTE: If using the tray app only, you can disable the Task Scheduler daily task:
+    echo   schtasks /Change /TN "TempoAutomation-DailySync" /DISABLE
+)
+
+echo.
+
+REM ============================================================================
 REM Test run
 REM ============================================================================
 
-echo [5/5] Running test...
+echo [6/6] Running test...
 echo.
 echo Would you like to test the automation now? (This will sync today's timesheet)
 set /p TEST_RUN="Run test? (y/n): "
@@ -144,7 +174,7 @@ echo ✓ INSTALLATION COMPLETE!
 echo ============================================================
 echo.
 echo Your automation is now set up and will run automatically:
-echo   - Daily: 6:00 PM (sync timesheets)
+echo   - Daily: 6:00 PM (sync timesheets via dialog or tray app)
 echo   - Monthly: 11:00 PM on last day (submit for approval)
 echo.
 echo Configuration file: %SCRIPT_DIR%config.json
@@ -154,12 +184,17 @@ echo You can manually run the script anytime:
 echo   python tempo_automation.py          (sync today)
 echo   python tempo_automation.py --submit (submit timesheet)
 echo.
+echo Tray app commands:
+echo   python tray_app.py --register       (auto-start on login)
+echo   python tray_app.py --unregister     (remove auto-start)
+echo.
 echo To view scheduled tasks:
 echo   Open Task Scheduler and look for "TempoAutomation-*"
 echo.
 echo To uninstall:
 echo   Run: schtasks /Delete /TN "TempoAutomation-DailySync" /F
 echo   Run: schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
+echo   Run: python tray_app.py --unregister
 echo.
 echo ============================================================
 echo.

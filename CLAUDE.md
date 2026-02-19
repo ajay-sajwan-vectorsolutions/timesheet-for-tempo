@@ -1,9 +1,9 @@
 # Tempo Timesheet Automation - Claude Context File
 
 **Project:** Tempo Timesheet Automation
-**Version:** 2.0
+**Version:** 3.1 (v3.1 tray app + smart exit + company icon)
 **Status:** Production — Active Daily Use
-**Last Updated:** February 13, 2026
+**Last Updated:** February 18, 2026
 **Active User:** Ajay Sajwan (ajay.sajwan-ctr@vectorsolutions.com, developer role)
 
 ---
@@ -47,6 +47,10 @@ Local Python script that:
 - Pre-fills timesheets from configuration (POs/Sales)
 - Tempo auto-syncs from Jira worklogs (no direct Tempo writes for developers)
 - Auto-submits monthly timesheets
+- Skips weekends, holidays (org + national), and PTO automatically
+- Weekly verification catches missed days and backfills
+- Monthly hours verification before submission
+- MS Teams/email notifications for hour shortfalls
 - Runs via OS-level scheduling (Task Scheduler/cron)
 - Zero hosting costs, zero organizational friction
 
@@ -69,17 +73,24 @@ Format: `accountId:uuid` (retrieved from Tempo API)
 ### Project Structure
 ```
 tempo-automation/ (D:\working\AI-Tempo-automation\v2\)
-├── tempo_automation.py          # Main script (1,137 lines)
+├── tempo_automation.py          # Main script (2,404 lines, v3 implemented)
+├── tray_app.py                  # System tray app (~530 lines, pystray + company favicon icon)
+├── confirm_and_run.py           # OK/Cancel dialog wrapper for Task Scheduler (~47 lines)
+├── org_holidays.json            # Org-wide holiday definitions (US + IN, auto-fetched)
 ├── config.json                  # User configuration (Ajay's live config)
 ├── config_template.json         # Configuration template
-├── requirements.txt             # Python dependencies (requests>=2.31.0)
-├── install.bat                  # Windows installer
+├── IMPLEMENTATION_PLAN_V4.md    # v4 implementation plan (tray app, smart exit, icon)
+├── requirements.txt             # Python dependencies (requests, holidays, pystray, Pillow)
+├── install.bat                  # Windows installer (includes optional tray app setup)
 ├── install.sh                   # Mac/Linux installer
-├── run_daily.bat                # Windows scheduled task wrapper (daily sync)
+├── run_daily.bat                # Windows scheduled task wrapper (shows OK/Cancel dialog)
 ├── run_monthly.bat              # Windows scheduled task wrapper (monthly submit)
+├── run_weekly.bat               # Windows scheduled task wrapper (weekly verify, Fridays)
 ├── tempo_automation.log         # Internal runtime logs (via logging module)
 ├── daily-timesheet.log          # External execution log (appended by bat files + --logfile)
 ├── CLAUDE.md                    # Claude context file (this file)
+├── IMPLEMENTATION_PLAN_V3.md    # v3 implementation plan (schedule mgmt, holidays, verification)
+├── WEEKLY_VERIFY_PLAN.md        # SUPERSEDED by IMPLEMENTATION_PLAN_V3.md
 ├── FUTURE_ENHANCEMENTS.md       # Planned enhancements (exe packaging, Mac support, etc.)
 ├── SETUP_GUIDE.md               # Step-by-step installation guide
 ├── README.md                    # User documentation
@@ -98,54 +109,69 @@ tempo-automation/ (D:\working\AI-Tempo-automation\v2\)
 
 ## CODE ARCHITECTURE
 
-### Main Components (tempo_automation.py — 1,137 lines)
+### Main Components (tempo_automation.py — 2,404 lines)
 
 **1. DualWriter (Lines 42-60)**
 - Wraps stdout to write to both console and an external log file simultaneously
 - Activated via `--logfile` CLI argument
 - Ensures output is visible in terminal AND appended to `daily-timesheet.log`
 
-**2. ConfigManager (Lines 86-277)**
+**2. ConfigManager (Lines 86-349)**
 - Interactive setup wizard (`setup_wizard()` at Line 108)
 - Configuration loading/saving
 - Credential management
-- Role selection (developer/product_owner/sales) at Line 224
-- Account ID retrieval from Tempo API (`get_account_id()` at Line 252)
+- Role selection (`_select_role()` at Line 259)
+- Location picker (`_select_location()` at Line 277) — US, India/Pune/Hyd/Gandhinagar
+- Account ID retrieval from Tempo API (`get_account_id()` at Line 317)
 
-**3. JiraClient (Lines 283-535)**
+**3. ScheduleManager (Lines 351-970)** — NEW in v3
+- Holiday loading: org_holidays.json (auto-fetch from URL) + `holidays` library
+- Day classification with priority: working_days > pto > weekend > org_holidays > country_holidays > extra_holidays
+- `is_working_day()` (Line 486) — returns (bool, reason) tuple
+- Calendar display (`print_month_calendar()` at Line 632)
+- PTO/holiday/working-day CRUD (`add_pto`, `remove_pto`, etc.)
+- Interactive menu (`interactive_menu()` at Line 874)
+- Year-end warning for missing next-year holidays (`check_year_end_warning()` at Line 560)
+
+**4. JiraClient (Lines 975-1282)**
 - Jira REST API v3 integration
-- `get_my_worklogs()` (Line 295) — fetches worklogs for date range with worklog_id for deletion
-- `delete_worklog()` (Line 355) — deletes worklogs by ID (for overwrite-on-rerun)
-- `get_my_active_issues()` (Line 378) — queries via JQL: status IN ("IN DEVELOPMENT", "CODE REVIEW")
-- `get_issue_details()` (Line 414) — fetches description + comments for smart descriptions
-- `_extract_adf_text()` (Line 457, static) — extracts plain text from ADF JSON
-- `create_worklog()` (Line 481) — creates worklogs on Jira issues (multi-line ADF comment format)
+- `get_my_worklogs()` (Line 987) — fetches worklogs for date range with worklog_id for deletion
+- `delete_worklog()` (Line 1047) — deletes worklogs by ID (for overwrite-on-rerun)
+- `get_my_active_issues()` (Line 1070) — queries via JQL: status IN ("IN DEVELOPMENT", "CODE REVIEW")
+- `get_issues_in_status_on_date()` (Line 1106) — historical JQL with `status WAS` for backfill
+- `get_issue_details()` (Line 1157) — fetches description + comments for smart descriptions
+- `_extract_adf_text()` (Line 1200, static) — extracts plain text from ADF JSON
+- `create_worklog()` (Line 1224) — creates worklogs on Jira issues (multi-line ADF comment format)
 - Basic auth (email + API token)
 
-**4. TempoClient (Lines 541-689)**
+**5. TempoClient (Lines 1284-1436)**
 - Tempo API v4 integration
-- `get_user_worklogs()` (Line 554) — legacy, not used in v2 developer flow
-- `create_worklog()` (Line 583) — used by manual activities and legacy sync only
-- `submit_timesheet()` (Line 619) — submits timesheet for approval
-- `_get_current_period()` (Line 655) — fetches period from API with YYYY-MM fallback
+- `get_user_worklogs()` (Line 1297) — legacy, not used in v2 developer flow
+- `create_worklog()` (Line 1326) — used by manual activities and legacy sync only
+- `submit_timesheet()` (Line 1362) — submits timesheet for approval
+- `_get_current_period()` (Line 1398) — fetches period from API with YYYY-MM fallback
 - Bearer token authentication
 
-**5. NotificationManager (Lines 695-791)**
-- `send_daily_summary()` (Line 702) — HTML email with daily summary table
-- `send_submission_confirmation()` (Line 740) — confirmation email after monthly submit
-- `_send_email()` (Line 765) — SMTP connection and send (TLS on port 587)
+**6. NotificationManager (Lines 1438-1605)**
+- `send_daily_summary()` (Line 1445) — HTML email with daily summary table
+- `send_submission_confirmation()` (Line 1483) — confirmation email after monthly submit
+- `_send_email()` (Line 1508) — SMTP connection and send (TLS on port 587)
+- `send_teams_notification()` (Line 1535) — MS Teams webhook with Adaptive Card format
 
-**6. TempoAutomation (Lines 797-1074)**
+**7. TempoAutomation (Lines 1607-2228)**
 - Main orchestration engine
-- `sync_daily()` (Line 811) — main daily sync entry point, branches by role
-- `_sync_jira_worklogs()` (Line 856) — legacy Jira-to-Tempo sync (kept but NOT called by default)
-- `_auto_log_jira_worklogs()` (Line 890) — **PRIMARY DEVELOPER METHOD**: delete old + create new in Jira
-- `_generate_work_summary()` (Line 956) — builds 1-3 line description from ticket content
-- `_sync_manual_activities()` (Line 1002) — PO/Sales manual activity sync via Tempo API
-- `submit_timesheet()` (Line 1045) — monthly submission with last-day-of-month guard
+- `sync_daily()` (Line 1625) — main daily sync with schedule guard
+- `_auto_log_jira_worklogs()` (Line 1716) — **PRIMARY DEVELOPER METHOD**: delete old + create new in Jira
+- `_generate_work_summary()` (Line 1782) — builds 1-3 line description from ticket content
+- `_sync_manual_activities()` (Line 1828) — PO/Sales manual activity sync via Tempo API
+- `submit_timesheet()` (Line 1871) — monthly submission with hours verification
+- `verify_week()` (Line 1951) — weekly gap detection + backfill (Mon-Fri)
+- `_check_day_hours()` (Line 2098) — check if a day has sufficient hours
+- `_backfill_day()` (Line 2125) — backfill using historical JQL stories
+- `_send_shortfall_notification()` (Line 2200) — Teams + email shortfall alert
 
-**7. CLI Interface (Lines 1082-1137)**
-- Command-line argument parsing (--submit, --date, --setup, --logfile)
+**8. CLI Interface (Lines 2233-2404)**
+- All CLI arguments: --submit, --date, --setup, --logfile, --verify-week, --show-schedule, --manage, --add-pto, --remove-pto, --add-holiday, --remove-holiday, --add-workday, --remove-workday
 - Entry point (main function)
 - Error handling
 - UTF-8 stdout/stderr encoding for Windows compatibility
@@ -254,15 +280,23 @@ GET /issue/{issueKey}?fields=summary,description,comment
     "api_token": "tempo_api_token"
   },
   "organization": {
-    "default_issue_key": "ADMIN-001"  // For non-Jira users
+    "default_issue_key": "ADMIN-001",
+    "holidays_url": ""
   },
   "schedule": {
     "daily_hours": 8,
     "daily_sync_time": "18:00",
-    "monthly_submit_day": "last"
+    "monthly_submit_day": "last",
+    "country_code": "US",
+    "state": "",
+    "pto_days": [],
+    "extra_holidays": [],
+    "working_days": []
   },
   "notifications": {
     "email_enabled": true,
+    "teams_webhook_url": "",
+    "notify_on_shortfall": true,
     "smtp_server": "smtp.gmail.com",
     "smtp_port": 587,
     "smtp_user": "user@gmail.com",
@@ -280,6 +314,23 @@ GET /issue/{issueKey}?fields=summary,description,comment
   }
 }
 ```
+
+### New config fields (v3):
+- `organization.holidays_url` — GitHub raw URL to central org_holidays.json for auto-fetch
+- `schedule.country_code` — Country for holiday detection (US, IN, etc.)
+- `schedule.state` — State code for regional holidays (MH=Pune, TG=Hyderabad, GJ=Gandhinagar)
+- `schedule.pto_days` — List of PTO dates ["2026-03-10", "2026-03-11"]
+- `schedule.extra_holidays` — Org-declared ad-hoc holidays ["2026-04-14"]
+- `schedule.working_days` — Compensatory working days that override weekends/holidays ["2026-11-08"]
+- `notifications.teams_webhook_url` — MS Teams incoming webhook URL
+- `notifications.notify_on_shortfall` — Send notification when hours are short
+
+### Org Holidays Structure (v3):
+- `org_holidays.json` hosted on GitHub public repo, auto-fetched by script
+- Structure: country > year > common (all employees) + state-specific (MH, TG, GJ)
+- `locations` map in file drives city picker in setup wizard
+- Employee gets: common + their state holidays (merged)
+- Adding new office: admin adds city to locations + state holidays, bumps version
 
 ---
 
@@ -518,20 +569,42 @@ logger.error(f"API response: {response.text}")
 # - Full config file
 ```
 
+### Timestamp Format in Output
+All major operation headers include timestamps for traceability:
+- **Daily sync start:** `TEMPO DAILY SYNC - 2026-02-18 (started 2026-02-18 18:00:05)`
+- **Daily sync complete:** `[OK] SYNC COMPLETE (18:00:12)` (time only, for quick duration check)
+- **Weekly verify:** `TEMPO WEEKLY VERIFICATION (started 2026-02-18 16:00:03)`
+- **Monthly submit:** `TEMPO MONTHLY TIMESHEET SUBMISSION (2026-02-18 23:00:01)`
+- Internal `tempo_automation.log` uses `%(asctime)s` format via the logging module
+
 ---
 
 ## ENHANCEMENT OPPORTUNITIES
 
 See `FUTURE_ENHANCEMENTS.md` for detailed analysis of each option.
+See `IMPLEMENTATION_PLAN_V3.md` for the current implementation plan.
 
-### Priority 0 — In Progress (Next Implementation)
-- [ ] **Weekly verification & backfill** (`--verify-week`) — see `WEEKLY_VERIFY_PLAN.md` for full plan
-- [ ] **Calendar integration fallback** — Microsoft Outlook via Graph API for days with no stories
+### Priority 0 — In Progress (v3 Implementation)
+- [ ] **Weekend guard** — skip Sat/Sun in sync_daily() + weekday-only Task Scheduler
+- [ ] **Org holidays** — org_holidays.json with auto-fetch from central URL (US + IN)
+- [ ] **Country holidays** — `holidays` library for national/state holiday detection
+- [ ] **PTO management** — --add-pto, --remove-pto CLI commands
+- [ ] **Override system** — extra_holidays, working_days (compensatory days)
+- [ ] **Schedule management** — --manage interactive menu, --show-schedule calendar view
+- [ ] **Weekly verification & backfill** — --verify-week, runs Friday 4 PM
+- [ ] **Monthly hours verification** — check before submission
+- [ ] **MS Teams webhook notifications** — shortfall alerts
+- [ ] **Historical JQL** — status WAS "X" ON "date" for weekly backfill
+- [ ] **Year-end handling** — cross-year week boundaries, December warning for missing next year data
+- [ ] **Annual org holiday refresh** — auto-fetch from central URL on every run
+
+### Priority 0.5 — Deferred to Phase 2
+- [ ] **Calendar integration fallback** — Microsoft Outlook via Graph API (requires Azure AD setup)
 - [ ] **OVERHEAD-329 fallback** — log remaining hours when meetings < 8h
 
 ### Priority 1 — Packaging & Distribution (High Value)
 - [ ] **PyInstaller .exe** — bundle into single executable, no Python install needed (~30 min)
-- [ ] **System tray app** — .exe with built-in scheduler, auto-starts with Windows (~1-2 days)
+- [x] **System tray app** — tray_app.py with built-in scheduler, auto-starts with Windows (DONE v3.1)
 - [ ] Retry logic with exponential backoff for API calls
 - [ ] Validate API tokens on startup
 - [ ] Add --dry-run flag for testing
@@ -539,7 +612,6 @@ See `FUTURE_ENHANCEMENTS.md` for detailed analysis of each option.
 ### Priority 2 — Cross-Platform & Features (Medium Value)
 - [ ] **Mac/Linux support** — shell scripts + cron jobs (Python code already cross-platform)
 - [ ] Weighted time distribution (priority-based instead of equal split)
-- [ ] Holiday/leave calendar integration
 - [ ] Slack notifications (webhook-based, simpler than SMTP)
 
 ### Priority 3 — Nice to Have
@@ -551,23 +623,17 @@ See `FUTURE_ENHANCEMENTS.md` for detailed analysis of each option.
 
 ---
 
-## CURRENT STATUS (as of February 13, 2026)
+## CURRENT STATUS (as of February 18, 2026)
 
 ### Active Production Use
 - **User:** Ajay Sajwan (developer role, Frontend Team Lead)
-- **Config:** Fully configured with live Jira + Tempo API tokens
+- **Config:** Fully configured with live Jira + Tempo API tokens, US holidays, org holiday URL
 - **Email notifications:** Disabled (Ajay's preference)
+- **Teams notifications:** Not yet configured (webhook URL needed)
 - **Scheduling:** Windows Task Scheduler configured:
-  - `TempoAutomation-DailySync` — daily at 6:00 PM
+  - `TempoAutomation-DailySync` — daily at 6:00 PM (needs update to weekday-only)
   - `TempoAutomation-MonthlySubmit` — days 28-31 at 11:00 PM
-
-### Last Successful Run (Feb 13, 2026 at 14:00)
-- 4 active Jira tickets found: TS-36389, TS-36344, TS-36320, TS-36308
-- 4 previous worklogs deleted (overwrite behavior)
-- 8.0 hours distributed evenly (2.00h per ticket)
-- Smart worklog descriptions generated from ticket content
-- All 4 new worklogs created successfully in Jira
-- Tempo auto-synced from Jira
+  - `TempoAutomation-WeeklyVerify` — TODO: create Friday 4:00 PM task with run_weekly.bat
 
 ### What's Working
 - [x] Daily auto-sync via scheduled task
@@ -578,11 +644,34 @@ See `FUTURE_ENHANCEMENTS.md` for detailed analysis of each option.
 - [x] Dual logging (console + file)
 - [x] ASCII-only output (Windows cp1252 safe)
 - [x] Monthly submission guard (last day only)
+- [x] Weekend guard (skip Sat/Sun in sync_daily)
+- [x] Org-level holidays (org_holidays.json + auto-fetch from GitHub URL)
+- [x] Country/state holidays (holidays library, US + IN with state support)
+- [x] PTO management (--add-pto, --remove-pto)
+- [x] Override system (extra_holidays, working_days for compensatory days)
+- [x] Schedule management (--manage interactive menu, --show-schedule calendar)
+- [x] Weekly verification & backfill (--verify-week with historical JQL)
+- [x] Monthly hours verification (before submit)
+- [x] MS Teams webhook notifications (Adaptive Card format)
+- [x] Historical JQL for past-date backfill (status WAS)
+- [x] Year-end holiday warning (December check for next year data)
+- [x] Setup wizard with country/city picker
+- [x] System tray app with company favicon icon and animated sync indicator
+- [x] Tray menu: Sync Now, Add PTO, View Log, View Schedule, Settings, Exit
+- [x] Smart exit: hours check, confirmation dialog, one-time scheduled restart
+- [x] PTO management from tray (VBScript InputBox, weekend/format validation)
+- [x] OK/Cancel confirmation dialog for Task Scheduler (confirm_and_run.py)
+- [x] pythonw.exe compatibility (sys.stdout=None fix)
+- [x] Sync output captured to daily-timesheet.log from tray app
+- [x] Timestamps in all operation headers (daily sync, weekly verify, monthly submit)
 
 ### Not Yet Tested / Deployed
+- [ ] Weekly verify with live data (--verify-week)
 - [ ] Monthly submission (waiting for end of month)
 - [ ] Product Owner / Sales roles (only developer tested)
 - [ ] Email notifications (disabled in current config)
+- [ ] Teams notifications (no webhook URL configured yet)
+- [ ] Weekly Task Scheduler job (run_weekly.bat created, task not registered)
 - [ ] Multi-user pilot (only Ajay using it)
 - [ ] Mac/Linux deployment
 - [ ] PyInstaller .exe packaging
@@ -592,6 +681,8 @@ See `FUTURE_ENHANCEMENTS.md` for detailed analysis of each option.
 - **v2.0 (Feb 3, 2026):** All 3 TODOs fixed, Jira URL updated to lmsportal, error handling improved
 - **v2.0+ (Feb 12, 2026):** Unicode fix (ASCII-only output), DualWriter for --logfile, bat wrappers added
 - **v2.0+ (Feb 13, 2026):** Active daily use, confirmed working with real Jira/Tempo data
+- **v3.0 (Feb 17, 2026):** Schedule management: ScheduleManager class, holiday detection (org + country/state), PTO/override system, weekly verification & backfill, monthly hours check, Teams webhook, calendar display, 12 new CLI commands
+- **v3.1 (Feb 18, 2026):** System tray app (tray_app.py) with company favicon icon, animated sync indicator (orange<->red 700ms), smart exit (hours check + restart scheduling), Add PTO from tray menu, OK/Cancel Task Scheduler dialog (confirm_and_run.py), pystray/Pillow deps, install.bat tray setup step, pythonw.exe compatibility fixes, timestamps in all operation log headers
 
 ---
 
@@ -829,23 +920,38 @@ send_submission_confirmation()
 ### Scheduled Tasks
 | Task Name | Schedule | Wrapper | What it does |
 |-----------|----------|---------|-------------|
-| TempoAutomation-DailySync | Daily at 6:00 PM | `run_daily.bat` | Logs time across active tickets |
-| TempoAutomation-MonthlySubmit | Days 28-31 at 11:00 PM | `run_monthly.bat` | Submits timesheet (only on actual last day) |
+| TempoAutomation-DailySync | Mon-Fri at 6:00 PM | `run_daily.bat` | Shows OK/Cancel dialog, then logs time (skips holidays/PTO) |
+| TempoAutomation-WeeklyVerify | Fridays at 4:00 PM | `run_weekly.bat` | Verifies week's hours, backfills gaps, sends shortfall notification |
+| TempoAutomation-MonthlySubmit | Days 28-31 at 11:00 PM | `run_monthly.bat` | Verifies month's hours, submits timesheet (only on actual last day) |
 
 ### Wrapper Batch Files
-- `run_daily.bat` / `run_monthly.bat` call Python with `--logfile` flag
-- Output goes to both console AND `daily-timesheet.log`
-- No `pause` — window auto-closes after completion
-- Bat file appends run timestamp header to log before each execution
+- `run_daily.bat` calls `pythonw.exe confirm_and_run.py` (OK/Cancel dialog, no console)
+- `run_monthly.bat` calls Python with `--logfile` flag (console + log)
+- `run_weekly.bat` calls Python with `--verify-week` + `--logfile` flag
+- Bat files append run timestamp header to log before each execution
+
+### System Tray App (Alternative to Task Scheduler)
+- `tray_app.py` runs as a persistent tray icon (company favicon on colored rounded-rect)
+- Icon from `d:\Vector\logo\favicon.ico` on colored background: green=idle, orange=pending, red=error
+- Animated orange<->red background (700ms) during sync
+- Menu: Sync Now, Add PTO, View Log, View Schedule, Settings, Exit
+- Add PTO via VBScript InputBox dialog (validates format, rejects weekends)
+- Smart exit: checks Jira hours before closing, warns if not logged, offers restart
+- Notifies at configured `daily_sync_time` (default 18:00) via toast
+- Auto-start on login via `--register` (HKCU registry, no admin)
+- Single-instance via Win32 mutex
+- Both approaches coexist safely (sync is idempotent)
 
 ### Management Commands
 ```cmd
 :: Create tasks (run as Administrator, use full python path)
-schtasks /Create /TN "TempoAutomation-DailySync" /SC DAILY /ST 18:00 /TR "D:\working\AI-Tempo-automation\v2\run_daily.bat" /F
+schtasks /Create /TN "TempoAutomation-DailySync" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 18:00 /TR "D:\working\AI-Tempo-automation\v2\run_daily.bat" /F
+schtasks /Create /TN "TempoAutomation-WeeklyVerify" /SC WEEKLY /D FRI /ST 16:00 /TR "D:\working\AI-Tempo-automation\v2\run_weekly.bat" /F
 schtasks /Create /TN "TempoAutomation-MonthlySubmit" /SC MONTHLY /D 28,29,30,31 /ST 23:00 /TR "D:\working\AI-Tempo-automation\v2\run_monthly.bat" /F
 
 :: Check tasks
 schtasks /Query /TN "TempoAutomation-DailySync"
+schtasks /Query /TN "TempoAutomation-WeeklyVerify"
 schtasks /Query /TN "TempoAutomation-MonthlySubmit"
 
 :: Change time (will prompt for Windows password)
@@ -870,38 +976,38 @@ schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
 ## QUICK REFERENCE COMMANDS
 
 ```bash
-# Setup (first time)
-python tempo_automation.py --setup
+# --- Core Operations ---
+python tempo_automation.py                        # Daily sync (today)
+python tempo_automation.py --date 2026-02-15      # Sync specific date
+python tempo_automation.py --verify-week           # Weekly verify & backfill
+python tempo_automation.py --submit               # Monthly submit (with hours check)
+python tempo_automation.py --setup                 # Initial setup wizard
 
-# Daily sync
-python tempo_automation.py
+# --- Schedule Management ---
+python tempo_automation.py --add-pto 2026-03-10,2026-03-11,2026-03-12
+python tempo_automation.py --remove-pto 2026-03-10
+python tempo_automation.py --add-holiday 2026-04-14
+python tempo_automation.py --remove-holiday 2026-04-14
+python tempo_automation.py --add-workday 2026-11-08
+python tempo_automation.py --remove-workday 2026-11-08
+python tempo_automation.py --show-schedule          # Current month
+python tempo_automation.py --show-schedule 2026-03  # Specific month
+python tempo_automation.py --manage                 # Interactive menu
 
-# Sync specific date
-python tempo_automation.py --date 2026-02-15
+# --- Logging & Debugging ---
+python tempo_automation.py --logfile daily-timesheet.log  # Dual output
+type daily-timesheet.log           # Windows: view execution log
+type tempo_automation.log          # Windows: view runtime log
+findstr ERROR daily-timesheet.log  # Windows: search for errors
 
-# Sync with dual output (console + log file)
-python tempo_automation.py --logfile daily-timesheet.log
+# --- System Tray App ---
+pythonw tray_app.py                # Run tray app (no console window)
+python tray_app.py --register      # Auto-start on Windows login
+python tray_app.py --unregister    # Remove auto-start
 
-# Submit monthly timesheet (only works on last day of month)
-python tempo_automation.py --submit
-
-# View execution log
-type daily-timesheet.log           # Windows
-cat daily-timesheet.log            # Mac/Linux
-
-# View internal runtime log
-type tempo_automation.log          # Windows
-cat tempo_automation.log           # Mac/Linux
-
-# Search logs for errors
-findstr ERROR daily-timesheet.log  # Windows
-grep ERROR daily-timesheet.log     # Mac/Linux
-
-# Check Python version
-python --version
-
-# Install dependencies
-pip install -r requirements.txt
+# --- Setup & Maintenance ---
+python --version                   # Check Python version
+pip install -r requirements.txt    # Install dependencies
 ```
 
 ---
@@ -941,4 +1047,4 @@ pip install -r requirements.txt
 - Answering questions about the project
 - Onboarding new team members
 
-*Last updated: February 13, 2026*
+*Last updated: February 18, 2026*
