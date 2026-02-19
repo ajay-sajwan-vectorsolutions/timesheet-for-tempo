@@ -59,6 +59,24 @@
     }
   ],
 
+  "overhead": {
+    "_comment": "Configured via --select-overhead. Do not edit manually.",
+    "current_pi": {
+      "pi_identifier": "",
+      "pi_end_date": "",
+      "stories": [],
+      "distribution": "equal"
+    },
+    "pto_story_key": "",
+    "planning_pi": {
+      "pi_identifier": "",
+      "stories": [],
+      "distribution": "equal"
+    },
+    "fallback_issue_key": "",
+    "project_prefix": "OVERHEAD-"
+  },
+
   "options": {
     "auto_submit": true,
     "require_confirmation": false,
