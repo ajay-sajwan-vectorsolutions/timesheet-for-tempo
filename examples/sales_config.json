@@ -1,0 +1,73 @@
+{
+  "_comment": "Example Configuration for SALES TEAM",
+  "_comment2": "Sales team uses manual activity configuration",
+
+  "user": {
+    "email": "bob.sales@company.com",
+    "name": "Bob Sales",
+    "role": "sales"
+  },
+
+  "jira": {
+    "url": "lmsportal.atlassian.net",
+    "email": "",
+    "api_token": ""
+  },
+
+  "tempo": {
+    "api_token": "p0o9i8u7y6t5..."
+  },
+
+  "organization": {
+    "default_issue_key": "ADMIN-001",
+    "holidays_url": "https://ajay-sajwan-vectorsolutions.github.io/local-assets/org_holidays.json"
+  },
+
+  "schedule": {
+    "daily_hours": 8,
+    "daily_sync_time": "18:00",
+    "monthly_submit_day": "last",
+    "country_code": "IN",
+    "state": "TG",
+    "pto_days": [],
+    "extra_holidays": [],
+    "working_days": []
+  },
+
+  "notifications": {
+    "email_enabled": true,
+    "smtp_server": "smtp.office365.com",
+    "smtp_port": 587,
+    "smtp_user": "bob.sales@company.com",
+    "smtp_password": "ghij klmn opqr stuv",
+    "notification_email": "bob.sales@company.com",
+    "teams_webhook_url": "",
+    "notify_on_shortfall": true
+  },
+
+  "manual_activities": [
+    {
+      "_comment": "Typical daily activities for Sales Team",
+      "activity": "Client Calls & Meetings",
+      "hours": 4
+    },
+    {
+      "activity": "Proposal Writing",
+      "hours": 2
+    },
+    {
+      "activity": "Product Demos",
+      "hours": 1.5
+    },
+    {
+      "activity": "Admin & CRM Updates",
+      "hours": 0.5
+    }
+  ],
+
+  "options": {
+    "auto_submit": true,
+    "require_confirmation": false,
+    "sync_on_startup": false
+  }
+}

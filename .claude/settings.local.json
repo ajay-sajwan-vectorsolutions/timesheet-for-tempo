@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:developer.atlassian.com)",
+      "WebSearch",
+      "Bash(\"C:\\\\Users\\\\asajwan.DESKTOP-TN8HNF1\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python314\\\\python.exe\" -c \"import holidays; print\\(f''holidays version: {holidays.__version__}''\\); us = holidays.country_holidays\\(''US''\\); from datetime import date; d = date\\(2026, 2, 16\\); print\\(f''{d} is a holiday: {d in us}''\\); print\\(f''Name: {us.get\\(d\\)}''\\); ind_mh = holidays.country_holidays\\(''IN'', state=''MH''\\); d2 = date\\(2026, 1, 26\\); print\\(f''{d2} IN holiday: {d2 in ind_mh}, Name: {ind_mh.get\\(d2\\)}''\\)\")",
+      "Bash(\"C:\\\\Users\\\\asajwan.DESKTOP-TN8HNF1\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python314\\\\python.exe\" -c \"import py_compile; py_compile.compile\\(''D:/working/AI-Tempo-automation/v2/tempo_automation.py'', doraise=True\\); print\\(''[OK] Syntax check passed''\\)\")",
+      "Bash(\"C:\\\\Users\\\\asajwan.DESKTOP-TN8HNF1\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python314\\\\python.exe\" \"D:/working/AI-Tempo-automation/v2/tempo_automation.py\" --show-schedule)",
+      "Bash(\"C:\\\\Users\\\\asajwan.DESKTOP-TN8HNF1\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python314\\\\python.exe\" \"D:/working/AI-Tempo-automation/v2/tempo_automation.py\" --help)",
+      "Bash(\"C:\\\\Users\\\\asajwan.DESKTOP-TN8HNF1\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python314\\\\python.exe\" \"D:/working/AI-Tempo-automation/v2/tempo_automation.py\" --add-pto 2026-03-10,2026-03-11)",
+      "Bash(\"C:\\\\Users\\\\asajwan.DESKTOP-TN8HNF1\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python314\\\\python.exe\" \"D:/working/AI-Tempo-automation/v2/tempo_automation.py\" --show-schedule 2026-03)",
+      "Bash(\"C:\\\\Users\\\\asajwan.DESKTOP-TN8HNF1\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python314\\\\python.exe\" \"D:/working/AI-Tempo-automation/v2/tempo_automation.py\" --remove-pto 2026-03-10,2026-03-11)",
+      "Bash(\"C:\\\\Users\\\\asajwan.DESKTOP-TN8HNF1\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python314\\\\python.exe\" \"D:/working/AI-Tempo-automation/v2/tempo_automation.py\" --date 2026-02-14)",
+      "Bash(\"C:\\\\Users\\\\asajwan.DESKTOP-TN8HNF1\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python314\\\\python.exe\" \"D:/working/AI-Tempo-automation/v2/tempo_automation.py\" --date 2026-02-16)",
+      "Bash(python -c:*)",
+      "Bash(tasklist)",
+      "Bash(taskkill:*)",
+      "Bash(start \"\" \"C:\\\\Users\\\\asajwan.DESKTOP-TN8HNF1\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python314\\\\pythonw.exe\" \"D:\\\\working\\\\AI-Tempo-automation\\\\v2\\\\tray_app.py\")",
+      "Bash(tasklist:*)",
+      "Bash(start \"\" \"C:/Users/asajwan.DESKTOP-TN8HNF1/AppData/Local/Programs/Python/Python314/pythonw.exe\" \"D:/working/AI-Tempo-automation/v2/tray_app.py\")"
+    ]
+  }
+}
