@@ -2,7 +2,7 @@
 
 **Automate your daily Tempo timesheet entry and monthly submission -- save 15+ minutes every day.**
 
-Version 3.1 | Python 3.7+ | Windows (primary), Mac/Linux (untested)
+Version 3.3 | Python 3.7+ | Windows (primary), Mac/Linux (untested)
 
 ---
 
@@ -96,7 +96,7 @@ python tempo_automation.py
 pythonw tray_app.py
 ```
 
-See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed step-by-step instructions.
+See [SETUP_GUIDE.md](docs/guides/SETUP_GUIDE.md) for detailed step-by-step instructions.
 
 ---
 
