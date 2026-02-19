@@ -11,6 +11,9 @@ __pycache__/
 # Claude Code user settings (machine-specific permissions)
 .claude/settings.local.json
 
+# Deprecated files
+archive/
+
 # Claude prompt file
 Claude Prompt.txt
 
