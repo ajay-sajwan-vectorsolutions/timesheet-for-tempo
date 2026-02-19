@@ -8,6 +8,9 @@ config.json
 __pycache__/
 *.pyc
 
+# Claude Code user settings (machine-specific permissions)
+.claude/settings.local.json
+
 # Claude prompt file
 Claude Prompt.txt
 
