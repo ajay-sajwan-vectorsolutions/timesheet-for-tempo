@@ -70,7 +70,7 @@ BG_COLORS = {
 # ICON GENERATION
 # ============================================================================
 
-FAVICON_PATH = Path(r'd:\Vector\logo\favicon.ico')
+FAVICON_PATH = SCRIPT_DIR / 'assets' / 'favicon.ico'
 CORNER_RADIUS = 12  # rounded corner radius for the background square
 
 # Cache the loaded favicon to avoid re-reading the file on every icon update
