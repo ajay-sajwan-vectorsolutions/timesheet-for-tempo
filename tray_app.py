@@ -643,7 +643,8 @@ class TrayApp:
                 app_id='Tempo Automation',
                 title=title,
                 msg=body,
-                duration='long'
+                duration='long',
+                icon=str(FAVICON_PATH) if FAVICON_PATH.exists() else ''
             )
             toast.show()
         except Exception as e:
@@ -756,13 +757,30 @@ class TrayApp:
                     user_name = self._config.get(
                         'user', {}
                     ).get('name', '')
-                greeting = f'Hi {user_name}! ' if user_name else ''
+                    # Use first name only for a friendly greeting
+                    user_name = user_name.split()[0] if user_name else ''
+                hour = datetime.now().hour
+                if hour < 12:
+                    time_greeting = 'Good Morning'
+                    emoji = '\u2600\uFE0F'  # sun
+                elif hour < 17:
+                    time_greeting = 'Good Afternoon'
+                    emoji = '\U0001F324\uFE0F'  # sun behind cloud
+                else:
+                    time_greeting = 'Good Evening'
+                    emoji = '\U0001F319'  # crescent moon
+                title = (
+                    f'{time_greeting}, {user_name}! {emoji}'
+                    if user_name
+                    else f'{time_greeting}! {emoji}'
+                )
                 self._show_toast(
-                    'Tempo Automation is Running',
-                    f'{greeting}The app is now running in your '
-                    f'system tray. You will be notified at '
-                    f'{sync_time} to log your hours.\n'
-                    f'Right-click the tray icon for options.'
+                    title,
+                    f'Tempo Automation is running.\n'
+                    f'Your hours will be logged at '
+                    f'{sync_time} today.\n'
+                    f'Right-click the tray icon to sync '
+                    f'now, add PTO, or manage your schedule.'
                 )
             welcome_timer = threading.Timer(2.0, _welcome)
             welcome_timer.daemon = True

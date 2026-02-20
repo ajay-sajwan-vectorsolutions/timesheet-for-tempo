@@ -256,10 +256,10 @@ class ConfigManager:
             print("   1. Go to https://id.atlassian.com/manage-profile/security/api-tokens")
             print("   2. Click 'Create API token'")
             jira_token = input("\nEnter your Jira API token: ").strip()
-            jira_email = input("Enter your Jira account email: ").strip()
+            jira_email = user_email
         else:
             jira_token = ""
-            jira_email = ""
+            jira_email = user_email
         
         # Work schedule & location
         print("\n--- WORK SCHEDULE & LOCATION ---")

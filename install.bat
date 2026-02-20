@@ -157,7 +157,7 @@ timeout /t 2 /nobreak >nul
 REM Register auto-start on login
 python "%SCRIPT_DIR%tray_app.py" --register
 
-REM Start the tray app now
+REM Start the tray app now (pythonw = no console window)
 echo Starting tray app...
 start "" "%PYTHONW_PATH%" "%SCRIPT_DIR%tray_app.py"
 timeout /t 3 /nobreak >nul
@@ -232,7 +232,7 @@ echo.
 echo ============================================================
 echo.
 echo This window will close in:
-for /l %%i in (5,-1,1) do (
+for /l %%i in (10,-1,1) do (
     echo   %%i...
     timeout /t 1 /nobreak >nul
 )
