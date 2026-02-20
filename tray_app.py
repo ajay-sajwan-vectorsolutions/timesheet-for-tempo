@@ -459,7 +459,8 @@ class TrayApp:
         subprocess.Popen(
             ['cmd', '/k', str(python_exe), str(script),
              '--select-overhead'],
-            cwd=str(SCRIPT_DIR)
+            cwd=str(SCRIPT_DIR),
+            creationflags=subprocess.CREATE_NEW_CONSOLE
         )
 
     def _on_view_log(self, icon=None, item=None):
@@ -478,7 +479,8 @@ class TrayApp:
         script = SCRIPT_DIR / 'tempo_automation.py'
         subprocess.Popen(
             ['cmd', '/k', str(python_exe), str(script), '--show-schedule'],
-            cwd=str(SCRIPT_DIR)
+            cwd=str(SCRIPT_DIR),
+            creationflags=subprocess.CREATE_NEW_CONSOLE
         )
 
     def _on_settings(self, icon=None, item=None):
