@@ -50,10 +50,10 @@ Check off items as they are addressed.
 
 ## Documentation
 
-- [ ] **Update CLAUDE.md**: Add overhead methods to class map, update CLI command list, update current status
-- [ ] **Update MEMORY.md**: Add overhead feature notes
-- [ ] **Update SETUP_GUIDE.md**: Add `--select-overhead` to the post-install steps
-- [ ] **Update README.md**: Mention overhead story support in features
+- [x] **Update CLAUDE.md**: Add overhead methods to class map, update CLI command list, update current status
+- [x] **Update MEMORY.md**: Add overhead feature notes
+- [x] **Update SETUP_GUIDE.md**: Add `--select-overhead` to the post-install steps
+- [x] **Update README.md**: Mention overhead story support in features
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Automate your daily Tempo timesheet entry and monthly submission -- save 15+ minutes every day.**
 
-Version 3.3 | Python 3.7+ | Windows (primary), Mac/Linux (untested)
+Version 3.4 | Python 3.7+ | Windows (primary), Mac/Linux (untested)
 
 ---
 
@@ -27,6 +27,7 @@ This automation script eliminates the manual burden of timesheet management:
 - **Idempotent** -- safe to re-run anytime; deletes previous entries then creates fresh ones
 - **Monthly submission** -- verifies total hours and submits timesheet on the last day of each month
 - **Weekly verification** -- Friday check catches missed days and backfills using historical ticket data
+- **Overhead stories** -- automatically logs overhead hours on PTO days, holidays, and when no active tickets exist
 
 ### Schedule Management
 - **Holiday detection** -- org holidays (auto-fetched from central URL) + national/state holidays (100+ countries)
@@ -155,6 +156,16 @@ python tray_app.py --unregister
 python tray_app.py --stop
 ```
 
+### Overhead Stories
+
+```cmd
+:: Select overhead stories for current PI
+python tempo_automation.py --select-overhead
+
+:: View current overhead configuration
+python tempo_automation.py --show-overhead
+```
+
 ### Other
 
 ```cmd
@@ -199,6 +210,11 @@ The setup wizard creates `config.json` with your settings. Key sections:
     "extra_holidays": [],
     "working_days": []
   },
+  "overhead": {
+    "stories": ["OVERHEAD-329", "OVERHEAD-330"],
+    "pi_name": "PI 2026.1",
+    "selected_date": "2026-02-20"
+  },
   "notifications": {
     "email_enabled": false,
     "teams_webhook_url": "",
@@ -241,6 +257,9 @@ API tokens are encrypted using Windows DPAPI (tied to your Windows user account)
 4. Divide `daily_hours` equally across tickets (integer division, remainder on last ticket)
 5. For each ticket, generate a 1-3 line description from its content
 6. Create Jira worklogs -- Tempo auto-syncs from Jira
+
+### Overhead Story Logging
+When no active tickets exist, hours are logged to configured overhead stories. PTO days and holidays also log overhead hours instead of skipping.
 
 ### Weekly Verification (Friday)
 1. Check each day Mon-Fri for sufficient logged hours
@@ -312,7 +331,7 @@ schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
 ## Project Structure
 
 ```
-tempo_automation.py          # Main script (2,400+ lines, 8 classes)
+tempo_automation.py          # Main script (3,724 lines, 8 classes)
 tray_app.py                  # System tray app (~831 lines)
 confirm_and_run.py           # OK/Cancel dialog for Task Scheduler
 config.json                  # User config (gitignored, contains tokens)
@@ -333,6 +352,7 @@ examples/                    # Example configs for each role
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.4 | Feb 20, 2026 | Overhead story support -- automatic logging for PTO, holidays, no-ticket days, and PI planning weeks. New CLI: --select-overhead, --show-overhead |
 | 3.2 | Feb 19, 2026 | Hardcoded Jira/holidays URL, fixed double setup wizard, install.bat rewrite (ASCII, weekday-only, WeeklyVerify, tray default, countdown close), --stop flag, welcome toast, auto-register autostart |
 | 3.1 | Feb 18, 2026 | System tray app, animated sync indicator, smart exit, Add PTO from tray, OK/Cancel dialog, auto-start |
 | 3.0 | Feb 17, 2026 | Schedule management, holiday detection (org + country/state), PTO/override system, weekly verification & backfill, monthly hours check, calendar view, 12 new CLI commands |

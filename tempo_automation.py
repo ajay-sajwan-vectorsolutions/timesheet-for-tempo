@@ -285,9 +285,9 @@ class ConfigManager:
         print("\n--- EMAIL NOTIFICATIONS ---")
         print("SMTP server: smtp.office365.com (auto-configured)")
         enable_email = input(
-            "Enable email notifications? (yes/no, default: yes): "
+            "Enable email notifications? (yes/no, default: no): "
         ).strip().lower()
-        enable_email = enable_email in ['yes', 'y', '']
+        enable_email = enable_email in ['yes', 'y']
 
         smtp_server = "smtp.office365.com"
         smtp_port = 587
@@ -1133,7 +1133,22 @@ class JiraClient:
         self.session = requests.Session()
         self.session.auth = (self.email, self.api_token)
         self.session.headers.update({'Content-Type': 'application/json'})
-    
+        self.account_id = self.get_myself_account_id()
+
+    def get_myself_account_id(self) -> str:
+        """Get current user's Atlassian account ID via Jira API."""
+        try:
+            url = f"{self.base_url}/rest/api/3/myself"
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            acct = response.json().get('accountId', '')
+            if acct:
+                logger.info(f"Jira account ID: {acct}")
+                return acct
+        except Exception as e:
+            logger.warning(f"Could not get Jira account ID: {e}")
+        return ''
+
     def get_my_worklogs(self, date_from: str, date_to: str) -> List[Dict]:
         """
         Fetch worklogs for current user in date range.
@@ -1177,7 +1192,13 @@ class JiraClient:
                 for wl in issue_worklogs:
                     started = wl['started'][:10]  # Extract date part
                     if date_from <= started <= date_to:
-                        if wl['author']['emailAddress'] == self.email:
+                        author = wl.get('author', {})
+                        author_email = author.get(
+                            'emailAddress', ''
+                        )
+                        author_id = author.get('accountId', '')
+                        if (author_email == self.email
+                                or author_id == self.account_id):
                             worklogs.append({
                                 'worklog_id': wl['id'],
                                 'issue_key': issue_key,
@@ -1496,7 +1517,7 @@ class JiraClient:
 class TempoClient:
     """Handles Tempo API interactions."""
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, account_id: str = ''):
         self.config = config
         self.api_token = config['tempo']['api_token']
         self.base_url = "https://api.tempo.io/4"
@@ -1505,20 +1526,23 @@ class TempoClient:
             'Authorization': f'Bearer {self.api_token}',
             'Content-Type': 'application/json'
         })
-    
+        self.account_id = account_id or config.get(
+            'user', {}
+        ).get('email', '')
+
     def get_user_worklogs(self, date_from: str, date_to: str) -> List[Dict]:
         """
         Fetch Tempo worklogs for current user.
-        
+
         Args:
             date_from: Start date (YYYY-MM-DD)
             date_to: End date (YYYY-MM-DD)
-        
+
         Returns:
             List of worklog dictionaries
         """
         try:
-            url = f"{self.base_url}/worklogs/user/{self.config['user']['email']}"
+            url = f"{self.base_url}/worklogs/user/{self.account_id}"
             params = {
                 'from': date_from,
                 'to': date_to
@@ -1557,7 +1581,7 @@ class TempoClient:
                 'timeSpentSeconds': time_seconds,
                 'startDate': start_date,
                 'startTime': '09:00:00',
-                'authorAccountId': self.config['user']['email'],
+                'authorAccountId': self.account_id,
                 'description': description
             }
             
@@ -1891,7 +1915,10 @@ class TempoAutomation:
         if self.config.get('user', {}).get('role') == 'developer':
             self.jira_client = JiraClient(self.config)
 
-        self.tempo_client = TempoClient(self.config)
+        account_id = (
+            self.jira_client.account_id if self.jira_client else ''
+        )
+        self.tempo_client = TempoClient(self.config, account_id)
         self.notifier = NotificationManager(self.config)
 
         # Check for year-end holiday warnings
@@ -1936,7 +1963,7 @@ class TempoAutomation:
         oh = self._get_overhead_config()
         pto_key = oh.get('pto_story_key', '')
 
-        # Check if PTO hours already logged
+        # Check Jira for existing worklogs on PTO day
         existing = []
         if self.jira_client:
             existing = self.jira_client.get_my_worklogs(
@@ -1959,13 +1986,10 @@ class TempoAutomation:
                 'time_spent_seconds': wl['time_spent_seconds']
             } for wl in existing]
         else:
-            # Delete any partial entries and re-create
-            for wl in existing:
-                self.jira_client.delete_worklog(
-                    wl['issue_key'], wl['worklog_id']
-                )
+            # Log remaining PTO hours via Jira (syncs to Tempo)
+            remaining = total_seconds - existing_seconds
             worklogs_created = self._log_overhead_hours(
-                target_date, total_seconds,
+                target_date, remaining,
                 [{'issue_key': pto_key, 'summary': pto_key}]
                 if pto_key else None,
                 'single' if pto_key else None
@@ -2004,8 +2028,9 @@ class TempoAutomation:
         # --- Schedule guard ---
         is_working, reason = self.schedule_mgr.is_working_day(target_date)
         if not is_working:
-            # Case 3: PTO days -- log overhead instead of skipping
-            if (reason == "PTO"
+            # Case 3: PTO/Holiday -- log overhead instead of skipping
+            is_off_day = reason != "Weekend"
+            if (is_off_day
                     and self.config.get('user', {}).get('role')
                     == 'developer'):
                 if self._is_overhead_configured():
@@ -2013,11 +2038,11 @@ class TempoAutomation:
                     return
                 else:
                     print(
-                        f"\n[SKIP] {target_date} is PTO."
+                        f"\n[SKIP] {target_date} is {reason}."
                     )
                     self._warn_overhead_not_configured()
                     logger.info(
-                        f"Skipped PTO {target_date}: "
+                        f"Skipped {reason} {target_date}: "
                         "overhead not configured"
                     )
                     return
@@ -2120,28 +2145,49 @@ class TempoAutomation:
         daily_hours = self.config.get('schedule', {}).get('daily_hours', 8)
         total_seconds = int(daily_hours * 3600)
 
-        # Fetch existing worklogs for target date
-        existing = self.jira_client.get_my_worklogs(
+        # Fetch Jira worklogs (has issue keys for identification)
+        jira_worklogs = self.jira_client.get_my_worklogs(
             target_date, target_date
         )
+        jira_total = sum(
+            wl['time_spent_seconds'] for wl in jira_worklogs
+        )
 
-        # Separate overhead from non-overhead (Case 2)
-        overhead_worklogs = [
-            wl for wl in existing
+        # Separate Jira worklogs: overhead vs non-overhead
+        jira_overhead = [
+            wl for wl in jira_worklogs
             if wl.get('issue_key', '').startswith(oh_prefix)
         ]
-        non_overhead_worklogs = [
-            wl for wl in existing
+        jira_non_overhead = [
+            wl for wl in jira_worklogs
             if not wl.get('issue_key', '').startswith(oh_prefix)
         ]
 
-        # Delete only non-overhead worklogs (preserve manual overhead)
-        if non_overhead_worklogs:
+        # Fetch Tempo total (catches manual Tempo entries too)
+        tempo_worklogs = self.tempo_client.get_user_worklogs(
+            target_date, target_date
+        )
+        tempo_total = sum(
+            twl.get('timeSpentSeconds', 0) for twl in tempo_worklogs
+        )
+
+        # Manual Tempo-only hours = entries added directly in Tempo
+        # (not via Jira, so not visible in Jira API)
+        tempo_only_seconds = max(0, tempo_total - jira_total)
+
+        # Total overhead = Jira overhead + Tempo-only entries
+        jira_oh_seconds = sum(
+            wl['time_spent_seconds'] for wl in jira_overhead
+        )
+        overhead_seconds = jira_oh_seconds + tempo_only_seconds
+
+        # Delete only non-overhead Jira worklogs
+        if jira_non_overhead:
             print(
-                f"Removing {len(non_overhead_worklogs)} "
+                f"Removing {len(jira_non_overhead)} "
                 f"non-overhead worklog(s) for {target_date}..."
             )
-            for wl in non_overhead_worklogs:
+            for wl in jira_non_overhead:
                 deleted = self.jira_client.delete_worklog(
                     wl['issue_key'], wl['worklog_id']
                 )
@@ -2158,19 +2204,16 @@ class TempoAutomation:
                     )
             print()
 
-        # Calculate remaining hours after overhead
-        overhead_seconds = sum(
-            wl['time_spent_seconds'] for wl in overhead_worklogs
-        )
-        if overhead_worklogs:
+        # Show overhead summary
+        if overhead_seconds > 0:
             oh_hours = overhead_seconds / 3600
-            print(
-                f"Preserved {len(overhead_worklogs)} overhead "
-                f"worklog(s) ({oh_hours:.2f}h):"
-            )
-            for wl in overhead_worklogs:
+            print(f"Overhead hours detected ({oh_hours:.2f}h):")
+            for wl in jira_overhead:
                 wl_h = wl['time_spent_seconds'] / 3600
-                print(f"  - {wl['issue_key']}: {wl_h:.2f}h")
+                print(f"  - {wl['issue_key']}: {wl_h:.2f}h (Jira)")
+            if tempo_only_seconds > 0:
+                t_h = tempo_only_seconds / 3600
+                print(f"  - Manual Tempo entries: {t_h:.2f}h")
             print()
 
         remaining_seconds = total_seconds - overhead_seconds
@@ -2180,7 +2223,13 @@ class TempoAutomation:
             'issue_key': wl['issue_key'],
             'issue_summary': wl.get('issue_summary', wl['issue_key']),
             'time_spent_seconds': wl['time_spent_seconds']
-        } for wl in overhead_worklogs]
+        } for wl in jira_overhead]
+        if tempo_only_seconds > 0:
+            overhead_result.append({
+                'issue_key': 'OVERHEAD (Tempo)',
+                'issue_summary': 'Manual Tempo entries',
+                'time_spent_seconds': tempo_only_seconds
+            })
 
         if remaining_seconds <= 0:
             print(
@@ -2434,7 +2483,7 @@ class TempoAutomation:
                             stories: List[Dict] = None,
                             distribution: str = None) -> List[Dict]:
         """
-        Create Jira worklogs on overhead stories.
+        Create Jira worklogs on overhead stories (syncs to Tempo).
 
         Args:
             target_date: Date string YYYY-MM-DD
@@ -3167,8 +3216,9 @@ class TempoAutomation:
                 day_str
             )
             if not is_working:
-                # Case 3: PTO -- check/log overhead hours
-                if (reason == "PTO"
+                # Case 3: PTO/Holiday -- check/log overhead hours
+                is_off_day = reason != "Weekend"
+                if (is_off_day
                         and self._is_overhead_configured()
                         and self.jira_client):
                     result = self._check_day_hours(day_str)
@@ -3177,7 +3227,7 @@ class TempoAutomation:
                     )
                     if result['gap_hours'] > 0:
                         print(
-                            f"  [INFO] PTO day -- "
+                            f"  [INFO] {reason} -- "
                             "logging overhead hours"
                         )
                         oh = self._get_overhead_config()
@@ -3201,11 +3251,11 @@ class TempoAutomation:
                         ) / 3600
                         total_created += len(created)
                         total_added_hours += added_h
-                        status = '[+] PTO (overhead logged)'
+                        status = f'[+] {reason} (overhead logged)'
                     else:
                         existing_h = result['existing_hours']
                         status = (
-                            f'[OK] PTO ({existing_h:.2f}h)'
+                            f'[OK] {reason} ({existing_h:.2f}h)'
                         )
                         added_h = 0.0
                     day_results.append({

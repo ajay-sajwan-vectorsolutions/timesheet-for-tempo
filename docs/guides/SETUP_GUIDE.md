@@ -123,7 +123,7 @@ The wizard will ask you:
 | **Daily hours** | `8` (or your standard work hours) |
 | **Country/city** | Select your country and city for holiday detection |
 | **Holidays URL** | Auto-configured (not prompted) |
-| **Email notifications** | `yes` or `no` (if yes, enter your email/app password) |
+| **Email notifications** | `yes` or `no` -- defaults to `no` (if yes, enter your email/app password) |
 
 This creates a `config.json` file in the same folder. **Do not share this file** -- it contains your API tokens (encrypted with Windows DPAPI).
 
@@ -175,6 +175,25 @@ If you run on a weekend or holiday, you'll see:
 ```
 
 Verify in Jira that the worklogs appear on your tickets.
+
+---
+
+## Post-Install: Select Overhead Stories
+
+After initial setup, select your overhead stories for the current PI:
+
+```cmd
+python C:\tempo-automation\tempo_automation.py --select-overhead
+```
+
+This configures which overhead stories receive hours on PTO days, holidays,
+and days with no active tickets. Re-run at the start of each new PI.
+
+To view your current overhead configuration at any time:
+
+```cmd
+python C:\tempo-automation\tempo_automation.py --show-overhead
+```
 
 ---
 
@@ -352,6 +371,10 @@ python tempo_automation.py --date 2026-02-15      :: Sync specific date
 python tempo_automation.py --verify-week           :: Verify & backfill this week
 python tempo_automation.py --submit               :: Monthly submit
 python tempo_automation.py --setup                :: Re-run setup wizard
+
+:: --- Overhead Stories ---
+python tempo_automation.py --select-overhead              :: Select overhead stories for current PI
+python tempo_automation.py --show-overhead                :: View current overhead configuration
 
 :: --- Schedule Management ---
 python tempo_automation.py --add-pto 2026-03-10,2026-03-11
