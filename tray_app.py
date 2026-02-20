@@ -317,6 +317,11 @@ class TrayApp:
         tray_logger.info("Sync started")
 
         try:
+            # Re-create automation instance to pick up fresh config
+            # (overhead, PTO, etc. may have changed since startup)
+            from tempo_automation import TempoAutomation
+            self._automation = TempoAutomation(CONFIG_FILE)
+
             # Redirect stdout to daily-timesheet.log so sync output
             # is captured (pythonw.exe has no console)
             import io
