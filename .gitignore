@@ -22,5 +22,8 @@ _tray_stop.signal
 _pto_input.tmp
 _pto_input.vbs
 
+# Zip bundles
+*.zip
+
 # Stray pip output
 =0.40

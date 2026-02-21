@@ -6,9 +6,10 @@ REM This script will:
 REM 1. Check Python installation
 REM 2. Install dependencies
 REM 3. Run setup wizard
-REM 4. Schedule daily, weekly, and monthly tasks
-REM 5. Set up system tray app (auto-start on login)
-REM 6. Optionally run a test sync
+REM 4. Configure overhead stories
+REM 5. Schedule daily, weekly, and monthly tasks
+REM 6. Set up system tray app (auto-start on login)
+REM 7. Optionally run a test sync
 REM ============================================================================
 
 echo.
@@ -25,7 +26,7 @@ REM ============================================================================
 REM Check Python installation
 REM ============================================================================
 
-echo [1/6] Checking Python installation...
+echo [1/7] Checking Python installation...
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo.
@@ -48,9 +49,10 @@ REM ============================================================================
 REM Install dependencies
 REM ============================================================================
 
-echo [2/6] Installing Python dependencies...
-python -m pip install --upgrade pip --quiet
-python -m pip install -r requirements.txt --quiet
+echo [2/7] Installing Python dependencies...
+echo.
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 
 if %errorlevel% neq 0 (
     echo.
@@ -66,7 +68,7 @@ REM ============================================================================
 REM Run setup wizard
 REM ============================================================================
 
-echo [3/6] Running setup wizard...
+echo [3/7] Running setup wizard...
 echo.
 python tempo_automation.py --setup
 
@@ -82,10 +84,32 @@ echo [OK] Setup complete
 echo.
 
 REM ============================================================================
+REM Select overhead stories (developers only)
+REM ============================================================================
+
+echo [4/7] Configuring overhead stories...
+echo.
+echo Overhead stories are used for daily default hours (e.g., 2h/day),
+echo PTO days, holidays, and days with no active tickets.
+echo.
+set /p SELECT_OH="Configure overhead stories now? (y/n, default: y): "
+if /i "%SELECT_OH%"=="n" (
+    echo Skipped. You can configure later: python tempo_automation.py --select-overhead
+) else (
+    python tempo_automation.py --select-overhead
+    if %errorlevel% neq 0 (
+        echo.
+        echo [!] Overhead selection skipped or failed
+        echo     You can configure later: python tempo_automation.py --select-overhead
+    )
+)
+echo.
+
+REM ============================================================================
 REM Create scheduled tasks
 REM ============================================================================
 
-echo [4/6] Setting up scheduled tasks...
+echo [5/7] Setting up scheduled tasks...
 echo.
 
 REM Daily sync task (weekdays only at 6:00 PM, uses OK/Cancel dialog wrapper)
@@ -127,27 +151,23 @@ REM ============================================================================
 REM Tray App Setup (recommended)
 REM ============================================================================
 
-echo [5/6] Setting up System Tray App...
+echo [6/7] Setting up System Tray App...
 echo.
 echo The tray app lives in your system tray, shows a notification at your
 echo configured sync time, and lets you sync with one click.
 echo It will start automatically every time you log in to Windows.
 echo.
 
-REM Find pythonw.exe using 'where' command (most reliable on Windows)
-for /f "tokens=*" %%a in ('where pythonw.exe 2^>nul') do (
-    set PYTHONW_PATH=%%a
-    goto :found_pythonw
-)
-REM Fallback: look alongside python.exe
-for %%i in (python.exe) do set PYTHONW_PATH=%%~dp$PATH:ipythonw.exe
-:found_pythonw
+REM Find pythonw.exe by looking next to python.exe (always installed together)
+for %%i in (python.exe) do set PYTHON_DIR=%%~dp$PATH:i
+set PYTHONW_PATH=%PYTHON_DIR%pythonw.exe
 
 if not exist "%PYTHONW_PATH%" (
-    echo [!] pythonw.exe not found
+    echo [!] pythonw.exe not found at %PYTHONW_PATH%
     echo     Falling back to python.exe (a console window will appear)
     for %%i in (python.exe) do set PYTHONW_PATH=%%~$PATH:i
 )
+echo Using: %PYTHONW_PATH%
 
 REM Stop any existing tray app instance before starting fresh
 echo Stopping any existing tray app...
@@ -157,9 +177,11 @@ timeout /t 2 /nobreak >nul
 REM Register auto-start on login
 python "%SCRIPT_DIR%tray_app.py" --register
 
-REM Start the tray app now
+REM Start the tray app now (detached -- no console window, no terminal tab)
 echo Starting tray app...
-start "" "%PYTHONW_PATH%" "%SCRIPT_DIR%tray_app.py"
+echo CreateObject("WScript.Shell").Run """%PYTHONW_PATH%"" ""%SCRIPT_DIR%tray_app.py""", 0, False > "%TEMP%\_tempo_launch.vbs"
+wscript "%TEMP%\_tempo_launch.vbs"
+del "%TEMP%\_tempo_launch.vbs" >nul 2>&1
 timeout /t 3 /nobreak >nul
 echo [OK] Tray app is running in the system tray
 echo.
@@ -172,7 +194,7 @@ REM ============================================================================
 REM Test run
 REM ============================================================================
 
-echo [6/6] Test sync (optional)
+echo [7/7] Test sync (optional)
 echo.
 echo Would you like to test the automation now?
 echo This will sync today's timesheet to verify everything works.
@@ -232,7 +254,7 @@ echo.
 echo ============================================================
 echo.
 echo This window will close in:
-for /l %%i in (5,-1,1) do (
+for /l %%i in (10,-1,1) do (
     echo   %%i...
     timeout /t 1 /nobreak >nul
 )

@@ -19,6 +19,7 @@ Author: Vector Solutions Engineering Team
 
 import sys
 import os
+import json
 import argparse
 import threading
 import subprocess
@@ -238,8 +239,28 @@ class TrayApp:
             f"({delay:.0f}s from now)"
         )
 
+    def _reload_config(self):
+        """Re-read config.json to pick up changes from CLI commands."""
+        try:
+            if CONFIG_FILE.exists():
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    self._config = json.load(f)
+        except Exception:
+            pass
+
     def _on_timer_fired(self):
         """Called by threading.Timer at the configured time."""
+        # Check overhead config and remind if needed
+        self._reload_config()
+        oh = self._config.get('overhead', {}) if self._config else {}
+        current_pi = oh.get('current_pi', {})
+        if not current_pi.get('stories'):
+            self._show_toast(
+                'Overhead Not Configured',
+                'Right-click tray icon > Select Overhead '
+                'to set up overhead stories for this PI.'
+            )
+
         self._pending_confirmation = True
         self._set_icon_state('orange', 'Tempo - Time to log hours!')
         self._show_toast(
@@ -261,6 +282,9 @@ class TrayApp:
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem('Add PTO', self._on_add_pto),
+            pystray.MenuItem(
+                'Select Overhead', self._on_select_overhead
+            ),
             pystray.MenuItem('View Log', self._on_view_log),
             pystray.MenuItem('View Schedule', self._on_view_schedule),
             pystray.MenuItem('Settings', self._on_settings),
@@ -293,6 +317,11 @@ class TrayApp:
         tray_logger.info("Sync started")
 
         try:
+            # Re-create automation instance to pick up fresh config
+            # (overhead, PTO, etc. may have changed since startup)
+            from tempo_automation import TempoAutomation
+            self._automation = TempoAutomation(CONFIG_FILE)
+
             # Redirect stdout to daily-timesheet.log so sync output
             # is captured (pythonw.exe has no console)
             import io
@@ -427,6 +456,18 @@ class TrayApp:
             if tmp_file.exists():
                 tmp_file.unlink()
 
+    def _on_select_overhead(self, icon=None, item=None):
+        """Open a cmd window for overhead story selection."""
+        python_dir = Path(sys.executable).parent
+        python_exe = python_dir / "python.exe"
+        script = SCRIPT_DIR / 'tempo_automation.py'
+        subprocess.Popen(
+            ['cmd', '/k', str(python_exe), str(script),
+             '--select-overhead'],
+            cwd=str(SCRIPT_DIR),
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
+
     def _on_view_log(self, icon=None, item=None):
         """Open the daily log file in Notepad."""
         log_path = str(LOG_FILE)
@@ -443,7 +484,8 @@ class TrayApp:
         script = SCRIPT_DIR / 'tempo_automation.py'
         subprocess.Popen(
             ['cmd', '/k', str(python_exe), str(script), '--show-schedule'],
-            cwd=str(SCRIPT_DIR)
+            cwd=str(SCRIPT_DIR),
+            creationflags=subprocess.CREATE_NEW_CONSOLE
         )
 
     def _on_settings(self, icon=None, item=None):
@@ -601,7 +643,8 @@ class TrayApp:
                 app_id='Tempo Automation',
                 title=title,
                 msg=body,
-                duration='long'
+                duration='long',
+                icon=str(FAVICON_PATH) if FAVICON_PATH.exists() else ''
             )
             toast.show()
         except Exception as e:
@@ -714,13 +757,30 @@ class TrayApp:
                     user_name = self._config.get(
                         'user', {}
                     ).get('name', '')
-                greeting = f'Hi {user_name}! ' if user_name else ''
+                    # Use first name only for a friendly greeting
+                    user_name = user_name.split()[0] if user_name else ''
+                hour = datetime.now().hour
+                if hour < 12:
+                    time_greeting = 'Good Morning'
+                    emoji = '\u2600\uFE0F'  # sun
+                elif hour < 17:
+                    time_greeting = 'Good Afternoon'
+                    emoji = '\U0001F324\uFE0F'  # sun behind cloud
+                else:
+                    time_greeting = 'Good Evening'
+                    emoji = '\U0001F319'  # crescent moon
+                title = (
+                    f'{time_greeting}, {user_name}! {emoji}'
+                    if user_name
+                    else f'{time_greeting}! {emoji}'
+                )
                 self._show_toast(
-                    'Tempo Automation is Running',
-                    f'{greeting}The app is now running in your '
-                    f'system tray. You will be notified at '
-                    f'{sync_time} to log your hours.\n'
-                    f'Right-click the tray icon for options.'
+                    title,
+                    f'Tempo Automation is running.\n'
+                    f'Your hours will be logged at '
+                    f'{sync_time} today.\n'
+                    f'Right-click the tray icon to sync '
+                    f'now, add PTO, or manage your schedule.'
                 )
             welcome_timer = threading.Timer(2.0, _welcome)
             welcome_timer.daemon = True

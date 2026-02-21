@@ -1,6 +1,6 @@
 # Tempo Timesheet Automation
 
-**Version:** 3.3 | **Status:** Production | **Updated:** February 19, 2026
+**Version:** 3.4 | **Status:** Production | **Updated:** February 20, 2026
 **Owner:** Ajay Sajwan (ajay.sajwan-ctr@vectorsolutions.com, developer role)
 
 ---
@@ -18,7 +18,7 @@
 Automates daily timesheet entry and monthly submission for a 200-person engineering team.
 Developers get Jira worklogs auto-distributed across active tickets; Tempo syncs from Jira.
 
-- **Main script:** `tempo_automation.py` (2,625 lines, 8 classes)
+- **Main script:** `tempo_automation.py` (3,724 lines, 8 classes)
 - **Tray app:** `tray_app.py` (~831 lines, pystray + company favicon)
 - **Installer:** `install.bat` (deps, wizard, scheduler, tray app)
 - **Python:** 3.7+ (Ajay: Python 3.14)
@@ -47,11 +47,11 @@ Developers get Jira worklogs auto-distributed across active tickets; Tempo syncs
 | CredentialManager | 91-199 | DPAPI encrypt/decrypt for Windows |
 | ConfigManager | 206-475 | Config, setup wizard, location picker, get_account_id() |
 | ScheduleManager | 477-1120 | Holidays, PTO, overrides, is_working_day(), calendar |
-| JiraClient | 1124-1431 | Worklogs CRUD, active issues, historical JQL, ADF |
-| TempoClient | 1433-1585 | Worklogs, submit timesheet, get period |
-| NotificationManager | 1587-1817 | SMTP email, Teams webhook, Windows toast |
-| TempoAutomation | 1819-2448 | Orchestration, sync, verify_week, backfill |
-| CLI | 2450-2625 | argparse with 14 arguments |
+| JiraClient | ~1125 | Worklogs CRUD, active issues, historical JQL, ADF, get_myself_account_id(), account_id attr |
+| TempoClient | ~1509 | Worklogs, submit timesheet, get period (takes account_id parameter) |
+| NotificationManager | ~1587 | SMTP email, Teams webhook, Windows toast |
+| TempoAutomation | ~1918 | Orchestration, sync, verify_week, backfill, 10+ overhead methods after _generate_work_summary() |
+| CLI | ~3550-3724 | argparse with 16 arguments (added --select-overhead, --show-overhead) |
 
 ### Key Patterns
 - **Day priority:** working_days > pto > weekend > org_holidays > country_holidays > extra_holidays
@@ -67,7 +67,7 @@ Developers get Jira worklogs auto-distributed across active tickets; Tempo syncs
 v2/
 ├── CLAUDE.md                       # This file (project context)
 ├── README.md                       # User documentation
-├── tempo_automation.py             # Main script (2,625 lines)
+├── tempo_automation.py             # Main script (3,724 lines)
 ├── tray_app.py                     # System tray app (~831 lines)
 ├── confirm_and_run.py              # OK/Cancel dialog for Task Scheduler
 ├── install.bat / install.sh        # Installers
@@ -123,6 +123,10 @@ python tempo_automation.py --remove-pto 2026-03-10
 python tempo_automation.py --show-schedule           # Current month calendar
 python tempo_automation.py --manage                  # Interactive menu
 
+# Overhead
+python tempo_automation.py --select-overhead         # Interactive overhead story selection
+python tempo_automation.py --show-overhead            # Display current overhead config
+
 # Tray App
 pythonw tray_app.py                                  # Run (no console)
 python tray_app.py --stop                            # Stop running instance
@@ -133,7 +137,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 
 ## Current Status
 
-**Working:** Daily sync, idempotent overwrite, smart descriptions, schedule guard (weekends/holidays/PTO), weekly verify, monthly submit guard, tray app with favicon, install.bat, DPAPI encryption, --stop flag, welcome toast, auto-register autostart
+**Working:** Daily sync, idempotent overwrite, smart descriptions, schedule guard (weekends/holidays/PTO), weekly verify, monthly submit guard, tray app with favicon, install.bat, DPAPI encryption, --stop flag, welcome toast, auto-register autostart, overhead story support (5 cases: default daily 2h overhead, no active tickets, manual overhead, PTO/holidays, planning week), hybrid Jira+Tempo overhead detection (Jira for issue keys, Tempo for manual entries), holiday overhead logging (holidays treated same as PTO), email notifications default to disabled in setup wizard, configurable daily_overhead_hours in overhead config
 
 **TODO:**
 - [ ] Test --verify-week with live data
@@ -151,6 +155,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 | v3.1 | Feb 18 | Tray app, favicon, smart exit, confirm dialog |
 | v3.2 | Feb 19 | Hardcoded URLs, install.bat rewrite, --stop, welcome toast |
 | v3.3 | Feb 19 | Doc reorganization, .claude/rules, .claude/skills |
+| v3.4 | Feb 20 | Overhead story support: 5 cases (default daily 2h overhead, no active tickets, manual overhead, PTO/holidays, planning week), --select-overhead/--show-overhead CLI, hybrid Jira+Tempo detection, JiraClient account_id, TempoClient account_id parameter, holidays log overhead same as PTO, email default disabled, configurable daily_overhead_hours |
 
 ---
 

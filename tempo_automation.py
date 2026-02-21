@@ -26,6 +26,7 @@ import argparse
 import calendar
 from datetime import datetime, timedelta, date
 from pathlib import Path
+import re
 import requests
 from typing import Dict, List, Optional, Tuple
 import smtplib
@@ -245,9 +246,10 @@ class ConfigManager:
         print(f"Jira URL: {jira_url} (organization default)")
         
         print("\n[INFO] To get your Tempo API token:")
-        print("   1. Go to https://app.tempo.io/")
-        print("   2. Settings -> API Integration")
-        print("   3. Click 'New Token'")
+        print("   1. Go to https://lmsportal.atlassian.net/plugins/servlet/ac/io.tempo.jira/tempo-app#!/configuration/api-integration")
+        print("   2. Click 'New Token'")
+        print("   3. Give it a name (e.g., 'Tempo Automation')")
+        print("   4. Copy the generated token")
         tempo_token = input("\nEnter your Tempo API token: ").strip()
         
         if user_role == "developer":
@@ -255,10 +257,10 @@ class ConfigManager:
             print("   1. Go to https://id.atlassian.com/manage-profile/security/api-tokens")
             print("   2. Click 'Create API token'")
             jira_token = input("\nEnter your Jira API token: ").strip()
-            jira_email = input("Enter your Jira account email: ").strip()
+            jira_email = user_email
         else:
             jira_token = ""
-            jira_email = ""
+            jira_email = user_email
         
         # Work schedule & location
         print("\n--- WORK SCHEDULE & LOCATION ---")
@@ -284,9 +286,9 @@ class ConfigManager:
         print("\n--- EMAIL NOTIFICATIONS ---")
         print("SMTP server: smtp.office365.com (auto-configured)")
         enable_email = input(
-            "Enable email notifications? (yes/no, default: yes): "
+            "Enable email notifications? (yes/no, default: no): "
         ).strip().lower()
-        enable_email = enable_email in ['yes', 'y', '']
+        enable_email = enable_email in ['yes', 'y']
 
         smtp_server = "smtp.office365.com"
         smtp_port = 587
@@ -1132,7 +1134,22 @@ class JiraClient:
         self.session = requests.Session()
         self.session.auth = (self.email, self.api_token)
         self.session.headers.update({'Content-Type': 'application/json'})
-    
+        self.account_id = self.get_myself_account_id()
+
+    def get_myself_account_id(self) -> str:
+        """Get current user's Atlassian account ID via Jira API."""
+        try:
+            url = f"{self.base_url}/rest/api/3/myself"
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            acct = response.json().get('accountId', '')
+            if acct:
+                logger.info(f"Jira account ID: {acct}")
+                return acct
+        except Exception as e:
+            logger.warning(f"Could not get Jira account ID: {e}")
+        return ''
+
     def get_my_worklogs(self, date_from: str, date_to: str) -> List[Dict]:
         """
         Fetch worklogs for current user in date range.
@@ -1176,7 +1193,13 @@ class JiraClient:
                 for wl in issue_worklogs:
                     started = wl['started'][:10]  # Extract date part
                     if date_from <= started <= date_to:
-                        if wl['author']['emailAddress'] == self.email:
+                        author = wl.get('author', {})
+                        author_email = author.get(
+                            'emailAddress', ''
+                        )
+                        author_id = author.get('accountId', '')
+                        if (author_email == self.email
+                                or author_id == self.account_id):
                             worklogs.append({
                                 'worklog_id': wl['id'],
                                 'issue_key': issue_key,
@@ -1345,6 +1368,68 @@ class JiraClient:
             logger.error(f"Error fetching issue details for {issue_key}: {e}")
             return None
 
+    def get_overhead_stories(self) -> List[Dict]:
+        """
+        Fetch active overhead stories from the OVERHEAD project.
+
+        Queries Jira for stories in the OVERHEAD project with status
+        "In Progress" and extracts PI identifiers from sprint names.
+
+        Returns:
+            List of dicts with issue_key, issue_summary, pi_identifier
+        """
+        try:
+            jql = 'project = OVERHEAD AND status = "In Progress"'
+
+            url = f"{self.base_url}/rest/api/3/search/jql"
+            params = {
+                'jql': jql,
+                'fields': 'summary,sprint',
+                'maxResults': 50
+            }
+
+            response = self.session.get(url, params=params, timeout=30)
+            response.raise_for_status()
+
+            issues = response.json().get('issues', [])
+            pi_pattern = re.compile(
+                r'PI\.(\d{2})\.(\d+)\.([A-Z]{3})\.(\d{1,2})'
+            )
+
+            result = []
+            for issue in issues:
+                fields = issue.get('fields', {})
+
+                # Extract sprint name -- may be dict or list
+                sprint_name = ''
+                sprint_data = fields.get('sprint')
+                if sprint_data and isinstance(sprint_data, dict):
+                    sprint_name = sprint_data.get('name', '')
+                elif sprint_data and isinstance(sprint_data, list):
+                    if sprint_data:
+                        sprint_name = sprint_data[-1].get('name', '')
+
+                # Extract PI identifier from sprint name or summary
+                pi_match = pi_pattern.search(sprint_name)
+                if not pi_match:
+                    # Fallback: parse PI from issue summary
+                    summary = fields.get('summary', '')
+                    pi_match = pi_pattern.search(summary)
+                pi_identifier = pi_match.group(0) if pi_match else ''
+
+                result.append({
+                    'issue_key': issue['key'],
+                    'issue_summary': fields.get('summary', ''),
+                    'pi_identifier': pi_identifier
+                })
+
+            logger.info(f"Found {len(result)} overhead stories")
+            return result
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching overhead stories: {e}")
+            return []
+
     @staticmethod
     def _extract_adf_text(adf_content) -> str:
         """
@@ -1433,7 +1518,7 @@ class JiraClient:
 class TempoClient:
     """Handles Tempo API interactions."""
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, account_id: str = ''):
         self.config = config
         self.api_token = config['tempo']['api_token']
         self.base_url = "https://api.tempo.io/4"
@@ -1442,20 +1527,23 @@ class TempoClient:
             'Authorization': f'Bearer {self.api_token}',
             'Content-Type': 'application/json'
         })
-    
+        self.account_id = account_id or config.get(
+            'user', {}
+        ).get('email', '')
+
     def get_user_worklogs(self, date_from: str, date_to: str) -> List[Dict]:
         """
         Fetch Tempo worklogs for current user.
-        
+
         Args:
             date_from: Start date (YYYY-MM-DD)
             date_to: End date (YYYY-MM-DD)
-        
+
         Returns:
             List of worklog dictionaries
         """
         try:
-            url = f"{self.base_url}/worklogs/user/{self.config['user']['email']}"
+            url = f"{self.base_url}/worklogs/user/{self.account_id}"
             params = {
                 'from': date_from,
                 'to': date_to
@@ -1494,7 +1582,7 @@ class TempoClient:
                 'timeSpentSeconds': time_seconds,
                 'startDate': start_date,
                 'startTime': '09:00:00',
-                'authorAccountId': self.config['user']['email'],
+                'authorAccountId': self.account_id,
                 'description': description
             }
             
@@ -1828,11 +1916,105 @@ class TempoAutomation:
         if self.config.get('user', {}).get('role') == 'developer':
             self.jira_client = JiraClient(self.config)
 
-        self.tempo_client = TempoClient(self.config)
+        account_id = (
+            self.jira_client.account_id if self.jira_client else ''
+        )
+        self.tempo_client = TempoClient(self.config, account_id)
         self.notifier = NotificationManager(self.config)
 
         # Check for year-end holiday warnings
         self.schedule_mgr.check_year_end_warning()
+
+        # Check overhead story configuration
+        if self.config.get('user', {}).get('role') == 'developer':
+            if not self._is_overhead_configured():
+                print(
+                    "[INFO] Overhead stories not configured. "
+                    "Run --select-overhead when ready."
+                )
+            elif not self._check_overhead_pi_current():
+                print(
+                    "[!] Overhead stories may be from a previous PI. "
+                    "Run --select-overhead to update."
+                )
+
+    def _sync_pto_overhead(self, target_date: str):
+        """
+        Log overhead hours for a PTO day (Case 3).
+
+        Idempotent: skips if PTO hours already logged for the date.
+        """
+        daily_hours = self.config.get('schedule', {}).get(
+            'daily_hours', 8
+        )
+        total_seconds = int(daily_hours * 3600)
+
+        logger.info(
+            f"PTO day {target_date} -- logging overhead hours"
+        )
+        now_ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"\n{'='*60}")
+        print(
+            f"TEMPO DAILY SYNC - {target_date} [PTO] "
+            f"(started {now_ts})"
+        )
+        print(f"{'='*60}\n")
+        print("[INFO] PTO day -- logging hours to overhead story")
+
+        oh = self._get_overhead_config()
+        pto_key = oh.get('pto_story_key', '')
+
+        # Check Jira for existing worklogs on PTO day
+        existing = []
+        if self.jira_client:
+            existing = self.jira_client.get_my_worklogs(
+                target_date, target_date
+            )
+        existing_seconds = sum(
+            wl['time_spent_seconds'] for wl in existing
+        )
+
+        if existing_seconds >= total_seconds:
+            print(
+                f"[OK] PTO hours already logged "
+                f"({existing_seconds/3600:.2f}h)"
+            )
+            worklogs_created = [{
+                'issue_key': wl['issue_key'],
+                'issue_summary': wl.get(
+                    'issue_summary', wl['issue_key']
+                ),
+                'time_spent_seconds': wl['time_spent_seconds']
+            } for wl in existing]
+        else:
+            # Log remaining PTO hours via Jira (syncs to Tempo)
+            remaining = total_seconds - existing_seconds
+            worklogs_created = self._log_overhead_hours(
+                target_date, remaining,
+                [{'issue_key': pto_key, 'summary': pto_key}]
+                if pto_key else None,
+                'single' if pto_key else None
+            )
+
+        total_hours = sum(
+            wl['time_spent_seconds'] for wl in worklogs_created
+        ) / 3600 if worklogs_created else 0.0
+
+        self.notifier.send_daily_summary(
+            worklogs_created, total_hours
+        )
+        done_ts = datetime.now().strftime('%H:%M:%S')
+        print(f"\n{'='*60}")
+        print(f"[OK] PTO SYNC COMPLETE ({done_ts})")
+        print(f"{'='*60}")
+        print(
+            f"Total hours: {total_hours:.2f} / {daily_hours}"
+        )
+        print()
+        logger.info(
+            f"PTO sync completed for {target_date}: "
+            f"{total_hours:.2f}h"
+        )
 
     def sync_daily(self, target_date: str = None):
         """
@@ -1847,7 +2029,28 @@ class TempoAutomation:
         # --- Schedule guard ---
         is_working, reason = self.schedule_mgr.is_working_day(target_date)
         if not is_working:
-            print(f"\n[SKIP] {target_date} is not a working day: {reason}")
+            # Case 3: PTO/Holiday -- log overhead instead of skipping
+            is_off_day = reason != "Weekend"
+            if (is_off_day
+                    and self.config.get('user', {}).get('role')
+                    == 'developer'):
+                if self._is_overhead_configured():
+                    self._sync_pto_overhead(target_date)
+                    return
+                else:
+                    print(
+                        f"\n[SKIP] {target_date} is {reason}."
+                    )
+                    self._warn_overhead_not_configured()
+                    logger.info(
+                        f"Skipped {reason} {target_date}: "
+                        "overhead not configured"
+                    )
+                    return
+            print(
+                f"\n[SKIP] {target_date} is not a working day: "
+                f"{reason}"
+            )
             print(
                 "       Use --add-workday to override if this day "
                 "should be worked."
@@ -1929,50 +2132,221 @@ class TempoAutomation:
 
     def _auto_log_jira_worklogs(self, target_date: str) -> List[Dict]:
         """
-        Auto-log worklogs by distributing daily hours across active Jira tickets.
+        Auto-log worklogs by distributing daily hours across active
+        Jira tickets. Preserves manually-entered overhead worklogs.
 
-        Finds all IN DEVELOPMENT / CODE REVIEW tickets assigned to the current user
-        and splits the configured daily hours equally across them.
+        Cases handled:
+        - Case 0: Default daily overhead (e.g. 2h) logged first
+        - Case 1: No active tickets -> overhead fallback
+        - Case 2: Manual overhead preserved, remaining hours distributed
+        - Case 4: Planning week -> upcoming PI overhead stories
         """
-        # Delete existing worklogs for target date first
-        existing = self.jira_client.get_my_worklogs(target_date, target_date)
-        if existing:
-            print(f"Removing {len(existing)} existing worklog(s) for {target_date}...")
-            for wl in existing:
-                deleted = self.jira_client.delete_worklog(wl['issue_key'], wl['worklog_id'])
-                if deleted:
-                    print(f"  [OK] Removed {wl['time_spent_seconds']/3600:.2f}h from {wl['issue_key']}")
-                else:
-                    print(f"  [FAIL] Could not remove worklog from {wl['issue_key']}")
-            print()
-
-        active_issues = self.jira_client.get_my_active_issues()
-
-        if not active_issues:
-            logger.warning("No active issues found (IN DEVELOPMENT / CODE REVIEW)")
-            print("[!] No active tickets found. Make sure you have tickets IN DEVELOPMENT or CODE REVIEW.")
-            return []
-
+        oh_prefix = self._get_overhead_config().get(
+            'project_prefix', 'OVERHEAD-'
+        )
         daily_hours = self.config.get('schedule', {}).get('daily_hours', 8)
         total_seconds = int(daily_hours * 3600)
-        num_tickets = len(active_issues)
-        seconds_per_ticket = total_seconds // num_tickets
-        # Give remainder to the last ticket so total is exactly daily_hours
-        remainder_seconds = total_seconds - (seconds_per_ticket * num_tickets)
 
+        # Fetch Jira worklogs (has issue keys for identification)
+        jira_worklogs = self.jira_client.get_my_worklogs(
+            target_date, target_date
+        )
+        jira_total = sum(
+            wl['time_spent_seconds'] for wl in jira_worklogs
+        )
+
+        # Separate Jira worklogs: overhead vs non-overhead
+        jira_overhead = [
+            wl for wl in jira_worklogs
+            if wl.get('issue_key', '').startswith(oh_prefix)
+        ]
+        jira_non_overhead = [
+            wl for wl in jira_worklogs
+            if not wl.get('issue_key', '').startswith(oh_prefix)
+        ]
+
+        # Fetch Tempo total (catches manual Tempo entries too)
+        tempo_worklogs = self.tempo_client.get_user_worklogs(
+            target_date, target_date
+        )
+        tempo_total = sum(
+            twl.get('timeSpentSeconds', 0) for twl in tempo_worklogs
+        )
+
+        # Manual Tempo-only hours = entries added directly in Tempo
+        # (not via Jira, so not visible in Jira API)
+        tempo_only_seconds = max(0, tempo_total - jira_total)
+
+        # Total overhead = Jira overhead + Tempo-only entries
+        jira_oh_seconds = sum(
+            wl['time_spent_seconds'] for wl in jira_overhead
+        )
+        overhead_seconds = jira_oh_seconds + tempo_only_seconds
+
+        # Delete only non-overhead Jira worklogs
+        if jira_non_overhead:
+            print(
+                f"Removing {len(jira_non_overhead)} "
+                f"non-overhead worklog(s) for {target_date}..."
+            )
+            for wl in jira_non_overhead:
+                deleted = self.jira_client.delete_worklog(
+                    wl['issue_key'], wl['worklog_id']
+                )
+                if deleted:
+                    print(
+                        f"  [OK] Removed "
+                        f"{wl['time_spent_seconds']/3600:.2f}h "
+                        f"from {wl['issue_key']}"
+                    )
+                else:
+                    print(
+                        f"  [FAIL] Could not remove worklog "
+                        f"from {wl['issue_key']}"
+                    )
+            print()
+
+        # Show overhead summary
+        if overhead_seconds > 0:
+            oh_hours = overhead_seconds / 3600
+            print(f"Overhead hours detected ({oh_hours:.2f}h):")
+            for wl in jira_overhead:
+                wl_h = wl['time_spent_seconds'] / 3600
+                print(f"  - {wl['issue_key']}: {wl_h:.2f}h (Jira)")
+            if tempo_only_seconds > 0:
+                t_h = tempo_only_seconds / 3600
+                print(f"  - Manual Tempo entries: {t_h:.2f}h")
+            print()
+
+        # Case 0: Default daily overhead -- ensure minimum overhead hours
+        default_oh_hours = self._get_overhead_config().get(
+            'daily_overhead_hours', 0
+        )
+        default_oh_seconds = int(default_oh_hours * 3600)
+        if (default_oh_seconds > 0
+                and overhead_seconds < default_oh_seconds
+                and self._is_overhead_configured()):
+            gap_seconds = default_oh_seconds - overhead_seconds
+            gap_hours = gap_seconds / 3600
+            print(
+                f"Default daily overhead: {default_oh_hours}h, "
+                f"existing: {overhead_seconds/3600:.2f}h, "
+                f"logging {gap_hours:.2f}h more"
+            )
+            created_oh = self._log_overhead_hours(
+                target_date, gap_seconds
+            )
+            overhead_seconds = default_oh_seconds
+            # Add to overhead result tracking
+            for wl in created_oh:
+                jira_overhead.append({
+                    'issue_key': wl['issue_key'],
+                    'issue_summary': wl.get(
+                        'issue_summary', wl['issue_key']
+                    ),
+                    'time_spent_seconds': wl['time_spent_seconds'],
+                })
+            print()
+
+        remaining_seconds = total_seconds - overhead_seconds
+
+        # Build result list starting with preserved overhead
+        overhead_result = [{
+            'issue_key': wl['issue_key'],
+            'issue_summary': wl.get('issue_summary', wl['issue_key']),
+            'time_spent_seconds': wl['time_spent_seconds']
+        } for wl in jira_overhead]
+        if tempo_only_seconds > 0:
+            overhead_result.append({
+                'issue_key': 'OVERHEAD (Tempo)',
+                'issue_summary': 'Manual Tempo entries',
+                'time_spent_seconds': tempo_only_seconds
+            })
+
+        if remaining_seconds <= 0:
+            print(
+                f"[OK] Overhead hours ({overhead_seconds/3600:.2f}h) "
+                f"meet/exceed daily target ({daily_hours}h). "
+                f"No additional logging needed."
+            )
+            return overhead_result
+
+        # Case 4: Check for planning week
+        if self._is_planning_week(target_date):
+            print(
+                "[INFO] PI planning week detected -- "
+                "logging to overhead stories"
+            )
+            oh = self._get_overhead_config()
+            planning = oh.get('planning_pi', {})
+            p_stories = planning.get('stories')
+            p_dist = planning.get('distribution')
+            if not p_stories:
+                # Fall back to current PI stories
+                print(
+                    "  [INFO] No planning PI stories configured, "
+                    "using current PI stories"
+                )
+                p_stories = None
+                p_dist = None
+            created = self._log_overhead_hours(
+                target_date, remaining_seconds, p_stories, p_dist
+            )
+            return overhead_result + created
+
+        # Get active issues
+        active_issues = self.jira_client.get_my_active_issues()
+
+        # Case 1: No active tickets -> overhead fallback
+        if not active_issues:
+            logger.warning(
+                "No active issues found (IN DEVELOPMENT / CODE REVIEW)"
+            )
+            if self._is_overhead_configured():
+                print(
+                    "[INFO] No active tickets found. "
+                    "Logging to overhead stories."
+                )
+                created = self._log_overhead_hours(
+                    target_date, remaining_seconds
+                )
+                return overhead_result + created
+            else:
+                self._warn_overhead_not_configured()
+                print(
+                    "[!] No active tickets found and "
+                    "no overhead configured."
+                )
+                return overhead_result
+
+        # Normal flow: distribute remaining hours across active tickets
+        num_tickets = len(active_issues)
+        seconds_per_ticket = remaining_seconds // num_tickets
+        remainder_secs = remaining_seconds - (
+            seconds_per_ticket * num_tickets
+        )
+
+        remaining_hours = remaining_seconds / 3600
         print(f"Found {num_tickets} active ticket(s):")
         for issue in active_issues:
-            print(f"  - {issue['issue_key']}: {issue['issue_summary']}")
-        print(f"\n{daily_hours}h / {num_tickets} tickets = {seconds_per_ticket/3600:.2f}h each\n")
+            print(
+                f"  - {issue['issue_key']}: {issue['issue_summary']}"
+            )
+        print(
+            f"\n{remaining_hours:.2f}h / {num_tickets} tickets = "
+            f"{seconds_per_ticket/3600:.2f}h each\n"
+        )
 
         created = []
         for i, issue in enumerate(active_issues):
-            # Last ticket gets the remainder so total adds up exactly
-            ticket_seconds = seconds_per_ticket + (remainder_seconds if i == num_tickets - 1 else 0)
+            ticket_seconds = seconds_per_ticket + (
+                remainder_secs if i == num_tickets - 1 else 0
+            )
             ticket_hours = ticket_seconds / 3600
 
-            # Generate a meaningful description from ticket content
-            comment = self._generate_work_summary(issue['issue_key'], issue['issue_summary'])
+            comment = self._generate_work_summary(
+                issue['issue_key'], issue['issue_summary']
+            )
             success = self.jira_client.create_worklog(
                 issue_key=issue['issue_key'],
                 time_spent_seconds=ticket_seconds,
@@ -1981,8 +2355,15 @@ class TempoAutomation:
             )
 
             if success:
-                print(f"  [OK] Logged {ticket_hours:.2f}h on {issue['issue_key']}")
-                print(f"    Description: {comment[:80]}{'...' if len(comment) > 80 else ''}")
+                print(
+                    f"  [OK] Logged {ticket_hours:.2f}h on "
+                    f"{issue['issue_key']}"
+                )
+                print(
+                    f"    Description: "
+                    f"{comment[:80]}"
+                    f"{'...' if len(comment) > 80 else ''}"
+                )
                 created.append({
                     'issue_key': issue['issue_key'],
                     'issue_summary': issue['issue_summary'],
@@ -1991,7 +2372,7 @@ class TempoAutomation:
             else:
                 print(f"  [FAIL] {issue['issue_key']}")
 
-        return created
+        return overhead_result + created
 
     def _generate_work_summary(self, issue_key: str, issue_summary: str) -> str:
         """
@@ -2038,6 +2419,692 @@ class TempoAutomation:
                 break
 
         return '\n'.join(lines)
+
+    # ------------------------------------------------------------------
+    # OVERHEAD STORY SUPPORT
+    # ------------------------------------------------------------------
+
+    def _get_overhead_config(self) -> Dict:
+        """Get overhead configuration section from config."""
+        return self.config.get('overhead', {})
+
+    def _is_overhead_configured(self) -> bool:
+        """Check if overhead stories are configured for current PI."""
+        oh = self._get_overhead_config()
+        current_pi = oh.get('current_pi', {})
+        return bool(
+            current_pi.get('pi_identifier')
+            and current_pi.get('stories')
+        )
+
+    def _parse_pi_end_date(self, pi_identifier: str) -> Optional[str]:
+        """
+        Parse PI end date from identifier (PI.YY.N.MON.DD).
+
+        Args:
+            pi_identifier: e.g. "PI.26.2.APR.17"
+
+        Returns:
+            Date string "YYYY-MM-DD" or None if parsing fails
+        """
+        match = re.match(
+            r'PI\.(\d{2})\.(\d+)\.([A-Z]{3})\.(\d{1,2})',
+            pi_identifier
+        )
+        if not match:
+            return None
+        yy, _, mon_str, dd = match.groups()
+        month_map = {
+            'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4,
+            'MAY': 5, 'JUN': 6, 'JUL': 7, 'AUG': 8,
+            'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+        }
+        month = month_map.get(mon_str)
+        if not month:
+            return None
+        year = 2000 + int(yy)
+        try:
+            end_date = date(year, month, int(dd))
+            return end_date.strftime('%Y-%m-%d')
+        except ValueError:
+            return None
+
+    def _is_planning_week(self, target_date: str) -> bool:
+        """
+        Check if target_date falls in the PI planning week.
+
+        Planning week = 5 working days immediately after PI end date.
+        """
+        oh = self._get_overhead_config()
+        current_pi = oh.get('current_pi', {})
+        pi_end_str = current_pi.get('pi_end_date', '')
+        if not pi_end_str:
+            pi_id = current_pi.get('pi_identifier', '')
+            pi_end_str = self._parse_pi_end_date(pi_id)
+            if not pi_end_str:
+                return False
+
+        pi_end = datetime.strptime(pi_end_str, '%Y-%m-%d').date()
+        target = datetime.strptime(target_date, '%Y-%m-%d').date()
+
+        # Planning week starts the day after PI end
+        if target <= pi_end:
+            return False
+
+        # Count 5 working days after PI end
+        current = pi_end + timedelta(days=1)
+        working_count = 0
+        planning_end = None
+        while working_count < 5:
+            is_working, _ = self.schedule_mgr.is_working_day(
+                current.strftime('%Y-%m-%d')
+            )
+            if is_working:
+                working_count += 1
+                planning_end = current
+            current += timedelta(days=1)
+            # Safety: don't scan more than 14 calendar days
+            if (current - pi_end).days > 14:
+                return False
+
+        if planning_end is None:
+            return False
+        return pi_end < target <= planning_end
+
+    def _log_overhead_hours(self, target_date: str, total_seconds: int,
+                            stories: List[Dict] = None,
+                            distribution: str = None) -> List[Dict]:
+        """
+        Create Jira worklogs on overhead stories (syncs to Tempo).
+
+        Args:
+            target_date: Date string YYYY-MM-DD
+            total_seconds: Total seconds to distribute
+            stories: List of story dicts with issue_key, summary, hours.
+                     If None, uses current_pi.stories from config.
+            distribution: "single", "equal", or "custom".
+                          If None, uses current_pi.distribution from config.
+
+        Returns:
+            List of created worklog dicts
+        """
+        oh = self._get_overhead_config()
+
+        if stories is None:
+            current_pi = oh.get('current_pi', {})
+            stories = current_pi.get('stories', [])
+            if distribution is None:
+                distribution = current_pi.get('distribution', 'equal')
+
+        if distribution is None:
+            distribution = 'equal'
+
+        if not stories:
+            # Try fallback
+            fallback = oh.get('fallback_issue_key', '')
+            if fallback:
+                stories = [{'issue_key': fallback, 'summary': fallback}]
+                distribution = 'single'
+                print(f"  [INFO] Using fallback overhead: {fallback}")
+            else:
+                print(
+                    "[!] No overhead stories configured. "
+                    "Run: python tempo_automation.py --select-overhead"
+                )
+                return []
+
+        # Calculate seconds per story based on distribution mode
+        allocations = []
+        if distribution == 'single':
+            allocations = [(stories[0], total_seconds)]
+        elif distribution == 'custom':
+            # Proportional scaling based on configured hours
+            total_configured = sum(
+                s.get('hours', 0) for s in stories
+            )
+            if total_configured <= 0:
+                total_configured = len(stories)
+                for s in stories:
+                    s['hours'] = 1
+            for s in stories:
+                ratio = s.get('hours', 0) / total_configured
+                allocations.append((s, int(total_seconds * ratio)))
+            # Fix rounding: adjust last entry
+            allocated = sum(a[1] for a in allocations)
+            if allocations and allocated != total_seconds:
+                last_s, last_sec = allocations[-1]
+                allocations[-1] = (last_s, last_sec + total_seconds - allocated)
+        else:
+            # equal distribution
+            num = len(stories)
+            per_ticket = total_seconds // num
+            remainder = total_seconds - (per_ticket * num)
+            for i, s in enumerate(stories):
+                secs = per_ticket + (remainder if i == num - 1 else 0)
+                allocations.append((s, secs))
+
+        created = []
+        for story, seconds in allocations:
+            if seconds <= 0:
+                continue
+            hours = seconds / 3600
+            key = story['issue_key']
+            summary = story.get('summary', key)
+            comment = f"Overhead - {summary}"
+
+            success = self.jira_client.create_worklog(
+                issue_key=key,
+                time_spent_seconds=seconds,
+                started=target_date,
+                comment=comment
+            )
+            if success:
+                print(f"  [OK] Logged {hours:.2f}h on {key} (overhead)")
+                created.append({
+                    'issue_key': key,
+                    'issue_summary': summary,
+                    'time_spent_seconds': seconds
+                })
+            else:
+                print(f"  [FAIL] {key}")
+
+        return created
+
+    def _warn_overhead_not_configured(self):
+        """Warn user that overhead stories need to be selected."""
+        msg = (
+            "[!] Overhead stories not configured for current PI.\n"
+            "    Run: python tempo_automation.py --select-overhead"
+        )
+        print(msg)
+        logger.warning("Overhead stories not configured")
+        try:
+            self.notifier.send_windows_notification(
+                'Overhead Not Configured',
+                'Run --select-overhead to set overhead stories for '
+                'this PI.'
+            )
+        except Exception:
+            pass
+
+    def _save_config(self):
+        """Write current config to config.json."""
+        try:
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=2)
+            logger.info("Config saved")
+        except Exception as e:
+            logger.error(f"Error saving config: {e}")
+
+    def _check_overhead_pi_current(self) -> bool:
+        """
+        Check if stored overhead PI matches the current active PI.
+
+        Caches check daily to avoid API calls on every run.
+        """
+        oh = self._get_overhead_config()
+        stored_pi = oh.get('current_pi', {}).get('pi_identifier', '')
+        if not stored_pi:
+            return False
+
+        # Check cache -- only verify once per day
+        last_check = oh.get('_last_pi_check', '')
+        today_str = date.today().strftime('%Y-%m-%d')
+        if last_check == today_str:
+            return True
+
+        if not self.jira_client:
+            return True  # Can't verify without Jira client
+
+        stories = self.jira_client.get_overhead_stories()
+        if not stories:
+            return True  # Can't verify, assume current
+
+        # Check if any story has a different PI
+        pi_ids = set(
+            s['pi_identifier'] for s in stories
+            if s.get('pi_identifier')
+        )
+        is_current = stored_pi in pi_ids
+
+        # Update cache timestamp
+        if 'overhead' not in self.config:
+            self.config['overhead'] = {}
+        self.config['overhead']['_last_pi_check'] = today_str
+        self._save_config()
+
+        return is_current
+
+    def select_overhead_stories(self) -> bool:
+        """
+        Interactive CLI flow for selecting overhead stories.
+
+        Queries Jira OVERHEAD project, groups by PI, lets user
+        select stories for current PI and planning PI.
+
+        Returns:
+            True if selection saved, False if cancelled/failed
+        """
+        if not self.jira_client:
+            print(
+                "[ERROR] Jira client not available "
+                "(developer role required)"
+            )
+            return False
+
+        print(f"\n{'='*60}")
+        print("OVERHEAD STORY SELECTION")
+        print(f"{'='*60}")
+
+        stories = self.jira_client.get_overhead_stories()
+        if not stories:
+            print("\n[!] No active overhead stories found in Jira.")
+            print("    (project = OVERHEAD, status = In Progress)")
+            fallback = input(
+                "\nEnter a fallback issue key (or Enter to skip): "
+            ).strip()
+            if fallback:
+                self.config.setdefault('overhead', {})
+                self.config['overhead']['fallback_issue_key'] = fallback
+                self._save_config()
+                print(f"[OK] Fallback set to {fallback}")
+            return False
+
+        # Group stories by PI
+        pi_groups = {}
+        no_pi = []
+        for s in stories:
+            pi = s.get('pi_identifier', '')
+            if pi:
+                pi_groups.setdefault(pi, []).append(s)
+            else:
+                no_pi.append(s)
+
+        # Sort PIs (latest first)
+        sorted_pis = sorted(pi_groups.keys(), reverse=True)
+
+        # Display all stories grouped by PI
+        print(f"\nFound {len(stories)} overhead story(ies):\n")
+        display_list = []
+        for pi in sorted_pis:
+            print(f"  -- {pi} --")
+            for s in pi_groups[pi]:
+                idx = len(display_list) + 1
+                print(f"  {idx}. {s['issue_key']}: {s['issue_summary']}")
+                display_list.append(s)
+        if no_pi:
+            print("  -- No PI --")
+            for s in no_pi:
+                idx = len(display_list) + 1
+                print(f"  {idx}. {s['issue_key']}: {s['issue_summary']}")
+                display_list.append(s)
+
+        # --- Current PI selection ---
+        print(f"\n--- Current PI Stories ---")
+        print("Select stories for normal days (no active tickets):")
+        raw = input(
+            "Enter numbers (comma-separated), 'all', "
+            "or Enter to skip: "
+        ).strip()
+
+        if not raw:
+            print("[!] No stories selected.")
+            return False
+
+        selected = self._parse_story_selection(raw, display_list)
+        if not selected:
+            print("[!] Invalid selection.")
+            return False
+
+        print(f"\nSelected {len(selected)} story(ies):")
+        for s in selected:
+            print(f"  - {s['issue_key']}: {s['issue_summary']}")
+
+        # Distribution mode
+        distribution = self._ask_distribution_mode(selected)
+
+        # Assign custom hours if needed
+        story_configs = []
+        if distribution == 'custom':
+            daily_hours = self.config.get('schedule', {}).get(
+                'daily_hours', 8
+            )
+            print(f"\nAssign hours per story (total = {daily_hours}h):")
+            remaining = daily_hours
+            for i, s in enumerate(selected):
+                if i == len(selected) - 1:
+                    hrs = remaining
+                    print(
+                        f"  {s['issue_key']} ({s['issue_summary']}): "
+                        f"{hrs}h (remainder)"
+                    )
+                else:
+                    raw_h = input(
+                        f"  {s['issue_key']} ({s['issue_summary']}): "
+                    ).strip()
+                    try:
+                        hrs = float(raw_h)
+                    except ValueError:
+                        hrs = remaining / (len(selected) - i)
+                    remaining -= hrs
+                story_configs.append({
+                    'issue_key': s['issue_key'],
+                    'summary': s['issue_summary'],
+                    'hours': hrs
+                })
+        else:
+            for s in selected:
+                story_configs.append({
+                    'issue_key': s['issue_key'],
+                    'summary': s['issue_summary']
+                })
+
+        # Detect current PI from selection
+        current_pi_id = ''
+        for s in selected:
+            if s.get('pi_identifier'):
+                current_pi_id = s['pi_identifier']
+                break
+        pi_end = self._parse_pi_end_date(current_pi_id) or ''
+
+        # --- PTO story selection ---
+        print(f"\n--- PTO Story ---")
+        print("Which story for PTO/Holiday days?")
+        print("(Showing all overhead stories, not just your "
+              "normal-day selection)")
+        for i, s in enumerate(display_list, 1):
+            print(f"  {i}. {s['issue_key']}: {s['issue_summary']}")
+        pto_raw = input(
+            "Choice (enter number): "
+        ).strip()
+        pto_key = ''
+        pto_summary = ''
+        if pto_raw.isdigit():
+            idx = int(pto_raw) - 1
+            if 0 <= idx < len(display_list):
+                pto_key = display_list[idx]['issue_key']
+                pto_summary = display_list[idx]['issue_summary']
+        if not pto_key:
+            pto_key = selected[0]['issue_key']
+            pto_summary = selected[0]['issue_summary']
+            print(f"  Defaulting to: {pto_key}")
+        print(f"  PTO story: {pto_key}: {pto_summary}")
+
+        # --- Planning PI selection ---
+        planning_config = {}
+        # Find PIs different from current
+        other_pis = [p for p in sorted_pis if p != current_pi_id]
+        if other_pis:
+            print(f"\n--- Planning Week Stories ---")
+            print(
+                "Planning week uses UPCOMING PI stories."
+            )
+            upcoming_pi = other_pis[0]  # Latest non-current PI
+            upcoming_stories = pi_groups.get(upcoming_pi, [])
+            if upcoming_stories:
+                print(f"\nUpcoming PI: {upcoming_pi}")
+                for i, s in enumerate(upcoming_stories, 1):
+                    print(
+                        f"  {i}. {s['issue_key']}: "
+                        f"{s['issue_summary']}"
+                    )
+                p_raw = input(
+                    "Select for planning (comma-separated, "
+                    "'all', Enter for all): "
+                ).strip()
+                if not p_raw or p_raw.lower() == 'all':
+                    p_selected = upcoming_stories
+                else:
+                    p_selected = self._parse_story_selection(
+                        p_raw, upcoming_stories
+                    )
+                if p_selected:
+                    p_dist = self._ask_distribution_mode(p_selected)
+                    p_stories = []
+                    if p_dist == 'custom':
+                        daily_h = self.config.get(
+                            'schedule', {}
+                        ).get('daily_hours', 8)
+                        print(
+                            f"\nAssign planning hours "
+                            f"(total = {daily_h}h):"
+                        )
+                        p_rem = daily_h
+                        for i, s in enumerate(p_selected):
+                            if i == len(p_selected) - 1:
+                                h = p_rem
+                                print(
+                                    f"  {s['issue_key']}: "
+                                    f"{h}h (remainder)"
+                                )
+                            else:
+                                raw_h = input(
+                                    f"  {s['issue_key']}: "
+                                ).strip()
+                                try:
+                                    h = float(raw_h)
+                                except ValueError:
+                                    h = p_rem / (
+                                        len(p_selected) - i
+                                    )
+                                p_rem -= h
+                            p_stories.append({
+                                'issue_key': s['issue_key'],
+                                'summary': s['issue_summary'],
+                                'hours': h
+                            })
+                    else:
+                        for s in p_selected:
+                            p_stories.append({
+                                'issue_key': s['issue_key'],
+                                'summary': s['issue_summary']
+                            })
+
+                    planning_config = {
+                        'pi_identifier': upcoming_pi,
+                        'stories': p_stories,
+                        'distribution': p_dist
+                    }
+        else:
+            print(
+                "\n[INFO] Only one PI found. Planning week stories "
+                "can be configured later when the next PI is "
+                "created."
+            )
+
+        # --- Fallback ---
+        existing_fallback = self._get_overhead_config().get(
+            'fallback_issue_key', ''
+        )
+        print(f"\n--- Fallback ---")
+        fb_raw = input(
+            f"Fallback issue key (Enter for "
+            f"'{existing_fallback or 'none'}'): "
+        ).strip()
+        fallback_key = fb_raw if fb_raw else existing_fallback
+
+        # --- Default daily overhead hours ---
+        existing_doh = self._get_overhead_config().get(
+            'daily_overhead_hours', 2
+        )
+        print(f"\n--- Default Daily Overhead ---")
+        print(
+            "Hours logged to overhead EVERY working day "
+            "(before distributing remaining to active tickets)."
+        )
+        doh_raw = input(
+            f"Daily overhead hours (Enter for {existing_doh}): "
+        ).strip()
+        try:
+            daily_oh_hours = float(doh_raw) if doh_raw else existing_doh
+        except ValueError:
+            daily_oh_hours = existing_doh
+        print(f"  Daily overhead: {daily_oh_hours}h")
+
+        # --- Save ---
+        overhead_config = {
+            'current_pi': {
+                'pi_identifier': current_pi_id,
+                'pi_end_date': pi_end,
+                'stories': story_configs,
+                'distribution': distribution
+            },
+            'pto_story_key': pto_key,
+            'pto_story_summary': pto_summary,
+            'planning_pi': planning_config,
+            'daily_overhead_hours': daily_oh_hours,
+            'fallback_issue_key': fallback_key,
+            'project_prefix': self._get_overhead_config().get(
+                'project_prefix', 'OVERHEAD-'
+            ),
+            '_last_pi_check': date.today().strftime('%Y-%m-%d')
+        }
+        self.config['overhead'] = overhead_config
+        self._save_config()
+
+        # --- Summary ---
+        print(f"\n{'='*60}")
+        print("[OK] Overhead stories saved")
+        print(f"{'='*60}")
+        print(f"  Current PI: {current_pi_id}")
+        if pi_end:
+            print(f"  PI end date: {pi_end}")
+        print(f"  Distribution: {distribution}")
+        print(f"  Stories: {len(story_configs)}")
+        for s in story_configs:
+            hrs = s.get('hours', '')
+            hrs_str = f" ({hrs}h)" if hrs else ''
+            print(f"    - {s['issue_key']}: {s['summary']}{hrs_str}")
+        print(f"  Daily overhead: {daily_oh_hours}h")
+        print(f"  PTO story: {pto_key}: {pto_summary}")
+        if planning_config:
+            print(
+                f"  Planning PI: "
+                f"{planning_config.get('pi_identifier', '')}"
+            )
+            print(
+                f"  Planning stories: "
+                f"{len(planning_config.get('stories', []))}"
+            )
+        if fallback_key:
+            print(f"  Fallback: {fallback_key}")
+        print()
+
+        return True
+
+    def _parse_story_selection(self, raw: str,
+                               stories: List[Dict]) -> List[Dict]:
+        """Parse user input for story selection."""
+        if raw.lower() == 'all':
+            return list(stories)
+        indices = []
+        for part in raw.split(','):
+            part = part.strip()
+            if part.isdigit():
+                idx = int(part) - 1
+                if 0 <= idx < len(stories):
+                    indices.append(idx)
+        return [stories[i] for i in indices]
+
+    def _ask_distribution_mode(self, selected: List[Dict]) -> str:
+        """Ask user for hour distribution mode."""
+        if len(selected) == 1:
+            return 'single'
+        print(f"\nHow should hours be distributed?")
+        print("  1. Equal split across stories")
+        print("  2. Custom hours per story")
+        choice = input("Choice (1 or 2, default 1): ").strip()
+        if choice == '2':
+            return 'custom'
+        return 'equal'
+
+    def show_overhead_config(self):
+        """Display current overhead story configuration."""
+        oh = self._get_overhead_config()
+        current_pi = oh.get('current_pi', {})
+        if not current_pi or not current_pi.get('stories'):
+            print("\n[INFO] No overhead stories configured.")
+            print(
+                "  Run: python tempo_automation.py --select-overhead"
+            )
+            return
+
+        print(f"\nOverhead Configuration")
+        print("=" * 50)
+        print(f"  PI: {current_pi.get('pi_identifier', '(none)')}")
+        print(
+            f"  PI End Date: "
+            f"{current_pi.get('pi_end_date', '(none)')}"
+        )
+        print(
+            f"  Distribution: "
+            f"{current_pi.get('distribution', '(none)')}"
+        )
+        print(f"  Stories:")
+        for s in current_pi.get('stories', []):
+            hrs = s.get('hours', '')
+            hrs_str = f" ({hrs}h)" if hrs else ''
+            print(
+                f"    - {s['issue_key']}: "
+                f"{s.get('summary', '')}{hrs_str}"
+            )
+        daily_oh = oh.get('daily_overhead_hours', 0)
+        print(f"  Daily Overhead: {daily_oh}h")
+        pto_key = oh.get('pto_story_key', '')
+        pto_sum = oh.get('pto_story_summary', '')
+        if pto_key:
+            print(f"  PTO Story: {pto_key}: {pto_sum}")
+        else:
+            print("  PTO Story: (none)")
+
+        planning = oh.get('planning_pi', {})
+        if planning and planning.get('stories'):
+            print(
+                f"  Planning PI: "
+                f"{planning.get('pi_identifier', '(none)')}"
+            )
+            print(
+                f"  Planning Distribution: "
+                f"{planning.get('distribution', '(none)')}"
+            )
+            for s in planning.get('stories', []):
+                hrs = s.get('hours', '')
+                hrs_str = f" ({hrs}h)" if hrs else ''
+                print(
+                    f"    - {s['issue_key']}: "
+                    f"{s.get('summary', '')}{hrs_str}"
+                )
+
+        print(
+            f"  Fallback: "
+            f"{oh.get('fallback_issue_key', '(none)')}"
+        )
+
+        # Show planning week dates if PI end date known
+        pi_end = current_pi.get('pi_end_date', '')
+        if pi_end:
+            pi_end_dt = datetime.strptime(pi_end, '%Y-%m-%d').date()
+            pw_start = pi_end_dt + timedelta(days=1)
+            # Find the 5th working day
+            current_d = pw_start
+            count = 0
+            while count < 5:
+                is_w, _ = self.schedule_mgr.is_working_day(
+                    current_d.strftime('%Y-%m-%d')
+                )
+                if is_w:
+                    count += 1
+                    if count == 5:
+                        break
+                current_d += timedelta(days=1)
+                if (current_d - pi_end_dt).days > 14:
+                    break
+            print(
+                f"\n  Planning week: "
+                f"{pw_start.strftime('%Y-%m-%d')} to "
+                f"{current_d.strftime('%Y-%m-%d')}"
+            )
+        print()
 
     def _sync_manual_activities(self, target_date: str) -> List[Dict]:
         """Sync manual activities from configuration."""
@@ -2199,8 +3266,62 @@ class TempoAutomation:
                 continue
 
             # Check if working day
-            is_working, reason = self.schedule_mgr.is_working_day(day_str)
+            is_working, reason = self.schedule_mgr.is_working_day(
+                day_str
+            )
             if not is_working:
+                # Case 3: PTO/Holiday -- check/log overhead hours
+                is_off_day = reason != "Weekend"
+                if (is_off_day
+                        and self._is_overhead_configured()
+                        and self.jira_client):
+                    result = self._check_day_hours(day_str)
+                    daily_secs = int(
+                        self.schedule_mgr.daily_hours * 3600
+                    )
+                    if result['gap_hours'] > 0:
+                        print(
+                            f"  [INFO] {reason} -- "
+                            "logging overhead hours"
+                        )
+                        oh = self._get_overhead_config()
+                        pto_key = oh.get('pto_story_key', '')
+                        # Delete partial entries and re-log
+                        for wl in result['worklogs']:
+                            self.jira_client.delete_worklog(
+                                wl['issue_key'],
+                                wl['worklog_id']
+                            )
+                        created = self._log_overhead_hours(
+                            day_str, daily_secs,
+                            [{'issue_key': pto_key,
+                              'summary': pto_key}]
+                            if pto_key else None,
+                            'single' if pto_key else None
+                        )
+                        added_h = sum(
+                            c['time_spent_seconds']
+                            for c in created
+                        ) / 3600
+                        total_created += len(created)
+                        total_added_hours += added_h
+                        status = f'[+] {reason} (overhead logged)'
+                    else:
+                        existing_h = result['existing_hours']
+                        status = (
+                            f'[OK] {reason} ({existing_h:.2f}h)'
+                        )
+                        added_h = 0.0
+                    day_results.append({
+                        'day_name': day_name,
+                        'date': day_str,
+                        'status': status,
+                        'existing_hours': result[
+                            'existing_hours'
+                        ],
+                        'added_hours': added_h
+                    })
+                    continue
                 print(f"  [SKIP] {reason}")
                 day_results.append({
                     'day_name': day_name,
@@ -2366,6 +3487,21 @@ class TempoAutomation:
         ]
 
         if not unlogged:
+            # Try overhead stories as fallback (Case 1)
+            if self._is_overhead_configured():
+                print(
+                    "  No unlogged stories found -- "
+                    "using overhead stories"
+                )
+                created = self._log_overhead_hours(
+                    target_date, gap_seconds
+                )
+                result['created_count'] = len(created)
+                result['hours_added'] = sum(
+                    c['time_spent_seconds'] for c in created
+                ) / 3600
+                result['method'] = 'overhead'
+                return result
             print("  No unlogged stories found for this date")
             return result
 
@@ -2471,6 +3607,8 @@ Examples:
   python tempo_automation.py --remove-holiday 2026-04-01
   python tempo_automation.py --add-workday 2026-03-15
   python tempo_automation.py --remove-workday 2026-03-15
+  python tempo_automation.py --select-overhead   # Select overhead stories for PI
+  python tempo_automation.py --show-overhead      # Show overhead configuration
         """
     )
 
@@ -2539,6 +3677,16 @@ Examples:
         help='Remove compensatory working day(s), comma-separated'
     )
 
+    # Overhead story management
+    parser.add_argument(
+        '--select-overhead', action='store_true',
+        help='Select overhead stories for current PI'
+    )
+    parser.add_argument(
+        '--show-overhead', action='store_true',
+        help='Show current overhead story configuration'
+    )
+
     args = parser.parse_args()
 
     # Set up dual output if --logfile is provided
@@ -2601,8 +3749,13 @@ Examples:
         # Initialize full automation
         automation = TempoAutomation()
 
+        # Overhead management
+        if args.select_overhead:
+            automation.select_overhead_stories()
+        elif args.show_overhead:
+            automation.show_overhead_config()
         # Submit timesheet
-        if args.submit:
+        elif args.submit:
             automation.submit_timesheet()
         # Weekly verification
         elif args.verify_week:
