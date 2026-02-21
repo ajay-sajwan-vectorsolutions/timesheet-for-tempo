@@ -73,6 +73,7 @@
       "stories": [],
       "distribution": "equal"
     },
+    "daily_overhead_hours": 2,
     "fallback_issue_key": "",
     "project_prefix": "OVERHEAD-"
   },

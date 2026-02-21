@@ -37,6 +37,16 @@ Check off items as they are addressed.
 - [ ] **Backfill with overhead fallback**: Run `--verify-week` on a week with gaps where no historical stories exist. Verify overhead fallback in `_backfill_day()` works
 - [ ] **Mixed day: manual overhead + active tickets**: Test the core Case 2 flow end-to-end with real data (manual 2h overhead + active tickets = 6h distributed)
 
+## Default Daily Overhead (Case 0)
+
+- [ ] **Normal day, 0h manual overhead**: Verify 2h logged to overhead + 6h across active tickets
+- [ ] **Manual overhead < default**: If user manually logged 1h, verify 1h more auto-logged to reach 2h default, then 6h to active tickets
+- [ ] **Manual overhead >= default**: If user manually logged 3h, verify no additional overhead logged, 5h to active tickets
+- [ ] **No active tickets + default overhead**: Verify 2h default + 6h remaining all go to overhead = 8h total
+- [ ] **daily_overhead_hours = 0**: Verify feature is disabled, behaves like pre-Case-0 logic
+- [ ] **Idempotency**: Run sync twice on same day -- second run should not double the default overhead
+- [ ] **select_overhead prompt**: Verify `--select-overhead` asks for daily_overhead_hours value
+
 ## Tray App
 
 - [ ] **"Select Overhead" menu item**: Test that clicking it opens a cmd window with the interactive selection flow

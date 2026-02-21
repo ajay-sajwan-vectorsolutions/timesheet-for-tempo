@@ -49,8 +49,9 @@ REM Install dependencies
 REM ============================================================================
 
 echo [2/6] Installing Python dependencies...
-python -m pip install --upgrade pip --quiet
-python -m pip install -r requirements.txt --quiet
+echo.
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 
 if %errorlevel% neq 0 (
     echo.
@@ -134,20 +135,16 @@ echo configured sync time, and lets you sync with one click.
 echo It will start automatically every time you log in to Windows.
 echo.
 
-REM Find pythonw.exe using 'where' command (most reliable on Windows)
-for /f "tokens=*" %%a in ('where pythonw.exe 2^>nul') do (
-    set PYTHONW_PATH=%%a
-    goto :found_pythonw
-)
-REM Fallback: look alongside python.exe
-for %%i in (python.exe) do set PYTHONW_PATH=%%~dp$PATH:ipythonw.exe
-:found_pythonw
+REM Find pythonw.exe by looking next to python.exe (always installed together)
+for %%i in (python.exe) do set PYTHON_DIR=%%~dp$PATH:i
+set PYTHONW_PATH=%PYTHON_DIR%pythonw.exe
 
 if not exist "%PYTHONW_PATH%" (
-    echo [!] pythonw.exe not found
+    echo [!] pythonw.exe not found at %PYTHONW_PATH%
     echo     Falling back to python.exe (a console window will appear)
     for %%i in (python.exe) do set PYTHONW_PATH=%%~$PATH:i
 )
+echo Using: %PYTHONW_PATH%
 
 REM Stop any existing tray app instance before starting fresh
 echo Stopping any existing tray app...
@@ -157,9 +154,11 @@ timeout /t 2 /nobreak >nul
 REM Register auto-start on login
 python "%SCRIPT_DIR%tray_app.py" --register
 
-REM Start the tray app now (pythonw = no console window)
+REM Start the tray app now (detached -- no console window, no terminal tab)
 echo Starting tray app...
-start "" "%PYTHONW_PATH%" "%SCRIPT_DIR%tray_app.py"
+echo CreateObject("WScript.Shell").Run """%PYTHONW_PATH%"" ""%SCRIPT_DIR%tray_app.py""", 0, False > "%TEMP%\_tempo_launch.vbs"
+wscript "%TEMP%\_tempo_launch.vbs"
+del "%TEMP%\_tempo_launch.vbs" >nul 2>&1
 timeout /t 3 /nobreak >nul
 echo [OK] Tray app is running in the system tray
 echo.

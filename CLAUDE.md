@@ -137,7 +137,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 
 ## Current Status
 
-**Working:** Daily sync, idempotent overwrite, smart descriptions, schedule guard (weekends/holidays/PTO), weekly verify, monthly submit guard, tray app with favicon, install.bat, DPAPI encryption, --stop flag, welcome toast, auto-register autostart, overhead story support (4 cases: no active tickets, manual overhead, PTO/holidays, planning week), hybrid Jira+Tempo overhead detection (Jira for issue keys, Tempo for manual entries), holiday overhead logging (holidays treated same as PTO), email notifications default to disabled in setup wizard
+**Working:** Daily sync, idempotent overwrite, smart descriptions, schedule guard (weekends/holidays/PTO), weekly verify, monthly submit guard, tray app with favicon, install.bat, DPAPI encryption, --stop flag, welcome toast, auto-register autostart, overhead story support (5 cases: default daily 2h overhead, no active tickets, manual overhead, PTO/holidays, planning week), hybrid Jira+Tempo overhead detection (Jira for issue keys, Tempo for manual entries), holiday overhead logging (holidays treated same as PTO), email notifications default to disabled in setup wizard, configurable daily_overhead_hours in overhead config
 
 **TODO:**
 - [ ] Test --verify-week with live data
@@ -155,7 +155,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 | v3.1 | Feb 18 | Tray app, favicon, smart exit, confirm dialog |
 | v3.2 | Feb 19 | Hardcoded URLs, install.bat rewrite, --stop, welcome toast |
 | v3.3 | Feb 19 | Doc reorganization, .claude/rules, .claude/skills |
-| v3.4 | Feb 20 | Overhead story support: 4 cases (no active tickets, manual overhead, PTO/holidays, planning week), --select-overhead/--show-overhead CLI, hybrid Jira+Tempo detection, JiraClient account_id, TempoClient account_id parameter, holidays log overhead same as PTO, email default disabled |
+| v3.4 | Feb 20 | Overhead story support: 5 cases (default daily 2h overhead, no active tickets, manual overhead, PTO/holidays, planning week), --select-overhead/--show-overhead CLI, hybrid Jira+Tempo detection, JiraClient account_id, TempoClient account_id parameter, holidays log overhead same as PTO, email default disabled, configurable daily_overhead_hours |
 
 ---
 

@@ -246,9 +246,10 @@ class ConfigManager:
         print(f"Jira URL: {jira_url} (organization default)")
         
         print("\n[INFO] To get your Tempo API token:")
-        print("   1. Go to https://app.tempo.io/")
-        print("   2. Settings -> API Integration")
-        print("   3. Click 'New Token'")
+        print("   1. Go to https://lmsportal.atlassian.net/plugins/servlet/ac/io.tempo.jira/tempo-app#!/configuration/api-integration")
+        print("   2. Click 'New Token'")
+        print("   3. Give it a name (e.g., 'Tempo Automation')")
+        print("   4. Copy the generated token")
         tempo_token = input("\nEnter your Tempo API token: ").strip()
         
         if user_role == "developer":
@@ -2135,6 +2136,7 @@ class TempoAutomation:
         Jira tickets. Preserves manually-entered overhead worklogs.
 
         Cases handled:
+        - Case 0: Default daily overhead (e.g. 2h) logged first
         - Case 1: No active tickets -> overhead fallback
         - Case 2: Manual overhead preserved, remaining hours distributed
         - Case 4: Planning week -> upcoming PI overhead stories
@@ -2214,6 +2216,36 @@ class TempoAutomation:
             if tempo_only_seconds > 0:
                 t_h = tempo_only_seconds / 3600
                 print(f"  - Manual Tempo entries: {t_h:.2f}h")
+            print()
+
+        # Case 0: Default daily overhead -- ensure minimum overhead hours
+        default_oh_hours = self._get_overhead_config().get(
+            'daily_overhead_hours', 0
+        )
+        default_oh_seconds = int(default_oh_hours * 3600)
+        if (default_oh_seconds > 0
+                and overhead_seconds < default_oh_seconds
+                and self._is_overhead_configured()):
+            gap_seconds = default_oh_seconds - overhead_seconds
+            gap_hours = gap_seconds / 3600
+            print(
+                f"Default daily overhead: {default_oh_hours}h, "
+                f"existing: {overhead_seconds/3600:.2f}h, "
+                f"logging {gap_hours:.2f}h more"
+            )
+            created_oh = self._log_overhead_hours(
+                target_date, gap_seconds
+            )
+            overhead_seconds = default_oh_seconds
+            # Add to overhead result tracking
+            for wl in created_oh:
+                jira_overhead.append({
+                    'issue_key': wl['issue_key'],
+                    'issue_summary': wl.get(
+                        'issue_summary', wl['issue_key']
+                    ),
+                    'time_spent_seconds': wl['time_spent_seconds'],
+                })
             print()
 
         remaining_seconds = total_seconds - overhead_seconds
@@ -2891,6 +2923,24 @@ class TempoAutomation:
         ).strip()
         fallback_key = fb_raw if fb_raw else existing_fallback
 
+        # --- Default daily overhead hours ---
+        existing_doh = self._get_overhead_config().get(
+            'daily_overhead_hours', 2
+        )
+        print(f"\n--- Default Daily Overhead ---")
+        print(
+            "Hours logged to overhead EVERY working day "
+            "(before distributing remaining to active tickets)."
+        )
+        doh_raw = input(
+            f"Daily overhead hours (Enter for {existing_doh}): "
+        ).strip()
+        try:
+            daily_oh_hours = float(doh_raw) if doh_raw else existing_doh
+        except ValueError:
+            daily_oh_hours = existing_doh
+        print(f"  Daily overhead: {daily_oh_hours}h")
+
         # --- Save ---
         overhead_config = {
             'current_pi': {
@@ -2902,6 +2952,7 @@ class TempoAutomation:
             'pto_story_key': pto_key,
             'pto_story_summary': pto_summary,
             'planning_pi': planning_config,
+            'daily_overhead_hours': daily_oh_hours,
             'fallback_issue_key': fallback_key,
             'project_prefix': self._get_overhead_config().get(
                 'project_prefix', 'OVERHEAD-'
@@ -2924,6 +2975,7 @@ class TempoAutomation:
             hrs = s.get('hours', '')
             hrs_str = f" ({hrs}h)" if hrs else ''
             print(f"    - {s['issue_key']}: {s['summary']}{hrs_str}")
+        print(f"  Daily overhead: {daily_oh_hours}h")
         print(f"  PTO story: {pto_key}: {pto_summary}")
         if planning_config:
             print(
@@ -2996,6 +3048,8 @@ class TempoAutomation:
                 f"    - {s['issue_key']}: "
                 f"{s.get('summary', '')}{hrs_str}"
             )
+        daily_oh = oh.get('daily_overhead_hours', 0)
+        print(f"  Daily Overhead: {daily_oh}h")
         pto_key = oh.get('pto_story_key', '')
         pto_sum = oh.get('pto_story_summary', '')
         if pto_key:

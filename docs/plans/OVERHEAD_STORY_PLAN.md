@@ -12,10 +12,11 @@ Currently, when the daily sync finds no active Jira tickets, it logs nothing and
 
 ---
 
-## 4 Cases to Implement
+## 5 Cases to Implement
 
 | Case | Trigger | Behavior |
 |------|---------|----------|
+| 0 | **Default daily overhead (every working day)** | **Log `daily_overhead_hours` (default 2h) to overhead stories before distributing remaining hours to active tickets** |
 | 1 | No active tickets (IN DEV / CODE REVIEW) | Log full remaining hours to overhead stories |
 | 2 | User manually logged overhead hours | Preserve manual overhead, distribute only remaining hours to active tickets |
 | 3 | PTO day | Log 8h to PTO overhead story (instead of skipping) |
@@ -55,6 +56,7 @@ Currently, when the daily sync finds no active Jira tickets, it logs nothing and
       ],
       "distribution": "custom"
     },
+    "daily_overhead_hours": 2,
     "fallback_issue_key": "OVERHEAD-001",
     "project_prefix": "OVERHEAD-",
     "_last_pi_check": "2026-02-19"
@@ -134,21 +136,24 @@ Currently, when the daily sync finds no active Jira tickets, it logs nothing and
 
 ## Modifications to Existing Methods
 
-### `_auto_log_jira_worklogs()` (line 1930) -- Cases 1, 2, 4
+### `_auto_log_jira_worklogs()` (line 1930) -- Cases 0, 1, 2, 4
 
 **Current flow:** Delete ALL worklogs -> get active issues -> distribute daily hours
 
 **New flow:**
-1. Fetch existing worklogs
+1. Fetch existing worklogs (Jira + Tempo hybrid)
 2. **Separate overhead vs non-overhead** (by `issue_key.startswith('OVERHEAD-')`)
 3. **Only delete non-overhead worklogs** (preserves Case 2 manual overhead)
-4. Calculate `overhead_seconds` from preserved overhead worklogs
-5. `remaining_seconds = daily_hours_seconds - overhead_seconds`
-6. If `remaining_seconds <= 0` -> done (overhead covers daily target)
-7. **Check planning week** (Case 4) -> log remaining to planning_pi stories, return
-8. Get active issues
-9. **If no active issues** (Case 1) -> log remaining to current_pi stories, return
-10. **Normal flow**: distribute remaining_seconds across active tickets
+4. Calculate `overhead_seconds` from preserved overhead worklogs (Jira OH + Tempo-only)
+5. **Case 0 -- Default daily overhead**: Read `daily_overhead_hours` from config (default 2h)
+   - If `overhead_seconds < daily_overhead_hours`: log the gap to overhead stories
+   - Update `overhead_seconds = max(overhead_seconds, daily_overhead_hours)`
+6. `remaining_seconds = daily_hours_seconds - overhead_seconds`
+7. If `remaining_seconds <= 0` -> done (overhead covers daily target)
+8. **Check planning week** (Case 4) -> log remaining to planning_pi stories, return
+9. Get active issues
+10. **If no active issues** (Case 1) -> log remaining to current_pi stories, return
+11. **Normal flow**: distribute remaining_seconds across active tickets
 
 ### `sync_daily()` (line 1837) -- Case 3
 
@@ -325,3 +330,6 @@ python tempo_automation.py --date 2026-02-20
 3. **PTO day re-run**: Second run detects existing overhead hours, skips (no double-log).
 4. **Planning week overlapping with PTO**: PTO takes priority (checked first in `sync_daily()`).
 5. **Config migration**: No `overhead` section in existing configs -- all code uses `.get('overhead', {})`.
+6. **Default overhead with manual overhead**: If user manually logged 3h but default is 2h, no additional overhead is logged (manual >= default). If user logged 1h, 1h more is auto-logged to reach the 2h default.
+7. **Default overhead + no active tickets**: 2h default overhead logged first, then remaining 6h also goes to overhead (total 8h). End result same as before but 2h is guaranteed.
+8. **daily_overhead_hours = 0**: Disables the default overhead feature, behaves exactly like before.
