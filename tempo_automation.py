@@ -1840,35 +1840,50 @@ class NotificationManager:
             print(f"  [!] Teams notification failed: {e}")
 
     def send_windows_notification(self, title: str, body: str):
-        """Show a Windows toast notification (Action Center)."""
-        if sys.platform != 'win32':
-            return
-        try:
-            from winotify import Notification, audio
-            toast = Notification(
-                app_id="Tempo Automation",
-                title=title,
-                msg=body,
-                duration="long"
-            )
-            toast.set_audio(audio.Default, loop=False)
-            toast.show()
-            logger.info(f"Toast notification shown: {title}")
-            print("  [OK] Desktop notification sent")
-        except ImportError:
-            # Fallback to MessageBox if winotify not installed
+        """Show a desktop notification (Windows toast or Mac osascript)."""
+        if sys.platform == 'win32':
             try:
-                from ctypes import windll, c_int, c_wchar_p
-                windll.user32.MessageBoxW(
-                    c_int(0), c_wchar_p(body), c_wchar_p(title),
-                    0x00000030 | 0x00001000
+                from winotify import Notification, audio
+                toast = Notification(
+                    app_id="Tempo Automation",
+                    title=title,
+                    msg=body,
+                    duration="long"
                 )
-                logger.info(f"MessageBox notification shown: {title}")
-                print("  [OK] Desktop notification shown")
-            except Exception as e2:
-                logger.warning(f"Notification failed: {e2}")
-        except Exception as e:
-            logger.warning(f"Toast notification failed: {e}")
+                toast.set_audio(audio.Default, loop=False)
+                toast.show()
+                logger.info(f"Toast notification shown: {title}")
+                print("  [OK] Desktop notification sent")
+            except ImportError:
+                # Fallback to MessageBox if winotify not installed
+                try:
+                    from ctypes import windll, c_int, c_wchar_p
+                    windll.user32.MessageBoxW(
+                        c_int(0), c_wchar_p(body), c_wchar_p(title),
+                        0x00000030 | 0x00001000
+                    )
+                    logger.info(
+                        f"MessageBox notification shown: {title}"
+                    )
+                    print("  [OK] Desktop notification shown")
+                except Exception as e2:
+                    logger.warning(f"Notification failed: {e2}")
+            except Exception as e:
+                logger.warning(f"Toast notification failed: {e}")
+        elif sys.platform == 'darwin':
+            try:
+                import subprocess as sp
+                safe_title = title.replace('"', '\\"')
+                safe_body = body.replace('"', '\\"')
+                script = (
+                    f'display notification "{safe_body}" '
+                    f'with title "{safe_title}"'
+                )
+                sp.Popen(['osascript', '-e', script])
+                logger.info(f"Mac notification shown: {title}")
+                print("  [OK] Desktop notification sent")
+            except Exception as e:
+                logger.warning(f"Mac notification failed: {e}")
 
     def send_shortfall_email(self, title: str, body: str,
                              facts: List[Dict] = None):

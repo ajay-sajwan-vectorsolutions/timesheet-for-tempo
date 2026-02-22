@@ -2,7 +2,7 @@
 
 **Automate your daily Tempo timesheet entry and monthly submission -- save 15+ minutes every day.**
 
-Version 3.4 | Python 3.7+ | Windows (primary), Mac/Linux (untested)
+Version 3.5 | Python 3.7+ | Windows + macOS
 
 ---
 
@@ -36,14 +36,14 @@ This automation script eliminates the manual burden of timesheet management:
 - **Calendar view** -- visual month calendar showing working days, holidays, PTO
 - **Interactive menu** -- guided schedule management via `--manage`
 
-### System Tray App (Windows)
+### System Tray App (Windows + Mac)
 - **Persistent tray icon** -- company logo on color-coded background (green/orange/red)
 - **Animated sync indicator** -- orange/red alternation during sync
 - **One-click sync** -- double-click or right-click -> Sync Now
 - **Add PTO from tray** -- dialog for entering PTO dates without opening a terminal
 - **Smart exit** -- checks if hours are logged before closing; warns if not
-- **Auto-start** -- registers itself on first run; starts automatically on Windows login
-- **Toast notifications** -- Windows notification when it's time to log hours
+- **Auto-start** -- Windows: registry, Mac: LaunchAgent plist
+- **Toast notifications** -- Windows: winotify, Mac: osascript (built-in)
 
 ### Developer Workflow
 ```
@@ -58,7 +58,8 @@ sync_daily()
 ### Scheduling Options
 - **System tray app** (recommended) -- persistent icon, user confirmation before sync
 - **Windows Task Scheduler** -- fully hands-off, runs via batch file wrappers
-- Both can coexist safely (sync is idempotent)
+- **Mac cron jobs** -- daily, weekly verify, monthly submit
+- Tray app and scheduled tasks can coexist safely (sync is idempotent)
 
 ---
 
@@ -74,27 +75,36 @@ sync_daily()
 
 ### Automated Install
 
+**Windows:**
 ```cmd
 :: Right-click install.bat -> Run as Administrator
 install.bat
 ```
 
-The installer handles: dependency install, setup wizard, Task Scheduler, and optional tray app setup.
+**Mac:**
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+The installer handles: dependency install, setup wizard, overhead config, scheduled tasks (Task Scheduler / cron), and tray app setup.
 
 ### Manual Install
 
+**Windows:**
 ```cmd
-:: 1. Install dependencies
 pip install -r requirements.txt
-
-:: 2. Run setup wizard
 python tempo_automation.py --setup
-
-:: 3. Test it
 python tempo_automation.py
-
-:: 4. Start the tray app (recommended)
 pythonw tray_app.py
+```
+
+**Mac:**
+```bash
+pip3 install -r requirements.txt
+python3 tempo_automation.py --setup
+python3 tempo_automation.py
+python3 tray_app.py &
 ```
 
 See [SETUP_GUIDE.md](docs/guides/SETUP_GUIDE.md) for detailed step-by-step instructions.
@@ -225,7 +235,7 @@ The setup wizard creates `config.json` with your settings. Key sections:
 
 **Do not share `config.json`** -- it contains your API tokens.
 
-API tokens are encrypted using Windows DPAPI (tied to your Windows user account). On non-Windows systems, tokens are stored as plain text.
+API tokens are encrypted using Windows DPAPI (tied to your Windows user account). On Mac/Linux, tokens are stored as plain text in config.json -- protect file permissions accordingly.
 
 ### Getting API Tokens
 
@@ -313,32 +323,38 @@ findstr ERROR daily-timesheet.log
 
 ## Uninstall
 
+**Windows:**
 ```cmd
-:: Stop running tray app and remove auto-start
 python tray_app.py --stop
 python tray_app.py --unregister
-
-:: Remove scheduled tasks (if using Task Scheduler)
 schtasks /Delete /TN "TempoAutomation-DailySync" /F
 schtasks /Delete /TN "TempoAutomation-WeeklyVerify" /F
 schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
-
-:: Then delete the installation folder
 ```
+
+**Mac:**
+```bash
+python3 tray_app.py --stop
+python3 tray_app.py --unregister
+crontab -e  # Remove lines containing 'tempo_automation.py'
+```
+
+Then delete the installation folder.
 
 ---
 
 ## Project Structure
 
 ```
-tempo_automation.py          # Main script (3,724 lines, 8 classes)
-tray_app.py                  # System tray app (~831 lines)
-confirm_and_run.py           # OK/Cancel dialog for Task Scheduler
+tempo_automation.py          # Main script (3,793 lines, 8 classes)
+tray_app.py                  # System tray app (~1,107 lines, cross-platform)
+confirm_and_run.py           # OK/Cancel dialog for Task Scheduler (Windows)
 config.json                  # User config (gitignored, contains tokens)
 config_template.json         # Config template for new users
 org_holidays.json            # Organization holiday definitions
-requirements.txt             # Python dependencies
-install.bat                  # Windows installer
+requirements.txt             # Python dependencies (winotify Windows-only)
+install.bat                  # Windows installer (7 steps)
+install.sh                   # Mac/Linux installer (7 steps)
 run_daily.bat                # Task Scheduler wrapper (daily)
 run_weekly.bat               # Task Scheduler wrapper (weekly)
 run_monthly.bat              # Task Scheduler wrapper (monthly)
@@ -352,6 +368,7 @@ examples/                    # Example configs for each role
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.5 | Feb 22, 2026 | Cross-platform: Mac support for tray app (osascript dialogs, LaunchAgent auto-start, fcntl mutex), install.sh rewrite (7 steps, overhead config, weekly verify cron, BSD date compat), Mac toast notifications via osascript |
 | 3.4 | Feb 20, 2026 | Overhead story support -- automatic logging for PTO, holidays, no-ticket days, and PI planning weeks. New CLI: --select-overhead, --show-overhead |
 | 3.2 | Feb 19, 2026 | Hardcoded Jira/holidays URL, fixed double setup wizard, install.bat rewrite (ASCII, weekday-only, WeeklyVerify, tray default, countdown close), --stop flag, welcome toast, auto-register autostart |
 | 3.1 | Feb 18, 2026 | System tray app, animated sync indicator, smart exit, Add PTO from tray, OK/Cancel dialog, auto-start |

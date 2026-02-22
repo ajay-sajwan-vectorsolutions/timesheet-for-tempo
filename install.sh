@@ -6,7 +6,10 @@
 # 1. Check Python installation
 # 2. Install dependencies
 # 3. Run setup wizard
-# 4. Schedule daily and monthly cron jobs
+# 4. Configure overhead stories
+# 5. Schedule daily, weekly, and monthly cron jobs
+# 6. Set up system tray app (auto-start on login)
+# 7. Optionally run a test sync
 # ============================================================================
 
 set -e  # Exit on error
@@ -22,35 +25,38 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
 # ============================================================================
-# Check Python installation
+# [1/7] Check Python installation
 # ============================================================================
 
-echo "[1/5] Checking Python installation..."
+echo "[1/7] Checking Python installation..."
 
 if ! command -v python3 &> /dev/null; then
     echo ""
     echo "ERROR: Python 3 is not installed"
     echo ""
     echo "Please install Python 3.7 or higher:"
-    echo "  macOS: brew install python3"
-    echo "  Ubuntu/Debian: sudo apt-get install python3 python3-pip"
-    echo "  Fedora: sudo dnf install python3 python3-pip"
+    if [ "$(uname)" = "Darwin" ]; then
+        echo "  brew install python3"
+    else
+        echo "  sudo apt-get install python3 python3-pip"
+    fi
     echo ""
     exit 1
 fi
 
-echo "✓ Python found"
+echo "[OK] Python found"
 python3 --version
 echo ""
 
 # ============================================================================
-# Install dependencies
+# [2/7] Install dependencies
 # ============================================================================
 
-echo "[2/5] Installing Python dependencies..."
+echo "[2/7] Installing Python dependencies..."
+echo ""
 
-python3 -m pip install --upgrade pip --quiet --user
-python3 -m pip install -r requirements.txt --quiet --user
+python3 -m pip install --upgrade pip --user 2>/dev/null || python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt --user 2>/dev/null || python3 -m pip install -r requirements.txt
 
 if [ $? -ne 0 ]; then
     echo ""
@@ -58,17 +64,17 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "✓ Dependencies installed"
+echo "[OK] Dependencies installed (requests, holidays, pystray, Pillow)"
 echo ""
 
 # ============================================================================
-# Run setup wizard
+# [3/7] Run setup wizard
 # ============================================================================
 
-echo "[3/5] Running setup wizard..."
+echo "[3/7] Running setup wizard..."
 echo ""
 
-python3 tempo_automation.py --setup
+python3 "$SCRIPT_DIR/tempo_automation.py" --setup
 
 if [ $? -ne 0 ]; then
     echo ""
@@ -77,68 +83,140 @@ if [ $? -ne 0 ]; then
 fi
 
 echo ""
-echo "✓ Setup complete"
+echo "[OK] Setup complete"
 echo ""
 
 # ============================================================================
-# Create cron jobs
+# [4/7] Configure overhead stories (developers only)
 # ============================================================================
 
-echo "[4/5] Setting up cron jobs..."
+echo "[4/7] Configuring overhead stories..."
+echo ""
+echo "Overhead stories are used for daily default hours (e.g., 2h/day),"
+echo "PTO days, holidays, and days with no active tickets."
+echo ""
+read -p "Configure overhead stories now? (y/n, default: y): " SELECT_OH
+
+if [ "$SELECT_OH" = "n" ] || [ "$SELECT_OH" = "N" ]; then
+    echo "Skipped. You can configure later: python3 tempo_automation.py --select-overhead"
+else
+    python3 "$SCRIPT_DIR/tempo_automation.py" --select-overhead || {
+        echo ""
+        echo "[!] Overhead selection skipped or failed"
+        echo "    You can configure later: python3 tempo_automation.py --select-overhead"
+    }
+fi
 echo ""
 
-# Get full path to Python and script
+# ============================================================================
+# [5/7] Set up cron jobs
+# ============================================================================
+
+echo "[5/7] Setting up cron jobs..."
+echo ""
+
+# Get full path to Python
 PYTHON_PATH=$(which python3)
 SCRIPT_PATH="$SCRIPT_DIR/tempo_automation.py"
+LOG_PATH="$SCRIPT_DIR/daily-timesheet.log"
 
-# Check if crontab exists
+# Initialize crontab if empty
 if ! crontab -l &> /dev/null; then
     echo "# Tempo Automation Cron Jobs" | crontab -
 fi
 
 # Backup existing crontab
-crontab -l > /tmp/tempo_crontab_backup_$$.txt
-echo "✓ Backed up existing crontab to /tmp/tempo_crontab_backup_$$.txt"
+BACKUP_FILE="/tmp/tempo_crontab_backup_$$.txt"
+crontab -l > "$BACKUP_FILE" 2>/dev/null || true
+echo "[OK] Backed up existing crontab to $BACKUP_FILE"
 
-# Remove any existing Tempo Automation entries
-crontab -l | grep -v "tempo_automation.py" > /tmp/tempo_crontab_new_$$.txt
+# Remove any existing Tempo Automation entries, then add new ones
+NEW_CRON="/tmp/tempo_crontab_new_$$.txt"
+crontab -l 2>/dev/null | grep -v "tempo_automation.py" > "$NEW_CRON" || true
 
-# Add new cron jobs
-echo "" >> /tmp/tempo_crontab_new_$$.txt
-echo "# Tempo Automation - Daily sync at 6:00 PM" >> /tmp/tempo_crontab_new_$$.txt
-echo "0 18 * * * $PYTHON_PATH $SCRIPT_PATH >> $SCRIPT_DIR/tempo_automation.log 2>&1" >> /tmp/tempo_crontab_new_$$.txt
+# Daily sync at 6:00 PM (Monday-Friday)
+echo "" >> "$NEW_CRON"
+echo "# Tempo Automation - Daily sync at 6:00 PM (Mon-Fri)" >> "$NEW_CRON"
+echo "0 18 * * 1-5 $PYTHON_PATH \"$SCRIPT_PATH\" >> \"$LOG_PATH\" 2>&1" >> "$NEW_CRON"
 
-echo "" >> /tmp/tempo_crontab_new_$$.txt
-echo "# Tempo Automation - Monthly submission at 11:00 PM on last day of month" >> /tmp/tempo_crontab_new_$$.txt
-echo "0 23 28-31 * * [ \$(date -d tomorrow +\%d) -eq 1 ] && $PYTHON_PATH $SCRIPT_PATH --submit >> $SCRIPT_DIR/tempo_automation.log 2>&1" >> /tmp/tempo_crontab_new_$$.txt
+# Weekly verification (Friday at 4:00 PM)
+echo "" >> "$NEW_CRON"
+echo "# Tempo Automation - Weekly verify (Fridays at 4:00 PM)" >> "$NEW_CRON"
+echo "0 16 * * 5 $PYTHON_PATH \"$SCRIPT_PATH\" --verify-week >> \"$LOG_PATH\" 2>&1" >> "$NEW_CRON"
+
+# Monthly submission at 11:00 PM on last day of month
+# macOS (BSD date) uses -v+1d; Linux (GNU date) uses -d tomorrow
+echo "" >> "$NEW_CRON"
+echo "# Tempo Automation - Monthly submission (last day of month at 11:00 PM)" >> "$NEW_CRON"
+if [ "$(uname)" = "Darwin" ]; then
+    # macOS: BSD date syntax
+    echo "0 23 28-31 * * [ \$(date -v+1d +\\%d) -eq 1 ] && $PYTHON_PATH \"$SCRIPT_PATH\" --submit >> \"$LOG_PATH\" 2>&1" >> "$NEW_CRON"
+else
+    # Linux: GNU date syntax
+    echo "0 23 28-31 * * [ \$(date -d tomorrow +\\%d) -eq 1 ] && $PYTHON_PATH \"$SCRIPT_PATH\" --submit >> \"$LOG_PATH\" 2>&1" >> "$NEW_CRON"
+fi
 
 # Install new crontab
-crontab /tmp/tempo_crontab_new_$$.txt
-
-if [ $? -eq 0 ]; then
-    echo "✓ Cron jobs created"
-    rm /tmp/tempo_crontab_new_$$.txt
+if crontab "$NEW_CRON"; then
+    echo "[OK] Cron jobs created:"
+    echo "     - Daily:   Mon-Fri at 6:00 PM (sync timesheets)"
+    echo "     - Weekly:  Fridays at 4:00 PM (verify hours, backfill gaps)"
+    echo "     - Monthly: Last day at 11:00 PM (submit for approval)"
+    rm -f "$NEW_CRON"
 else
-    echo "✗ Failed to create cron jobs"
+    echo "[FAIL] Failed to create cron jobs"
     echo "  Restoring backup..."
-    crontab /tmp/tempo_crontab_backup_$$.txt
+    crontab "$BACKUP_FILE"
     exit 1
 fi
 
 echo ""
 
 # ============================================================================
-# Test run
+# [6/7] Set up system tray app
 # ============================================================================
 
-echo "[5/5] Testing..."
+echo "[6/7] Setting up System Tray App..."
 echo ""
-read -p "Would you like to test the automation now? (y/n): " TEST_RUN
+echo "The tray app lives in your menu bar, shows a notification at your"
+echo "configured sync time, and lets you sync with one click."
+echo "It will start automatically every time you log in."
+echo ""
+
+# Stop any existing tray app instance
+python3 "$SCRIPT_DIR/tray_app.py" --stop 2>/dev/null || true
+sleep 2
+
+# Register auto-start on login (LaunchAgent on Mac)
+python3 "$SCRIPT_DIR/tray_app.py" --register
+
+# Start the tray app now (background, no console)
+echo "Starting tray app..."
+nohup python3 "$SCRIPT_DIR/tray_app.py" > /dev/null 2>&1 &
+sleep 3
+echo "[OK] Tray app is running in the menu bar"
+echo ""
+echo "NOTE: The tray app and cron jobs can coexist safely."
+echo "      The sync is idempotent (re-running overwrites previous entries)."
+
+echo ""
+
+# ============================================================================
+# [7/7] Test sync (optional)
+# ============================================================================
+
+echo "[7/7] Test sync (optional)"
+echo ""
+echo "Would you like to test the automation now?"
+echo "This will sync today's timesheet to verify everything works."
+echo ""
+read -p "Run test? (y/n): " TEST_RUN
 
 if [ "$TEST_RUN" = "y" ] || [ "$TEST_RUN" = "Y" ]; then
     echo ""
     echo "Running test sync..."
-    python3 tempo_automation.py
+    echo ""
+    python3 "$SCRIPT_DIR/tempo_automation.py"
 fi
 
 echo ""
@@ -149,26 +227,38 @@ echo ""
 
 echo ""
 echo "============================================================"
-echo "✓ INSTALLATION COMPLETE!"
+echo "[OK] INSTALLATION COMPLETE!"
 echo "============================================================"
 echo ""
 echo "Your automation is now set up and will run automatically:"
-echo "  - Daily: 6:00 PM (sync timesheets)"
-echo "  - Monthly: 11:00 PM on last day (submit for approval)"
 echo ""
-echo "Configuration file: $SCRIPT_DIR/config.json"
-echo "Log file: $SCRIPT_DIR/tempo_automation.log"
+echo "  Tray App:"
+echo "    - Starts on login (menu bar icon)"
+echo "    - Notifies at your configured sync time (default 6:00 PM)"
+echo "    - Right-click for menu: Sync Now, Add PTO, View Schedule, etc."
 echo ""
-echo "You can manually run the script anytime:"
-echo "  python3 tempo_automation.py          (sync today)"
-echo "  python3 tempo_automation.py --submit (submit timesheet)"
+echo "  Cron Jobs:"
+echo "    - Daily:   Mon-Fri at 6:00 PM (sync timesheets)"
+echo "    - Weekly:  Fridays at 4:00 PM (verify hours, backfill gaps)"
+echo "    - Monthly: Last day at 11:00 PM (submit for approval)"
 echo ""
-echo "To view cron jobs:"
-echo "  crontab -l"
+echo "Files:"
+echo "  Config:  $SCRIPT_DIR/config.json"
+echo "  Log:     $SCRIPT_DIR/daily-timesheet.log"
+echo "  Runtime: $SCRIPT_DIR/tempo_automation.log"
 echo ""
-echo "To uninstall:"
-echo "  crontab -e"
-echo "  (Remove lines containing 'tempo_automation.py')"
+echo "Manual commands:"
+echo "  python3 tempo_automation.py              (sync today)"
+echo "  python3 tempo_automation.py --date DATE  (sync specific date)"
+echo "  python3 tempo_automation.py --verify-week (verify this week)"
+echo "  python3 tempo_automation.py --submit     (submit monthly)"
+echo "  python3 tempo_automation.py --show-schedule (view calendar)"
+echo "  python3 tempo_automation.py --manage     (schedule menu)"
+echo ""
+echo "Uninstall:"
+echo "  python3 tray_app.py --unregister"
+echo "  crontab -e  (remove lines containing 'tempo_automation.py')"
+echo "  Then delete this folder."
 echo ""
 echo "============================================================"
 echo ""
