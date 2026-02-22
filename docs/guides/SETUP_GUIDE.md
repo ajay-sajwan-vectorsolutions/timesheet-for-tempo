@@ -278,7 +278,7 @@ schtasks /Query /TN "TempoAutomation-WeeklyVerify"
 schtasks /Query /TN "TempoAutomation-MonthlySubmit"
 ```
 
-**Note:** Both options can coexist safely -- the sync is idempotent (re-running overwrites previous entries).
+**Note:** Both options can coexist safely -- the sync is idempotent (re-running overwrites previous entries). If you close the tray app, the daily scheduler will auto-restart it with a recovery message.
 
 ---
 

@@ -60,6 +60,7 @@ sync_daily()
 - **Windows Task Scheduler** -- fully hands-off, runs via batch file wrappers
 - **Mac cron jobs** -- daily, weekly verify, monthly submit
 - Tray app and scheduled tasks can coexist safely (sync is idempotent)
+- If tray app is closed, daily scheduler auto-restarts it with a recovery message
 
 ---
 

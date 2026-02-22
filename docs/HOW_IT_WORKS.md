@@ -433,7 +433,7 @@ Three scheduled tasks run independently of the tray app:
 
 | Task | Schedule | What It Does |
 |------|----------|-------------|
-| **TempoAutomation-DailySync** | Mon-Fri at 6:00 PM | Shows OK/Cancel dialog, then syncs today |
+| **TempoAutomation-DailySync** | Mon-Fri at 6:00 PM | Auto-restarts tray if closed, shows OK/Cancel dialog, then syncs today |
 | **TempoAutomation-WeeklyVerify** | Fridays at 4:00 PM | Checks Mon-Fri for gaps, backfills |
 | **TempoAutomation-MonthlySubmit** | Days 28-31 at 11:00 PM | Verifies hours + submits timesheet |
 
@@ -441,10 +441,16 @@ Three scheduled tasks run independently of the tray app:
 ```
 Task Scheduler fires at 6 PM
   --> run_daily.bat
-    --> confirm_and_run.py (shows OK/Cancel dialog)
-      --> User clicks OK
-        --> tempo_automation.py sync_daily()
+    --> confirm_and_run.py
+      --> Check if tray app is running (mutex on Windows, fcntl lock on Mac)
+        --> NOT running: Launch tray_app.py --quiet (recovery toast)
+        --> RUNNING: Continue
+      --> Show OK/Cancel dialog
+        --> User clicks OK
+          --> tempo_automation.py sync_daily()
 ```
+
+**Tray auto-restart:** If the user closed the tray app, `confirm_and_run.py` detects this and relaunches it with the `--quiet` flag. Instead of the normal welcome greeting, the tray shows: "Hey, the Tempo app was previously terminated and is now back online. You can continue to use it."
 
 **Both the tray app and Task Scheduler can coexist safely** because the sync is idempotent. If both fire for the same day, the second run simply overwrites what the first created.
 

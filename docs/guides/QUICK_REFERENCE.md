@@ -64,6 +64,7 @@ python tempo_automation.py --setup
 - View: Open Task Scheduler -> "TempoAutomation-*"
 - Disable: Right-click task -> Disable
 - Delete: `schtasks /Delete /TN "TempoAutomation-DailySync" /F`
+- Note: Daily sync auto-restarts tray app if closed (shows recovery message)
 
 **Mac/Linux:**
 - View: `crontab -l`

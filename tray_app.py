@@ -1017,8 +1017,14 @@ class TrayApp:
         tray_logger.info("Auto-start not found, registering...")
         register_autostart()
 
-    def run(self):
-        """Main entry point -- blocks on pystray message pump."""
+    def run(self, quiet: bool = False):
+        """Main entry point -- blocks on pystray message pump.
+
+        Args:
+            quiet: If True, show a 'back online' toast instead of
+                   the full welcome greeting (used when restarted
+                   by the daily scheduler).
+        """
         if not PYSTRAY_OK:
             print(
                 "ERROR: pystray and Pillow are required.\n"
@@ -1094,42 +1100,55 @@ class TrayApp:
 
         tray_logger.info("Tray app started")
 
-        # Show welcome toast after icon is visible (slight delay
+        # Show startup toast after icon is visible (slight delay
         # so the icon renders before the notification fires)
         if not self._import_error:
-            def _welcome():
-                sync_time = self._get_sync_time()
-                user_name = ''
-                if self._config:
-                    user_name = self._config.get(
-                        'user', {}
-                    ).get('name', '')
-                    # Use first name only for a friendly greeting
-                    user_name = user_name.split()[0] if user_name else ''
-                hour = datetime.now().hour
-                if hour < 12:
-                    time_greeting = 'Good Morning'
-                    emoji = '\u2600\uFE0F'  # sun
-                elif hour < 17:
-                    time_greeting = 'Good Afternoon'
-                    emoji = '\U0001F324\uFE0F'  # sun behind cloud
+            def _startup_toast():
+                if quiet:
+                    # Restarted by daily scheduler
+                    self._show_toast(
+                        'Tempo Automation',
+                        'Hey, the Tempo app was previously '
+                        'terminated and is now back online.\n'
+                        'You can continue to use it.'
+                    )
                 else:
-                    time_greeting = 'Good Evening'
-                    emoji = '\U0001F319'  # crescent moon
-                title = (
-                    f'{time_greeting}, {user_name}! {emoji}'
-                    if user_name
-                    else f'{time_greeting}! {emoji}'
-                )
-                self._show_toast(
-                    title,
-                    f'Tempo Automation is running.\n'
-                    f'Your hours will be logged at '
-                    f'{sync_time} today.\n'
-                    f'Right-click the tray icon to sync '
-                    f'now, add PTO, or manage your schedule.'
-                )
-            welcome_timer = threading.Timer(2.0, _welcome)
+                    # Normal login start -- full welcome greeting
+                    sync_time = self._get_sync_time()
+                    user_name = ''
+                    if self._config:
+                        user_name = self._config.get(
+                            'user', {}
+                        ).get('name', '')
+                        user_name = (
+                            user_name.split()[0]
+                            if user_name else ''
+                        )
+                    hour = datetime.now().hour
+                    if hour < 12:
+                        time_greeting = 'Good Morning'
+                        emoji = '\u2600\uFE0F'  # sun
+                    elif hour < 17:
+                        time_greeting = 'Good Afternoon'
+                        emoji = '\U0001F324\uFE0F'  # sun behind cloud
+                    else:
+                        time_greeting = 'Good Evening'
+                        emoji = '\U0001F319'  # crescent moon
+                    title = (
+                        f'{time_greeting}, {user_name}! {emoji}'
+                        if user_name
+                        else f'{time_greeting}! {emoji}'
+                    )
+                    self._show_toast(
+                        title,
+                        f'Tempo Automation is running.\n'
+                        f'Your hours will be logged at '
+                        f'{sync_time} today.\n'
+                        f'Right-click the tray icon to sync '
+                        f'now, add PTO, or manage your '
+                        f'schedule.'
+                    )
+            welcome_timer = threading.Timer(2.0, _startup_toast)
             welcome_timer.daemon = True
             welcome_timer.start()
 
@@ -1289,6 +1308,10 @@ def main():
         '--stop', action='store_true',
         help='Stop a running tray app instance'
     )
+    parser.add_argument(
+        '--quiet', action='store_true',
+        help='Start with a restart toast instead of welcome greeting'
+    )
     args = parser.parse_args()
 
     if args.register:
@@ -1299,7 +1322,7 @@ def main():
         stop_app()
     else:
         app = TrayApp()
-        app.run()
+        app.run(quiet=args.quiet)
 
 
 if __name__ == '__main__':
