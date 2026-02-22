@@ -376,6 +376,11 @@ python tempo_automation.py --setup                :: Re-run setup wizard
 python tempo_automation.py --select-overhead              :: Select overhead stories for current PI
 python tempo_automation.py --show-overhead                :: View current overhead configuration
 
+:: --- Monthly Hours & Shortfall ---
+python tempo_automation.py --view-monthly                 :: View current month hours per day
+python tempo_automation.py --view-monthly 2026-01         :: View specific month hours
+python tempo_automation.py --fix-shortfall                :: Interactive fix for monthly gaps
+
 :: --- Schedule Management ---
 python tempo_automation.py --add-pto 2026-03-10,2026-03-11
 python tempo_automation.py --remove-pto 2026-03-10

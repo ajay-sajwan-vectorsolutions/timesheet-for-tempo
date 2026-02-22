@@ -2,7 +2,7 @@
 
 **Automate your daily Tempo timesheet entry and monthly submission -- save 15+ minutes every day.**
 
-Version 3.5 | Python 3.7+ | Windows + macOS
+Version 3.6 | Python 3.7+ | Windows + macOS
 
 ---
 
@@ -176,6 +176,19 @@ python tempo_automation.py --select-overhead
 python tempo_automation.py --show-overhead
 ```
 
+### Monthly Hours & Shortfall
+
+```cmd
+:: View per-day hours for current month
+python tempo_automation.py --view-monthly
+
+:: View per-day hours for a specific month
+python tempo_automation.py --view-monthly 2026-01
+
+:: Interactive fix for monthly shortfalls
+python tempo_automation.py --fix-shortfall
+```
+
 ### Other
 
 ```cmd
@@ -346,8 +359,8 @@ Then delete the installation folder.
 ## Project Structure
 
 ```
-tempo_automation.py          # Main script (3,793 lines, 8 classes)
-tray_app.py                  # System tray app (~1,107 lines, cross-platform)
+tempo_automation.py          # Main script (4,224 lines, 8 classes)
+tray_app.py                  # System tray app (~1,306 lines, cross-platform)
 confirm_and_run.py           # OK/Cancel dialog for Task Scheduler (Windows)
 config.json                  # User config (gitignored, contains tokens)
 config_template.json         # Config template for new users
@@ -368,6 +381,7 @@ examples/                    # Example configs for each role
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.6 | Feb 22, 2026 | Monthly shortfall detection: per-day gap analysis, blocks submission on shortfall, --view-monthly/--fix-shortfall CLI, interactive fix, tray menu restructure with submenus, dynamic Submit Timesheet menu |
 | 3.5 | Feb 22, 2026 | Cross-platform: Mac support for tray app (osascript dialogs, LaunchAgent auto-start, fcntl mutex), install.sh rewrite (7 steps, overhead config, weekly verify cron, BSD date compat), Mac toast notifications via osascript |
 | 3.4 | Feb 20, 2026 | Overhead story support -- automatic logging for PTO, holidays, no-ticket days, and PI planning weeks. New CLI: --select-overhead, --show-overhead |
 | 3.2 | Feb 19, 2026 | Hardcoded Jira/holidays URL, fixed double setup wizard, install.bat rewrite (ASCII, weekday-only, WeeklyVerify, tray default, countdown close), --stop flag, welcome toast, auto-register autostart |

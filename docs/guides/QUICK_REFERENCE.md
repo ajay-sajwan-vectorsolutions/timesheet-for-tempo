@@ -1,6 +1,6 @@
 # Tempo Automation - Quick Reference
 
-## 🚀 Quick Commands
+## Quick Commands
 
 ```bash
 # Daily sync (manual)
@@ -9,8 +9,20 @@ python tempo_automation.py
 # Sync specific date
 python tempo_automation.py --date 2026-02-15
 
+# Weekly verify & backfill
+python tempo_automation.py --verify-week
+
 # Submit monthly timesheet
 python tempo_automation.py --submit
+
+# View monthly hours per day
+python tempo_automation.py --view-monthly
+
+# Fix monthly shortfalls (interactive)
+python tempo_automation.py --fix-shortfall
+
+# Select overhead stories for PI
+python tempo_automation.py --select-overhead
 
 # Run setup wizard again
 python tempo_automation.py --setup
@@ -19,15 +31,17 @@ python tempo_automation.py --setup
 python tempo_automation.py --help
 ```
 
-## 📁 Important Files
+## Important Files
 
 | File | Purpose |
 |------|---------|
-| `config.json` | Your personal configuration |
-| `tempo_automation.log` | Execution logs |
-| `tempo_automation.py` | Main script |
+| `config.json` | Your personal configuration (gitignored) |
+| `daily-timesheet.log` | Execution output log |
+| `tempo_automation.log` | Internal runtime logs |
+| `tempo_automation.py` | Main script (4,224 lines) |
+| `tray_app.py` | System tray app (~1,306 lines) |
 
-## 🔧 Quick Fixes
+## Quick Fixes
 
 **Script not running?**
 ```bash
@@ -38,23 +52,17 @@ python --version  # Should be 3.7+
 pip install -r requirements.txt
 ```
 
-**Email not working?**
-```bash
-# For Gmail, use App Password:
-# Google Account → Security → App Passwords
-```
-
 **Need to update credentials?**
 ```bash
 # Edit config.json manually, or
 python tempo_automation.py --setup
 ```
 
-## 📅 Scheduled Tasks
+## Scheduled Tasks
 
 **Windows:**
-- View: Open Task Scheduler → "TempoAutomation-*"
-- Disable: Right-click task → Disable
+- View: Open Task Scheduler -> "TempoAutomation-*"
+- Disable: Right-click task -> Disable
 - Delete: `schtasks /Delete /TN "TempoAutomation-DailySync" /F`
 
 **Mac/Linux:**
@@ -62,83 +70,82 @@ python tempo_automation.py --setup
 - Edit: `crontab -e`
 - Remove lines containing "tempo_automation.py"
 
-## 🔍 Logs
+## Logs
 
 **View recent activity:**
 
 Windows:
 ```cmd
+type daily-timesheet.log | more
 type tempo_automation.log | more
 ```
 
 Mac/Linux:
 ```bash
+tail -f daily-timesheet.log
 tail -f tempo_automation.log
 ```
 
-## 🆘 Get Help
-
-1. Check `tempo_automation.log`
-2. See README.md troubleshooting section
-3. Slack: #tempo-automation
-4. Email: [support email]
-
-## 📊 What Gets Synced
+## What Gets Synced
 
 **Developers:**
-- Jira worklogs → Tempo entries
-- Automatic daily
+- Jira worklogs -> Tempo entries (automatic daily)
+- 2h overhead + remaining hours across active tickets
 
 **Product Owners / Sales:**
-- Manual activities from config
-- Automatic daily
+- Manual activities from config -> Tempo entries
 
 **Everyone:**
-- Auto-submission on last day of month
-- Email summaries
+- Auto-submission on last day of month (if no shortfalls)
+- Weekly verify on Fridays catches missed days
+- Toast notifications for sync status
 
-## ⚙️ Configuration
+## Tray App Menu
+
+```
+Sync Now
+---
+Configure        -> Add PTO / Select Overhead
+Log and Reports  -> Daily Log / Schedule / View Monthly Hours
+                    Fix Monthly Shortfall (when gaps exist)
+---
+Submit Timesheet   (last week of month, no gaps)
+Settings
+Exit
+```
+
+## Configuration
 
 Edit `config.json` to customize:
-- Daily work hours
-- Sync time (default 6 PM)
-- Email notifications
-- Manual activities
-- Auto-submit preference
+- Daily work hours (default: 8)
+- Sync time (default: 18:00)
+- Country/state for holidays
+- Overhead stories and distribution
+- Notification preferences
 
-## 🎯 Success Indicators
+## Success Indicators
 
 After running, you should see:
 ```
-✓ SYNC COMPLETE
-Total entries: 2
-Total hours: 8.0 / 8
-Status: ✓ Complete
+[OK] SYNC COMPLETE
+Total entries: 4
+Total hours: 8.0 / 8.0
+Status: [OK] Complete
 ```
 
-And receive an email summary.
+## When to Run Manually
 
-## ⚠️ When to Run Manually
-
-- Computer was off at 6 PM
-- Need to backfill previous days
+- Computer was off at sync time
+- Need to backfill previous days (`--date YYYY-MM-DD`)
 - Testing the setup
-- Credential update
+- After credential update
 
-## 🔐 Security
+## Security
 
-- Credentials stored locally only
-- No cloud storage
+- Credentials stored locally only (DPAPI encrypted on Windows)
+- No cloud storage of tokens
 - API tokens (not passwords)
-- HTTPS encryption for API calls
-
-## 📞 Emergency Contact
-
-If completely broken:
-1. Stop scheduled tasks
-2. Revert to manual entry
-3. Contact support
-4. Check logs for error details
+- HTTPS encryption for all API calls
 
 ---
 

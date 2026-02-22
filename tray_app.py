@@ -27,7 +27,8 @@ import argparse
 import threading
 import subprocess
 import logging
-from datetime import datetime, timedelta
+import calendar
+from datetime import datetime, timedelta, date
 from pathlib import Path
 
 # Platform-specific imports
@@ -54,6 +55,8 @@ LOG_FILE = SCRIPT_DIR / "daily-timesheet.log"
 INTERNAL_LOG = SCRIPT_DIR / "tempo_automation.log"
 
 STOP_FILE = SCRIPT_DIR / '_tray_stop.signal'
+SHORTFALL_FILE = SCRIPT_DIR / 'monthly_shortfall.json'
+SUBMITTED_FILE = SCRIPT_DIR / 'monthly_submitted.json'
 
 # Windows-only constants
 if sys.platform == 'win32':
@@ -306,7 +309,7 @@ class TrayApp:
         self._schedule_next_sync()
 
     def _build_menu(self) -> 'pystray.Menu':
-        """Build the right-click context menu."""
+        """Build the right-click context menu with submenus."""
         return pystray.Menu(
             pystray.MenuItem(
                 'Sync Now',
@@ -314,16 +317,82 @@ class TrayApp:
                 default=True  # activates on double-click
             ),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem('Add PTO', self._on_add_pto),
             pystray.MenuItem(
-                'Select Overhead', self._on_select_overhead
+                'Configure',
+                pystray.Menu(
+                    pystray.MenuItem(
+                        'Add PTO', self._on_add_pto
+                    ),
+                    pystray.MenuItem(
+                        'Select Overhead',
+                        self._on_select_overhead
+                    ),
+                )
             ),
-            pystray.MenuItem('View Log', self._on_view_log),
-            pystray.MenuItem('View Schedule', self._on_view_schedule),
-            pystray.MenuItem('Settings', self._on_settings),
+            pystray.MenuItem(
+                'Log and Reports',
+                pystray.Menu(
+                    pystray.MenuItem(
+                        'Daily Log', self._on_view_log
+                    ),
+                    pystray.MenuItem(
+                        'Schedule', self._on_view_schedule
+                    ),
+                    pystray.MenuItem(
+                        'View Monthly Hours',
+                        self._on_view_monthly
+                    ),
+                    pystray.MenuItem(
+                        'Fix Monthly Shortfall',
+                        self._on_fix_shortfall,
+                        visible=self._shortfall_visible
+                    ),
+                )
+            ),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                'Submit Timesheet',
+                self._on_submit_timesheet,
+                visible=self._submit_visible
+            ),
+            pystray.MenuItem('Settings', self._on_settings),
             pystray.MenuItem('Exit', self._on_exit),
         )
+
+    # --- Dynamic menu visibility ---
+
+    def _shortfall_visible(self, item) -> bool:
+        """Show 'Fix Monthly Shortfall' only when shortfall
+        file exists."""
+        return SHORTFALL_FILE.exists()
+
+    def _submit_visible(self, item) -> bool:
+        """Show 'Submit Timesheet' in last 7 days of month,
+        when no shortfall file exists and not yet submitted."""
+        today = date.today()
+        last_day = calendar.monthrange(today.year, today.month)[1]
+
+        # Only show in last 7 days of month
+        if today.day < last_day - 6:
+            return False
+
+        # Hide if shortfall file exists (must fix first)
+        if SHORTFALL_FILE.exists():
+            return False
+
+        # Hide if already submitted this month
+        if SUBMITTED_FILE.exists():
+            try:
+                with open(SUBMITTED_FILE, 'r',
+                          encoding='utf-8') as f:
+                    data = json.load(f)
+                period = f"{today.year}-{today.month:02d}"
+                if data.get('period') == period:
+                    return False
+            except (json.JSONDecodeError, IOError, OSError):
+                pass
+
+        return True
 
     def _on_sync_now(self, icon=None, item=None):
         """Clear pending flag and start sync in a background thread."""
@@ -542,6 +611,136 @@ class TrayApp:
     def _on_view_schedule(self, icon=None, item=None):
         """Open a terminal window showing the schedule calendar."""
         self._open_in_terminal('--show-schedule')
+
+    def _on_view_monthly(self, icon=None, item=None):
+        """Open a terminal window showing monthly hours report."""
+        self._open_in_terminal('--view-monthly')
+
+    def _on_fix_shortfall(self, icon=None, item=None):
+        """Open a terminal window for interactive shortfall fix."""
+        self._open_in_terminal('--fix-shortfall')
+
+    def _on_submit_timesheet(self, icon=None, item=None):
+        """Run monthly submission in a background thread."""
+        if self._sync_running.is_set():
+            self._show_toast(
+                'Busy',
+                'A sync is already in progress. Please wait.'
+            )
+            return
+
+        if self._automation is None:
+            msg = self._import_error or 'Automation not loaded'
+            self._show_toast('Error', msg)
+            return
+
+        thread = threading.Thread(
+            target=self._run_submit, daemon=True
+        )
+        thread.start()
+
+    def _run_submit(self):
+        """Background thread that runs timesheet submission."""
+        self._sync_running.set()
+        self._start_sync_animation(
+            'Tempo - Submitting timesheet...'
+        )
+        tray_logger.info("Timesheet submission started from tray")
+        old_stdout = sys.stdout
+
+        try:
+            # Re-create automation instance for fresh config
+            from tempo_automation import TempoAutomation
+            self._automation = TempoAutomation(CONFIG_FILE)
+
+            # Redirect stdout to daily-timesheet.log
+            log_path = SCRIPT_DIR / 'daily-timesheet.log'
+            log_f = open(log_path, 'a', encoding='utf-8')
+            log_f.write(f"\n{'='*44}\n")
+            log_f.write(
+                f"Run: {datetime.now():%Y-%m-%d %H:%M:%S} "
+                f"(Tray Submit)\n"
+            )
+            log_f.write(f"{'='*44}\n")
+            sys.stdout = log_f
+
+            self._automation.submit_timesheet()
+
+            sys.stdout = old_stdout
+            log_f.close()
+
+            # Check result by looking at marker files
+            today = date.today()
+            period = f"{today.year}-{today.month:02d}"
+
+            if SUBMITTED_FILE.exists():
+                try:
+                    with open(SUBMITTED_FILE, 'r',
+                              encoding='utf-8') as f:
+                        sdata = json.load(f)
+                    if sdata.get('period') == period:
+                        self._set_icon_state(
+                            'green', 'Tempo - Submitted!'
+                        )
+                        self._show_toast(
+                            'Timesheet Submitted',
+                            f'Your timesheet for {period} '
+                            f'has been submitted.'
+                        )
+                        tray_logger.info(
+                            "Submission successful from tray"
+                        )
+                        return
+                except (json.JSONDecodeError, IOError, OSError):
+                    pass
+
+            if SHORTFALL_FILE.exists():
+                self._set_icon_state(
+                    'orange', 'Tempo - Shortfall detected'
+                )
+                self._show_toast(
+                    'Shortfall Detected',
+                    'Your timesheet has gaps. Use '
+                    '"Fix Monthly Shortfall" from the '
+                    'tray menu.'
+                )
+            else:
+                self._set_icon_state(
+                    'green',
+                    'Tempo - Submission check complete'
+                )
+                self._show_toast(
+                    'Submission Check',
+                    'Hours look good. Submission will '
+                    'happen on the last day of the month.'
+                )
+
+        except Exception as e:
+            sys.stdout = old_stdout
+            if 'log_f' in locals() and not log_f.closed:
+                log_f.close()
+            error_msg = str(e)[:200]
+            self._set_icon_state(
+                'red', f'Tempo - Error: {error_msg}'
+            )
+            self._show_toast(
+                'Submit Failed', f'Error: {error_msg}'
+            )
+            tray_logger.error(
+                f"Submission failed: {e}", exc_info=True
+            )
+        finally:
+            self._sync_running.clear()
+
+        # Revert icon after 5 seconds
+        def _revert():
+            if not self._sync_running.is_set():
+                self._set_icon_state(
+                    'green', 'Tempo Automation'
+                )
+        revert_timer = threading.Timer(5.0, _revert)
+        revert_timer.daemon = True
+        revert_timer.start()
 
     def _open_in_terminal(self, cli_arg: str):
         """

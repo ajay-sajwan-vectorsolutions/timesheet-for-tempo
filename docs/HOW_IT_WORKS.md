@@ -206,44 +206,127 @@ If there's a shortfall greater than 0.5h, a Windows toast notification is sent.
 
 ## Monthly Submission - Timesheet Approval
 
-Runs on days 28-31 at 11 PM. The script checks if today is the actual last day of the month before submitting.
+The submission window opens in the last 7 days of the month. The scheduler runs on days 28-31 at 11 PM.
 
 ### Algorithm
 
 ```
-1. Is today the last day of the month?
-   +-- NO --> Skip (print message and exit)
+1. Already submitted this month?
+   +-- YES --> Skip
+   |
+2. Is today within the last 7 days of the month?
+   +-- NO --> Skip
    +-- YES --> Continue
    |
-2. Count working days this month
+3. Run per-day gap detection:
+   - Fetch ALL worklogs for the month (one API call)
+   - Group by date, compare each working day to daily_hours
+   - Identify days with > 0.5h shortfall
    |
-3. Calculate expected hours = working_days x daily_hours
+4. Shortfall found?
+   +-- YES:
+   |   - Print per-day gap table (date, day, logged, expected, gap)
+   |   - Save monthly_shortfall.json for tray app
+   |   - Send toast notification
+   |   - DO NOT submit --> user must fix first
    |
-4. Fetch actual hours from Jira for entire month
-   |
-5. Compare:
-   +-- Shortfall > 0.5h --> Send warning notification
-   |
-6. Submit timesheet to Tempo for approval
-   |
-7. Send confirmation notification
+   +-- NO:
+       - Is it the last day of the month?
+       +-- YES --> Auto-submit timesheet
+       +-- NO --> "No shortfalls. Submission on last day."
 ```
 
-**Why days 28-31?** Windows Task Scheduler doesn't have a "last day of month" option. The task fires on all four days, but the script uses `calendar.monthrange()` to check if today is truly the last day. On months with 30 days, the script runs and skips on days 28-29, then submits on day 30.
+**Key change from v3.5:** The system no longer submits a timesheet with known gaps. It blocks submission and saves shortfall data so the user can fix specific days via the tray menu or `--fix-shortfall`.
 
-### Monthly Hours Check Output
+### Monthly Hours Check Output (no shortfall)
 
 ```
-TEMPO MONTHLY TIMESHEET SUBMISSION (2026-02-28 23:00:01)
+TEMPO MONTHLY SUBMISSION CHECK (2026-02-28 23:00:01)
 
 Monthly Hours Check:
-  Working days: 20
-  Expected: 160.0h (20 days x 8.0h)
-  Actual:   158.5h
-  [!] SHORTFALL: 1.5h missing
+  Working days: 20  |  Expected: 160.0h  |  Actual: 160.0h
+  [OK] Hours complete -- no shortfalls detected
 
-Submitting timesheet for period 2026-02...
-[OK] Timesheet submitted for approval
+Submitting timesheet for 2026-02...
+[OK] Timesheet submitted successfully for 2026-02
+```
+
+### Monthly Hours Check Output (shortfall detected)
+
+```
+TEMPO MONTHLY SUBMISSION CHECK (2026-02-28 23:00:01)
+
+Monthly Hours Check:
+  Working days: 20  |  Expected: 160.0h  |  Actual: 156.5h
+  [!] SHORTFALL: 3.5h missing across 3 day(s)
+
+  Date         Day        Logged  Expected   Gap
+  --------------------------------------------------
+  2026-02-05   Thursday    6.5h     8.0h    1.5h
+  2026-02-12   Thursday    7.0h     8.0h    1.0h
+  2026-02-19   Thursday    7.0h     8.0h    1.0h
+
+  [INFO] Shortfall saved to monthly_shortfall.json
+  [!] Timesheet NOT submitted due to shortfall.
+      Fix gaps via tray menu or --fix-shortfall, then --submit again.
+```
+
+### Fixing Shortfalls
+
+Run `--fix-shortfall` from the command line or click "Fix Monthly Shortfall" in the tray app:
+
+```
+FIX MONTHLY SHORTFALL - 2026-02
+
+  Total shortfall: 3.5h across 3 day(s)
+
+  #   Date         Day        Logged  Expected   Gap
+  --------------------------------------------------
+  1   2026-02-05   Thursday    6.5h     8.0h    1.5h
+  2   2026-02-12   Thursday    7.0h     8.0h    1.0h
+  3   2026-02-19   Thursday    7.0h     8.0h    1.0h
+
+  Options:
+    A       = Fix ALL gap days
+    1,3,5   = Fix specific days (comma-separated)
+    Q       = Quit without fixing
+
+  Enter choice: A
+
+  --- Syncing 2026-02-05 (Thursday) ---
+  [OK] 2026-02-05 synced
+
+  --- Syncing 2026-02-12 (Thursday) ---
+  [OK] 2026-02-12 synced
+
+  --- Syncing 2026-02-19 (Thursday) ---
+  [OK] 2026-02-19 synced
+
+  Fixed 3/3 days.
+  [OK] All gaps fixed. Shortfall file removed.
+
+  You can now submit your timesheet from the tray menu.
+
+  Press any key to close...
+```
+
+### Viewing Monthly Hours
+
+Run `--view-monthly` from the command line or click "View Monthly Hours" in the tray app to see a per-day breakdown:
+
+```
+MONTHLY HOURS REPORT - February 2026
+
+  Date         Day        Logged  Expected     Status
+  --------------------------------------------------
+  2026-02-03   Monday      8.0h     8.0h        [OK]
+  2026-02-04   Tuesday     8.0h     8.0h        [OK]
+  2026-02-05   Wednesday   6.5h     8.0h       -1.5h
+  ...
+  --------------------------------------------------
+  TOTAL                   156.5h   160.0h
+
+  [!] Shortfall: 3.5h across 3 day(s)
 ```
 
 ---
@@ -380,15 +463,33 @@ python tempo_automation.py --submit              # Submit monthly
 
 ## System Tray App
 
-### Menu Options
+### Menu Structure
+
+```
+Sync Now                         (double-click or right-click)
+---
+Configure        -> Add PTO
+                    Select Overhead
+Log and Reports  -> Daily Log
+                    Schedule
+                    View Monthly Hours
+                    Fix Monthly Shortfall  (dynamic: only when shortfall exists)
+---
+Submit Timesheet                 (dynamic: last 7 days of month, no shortfall)
+Settings
+Exit
+```
 
 | Menu Item | What It Does |
 |-----------|-------------|
 | **Sync Now** | Triggers daily sync immediately (background thread) |
-| **Add PTO** | Opens dialog to enter PTO dates (validates format, rejects weekends) |
-| **Select Overhead** | Opens console window for interactive overhead story selection |
-| **View Log** | Opens daily-timesheet.log in Notepad |
-| **View Schedule** | Opens console with current month calendar |
+| **Configure > Add PTO** | Opens dialog to enter PTO dates (validates format, rejects weekends) |
+| **Configure > Select Overhead** | Opens console for interactive overhead story selection |
+| **Log and Reports > Daily Log** | Opens daily-timesheet.log in text editor |
+| **Log and Reports > Schedule** | Opens console with current month calendar |
+| **Log and Reports > View Monthly Hours** | Opens console with per-day hours report for the month |
+| **Log and Reports > Fix Monthly Shortfall** | Opens console for interactive shortfall fix (only visible when gaps exist) |
+| **Submit Timesheet** | Submits monthly timesheet (only visible in last week of month when no gaps) |
 | **Settings** | Opens config.json in default editor |
 | **Exit** | Checks if hours are logged, warns if not, offers to restart at sync time |
 
@@ -643,6 +744,9 @@ Timesheet submitted for manager approval
 | `--setup` | Run setup wizard |
 | `--select-overhead` | Choose overhead stories for current PI |
 | `--show-overhead` | Display overhead configuration |
+| `--view-monthly` | Show per-day hours for current month |
+| `--view-monthly YYYY-MM` | Show per-day hours for specific month |
+| `--fix-shortfall` | Interactive fix for monthly hour gaps |
 | `--show-schedule` | Show calendar for current month |
 | `--show-schedule YYYY-MM` | Show calendar for specific month |
 | `--manage` | Interactive schedule management menu |
