@@ -76,8 +76,14 @@ v2/
 ├── config_template.json            # Config template
 ├── org_holidays.json               # Org holidays (auto-fetched)
 ├── requirements.txt                # Python deps
+├── pyproject.toml                  # pytest config
+├── requirements-test.txt           # Test dependencies
 ├── assets/favicon.ico              # Company icon for tray app
 ├── examples/                       # Example configs (developer, PO, sales)
+├── tests/
+│   ├── conftest.py                 # Shared fixtures, config builders, mock helpers
+│   ├── fixtures/                   # Sample JSON responses (org_holidays, etc.)
+│   └── unit/                       # Unit tests (ScheduleManager, JiraClient, ...)
 ├── .claude/
 │   ├── rules/                      # Modular coding rules (auto-loaded)
 │   │   ├── coding-standards.md
@@ -150,7 +156,8 @@ python tray_app.py --register / --unregister         # Auto-start control
 - [ ] Test PO/Sales roles
 - [ ] Teams webhook: uncomment call (line ~2447) + add webhook URL
 - [ ] Test tray app on actual Mac hardware
-- [ ] PyInstaller .exe, unit tests, --dry-run, retry logic
+- [ ] PyInstaller .exe, --dry-run, retry logic
+- [x] Unit tests Phase 1: ScheduleManager (86 tests), JiraClient (53 tests) -- 139 total, pytest + responses + freezegun
 
 ### Version History
 | Version | Date | Changes |

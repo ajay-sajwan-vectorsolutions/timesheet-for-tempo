@@ -895,4 +895,20 @@ def test_is_working_day_priority(date_str, pto, working, org_hol, expected_type)
 
 ---
 
+## Quick Summary
+
+- **~200 tests** across 14 test files, organized into unit / integration / edge categories
+- **4-phase rollout:** Phase 1 (ScheduleManager + JiraClient), Phase 2 (TempoClient + TempoAutomation + CredentialManager), Phase 3 (ConfigManager + NotificationManager + DualWriter + integration flows), Phase 4 (TrayApp + CLI + cross-platform + encoding + concurrency)
+- **Coverage target:** 85% overall, with ScheduleManager at 95% and DualWriter at 100%
+- **Key dependencies:** pytest, pytest-mock, pytest-cov, responses, freezegun
+- **Mocking philosophy:** Mock all external I/O (APIs, SMTP, OS calls, GUI) but never mock pure logic (schedule calculations, hour distribution, ADF parsing) -- test the real code
+- Use `tmp_path` for all file I/O to prevent test pollution
+- Use `freezegun` everywhere -- date-dependent logic is pervasive
+- Platform markers (`@pytest.mark.windows`, `@pytest.mark.darwin`) for OS-specific tests
+- Parametrized tests for hour distribution and schedule priority -- covers combinatorial cases efficiently
+
+The document includes detailed test tables for every class method, mocking strategies, fixture designs, CI config, and coverage targets.
+
+---
+
 *End of test strategy. Estimated ~200 tests across 14 files, targeting 85% coverage.*
