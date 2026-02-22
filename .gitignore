@@ -21,6 +21,11 @@ Claude Prompt.txt
 _tray_stop.signal
 _pto_input.tmp
 _pto_input.vbs
+monthly_shortfall.json
+monthly_submitted.json
+
+# Test scripts (local only)
+test_*.bat
 
 # Zip bundles
 *.zip

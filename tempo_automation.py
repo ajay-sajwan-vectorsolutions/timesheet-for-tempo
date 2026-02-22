@@ -72,6 +72,8 @@ class DualWriter:
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE = SCRIPT_DIR / "config.json"
 LOG_FILE = SCRIPT_DIR / "tempo_automation.log"
+SHORTFALL_FILE = SCRIPT_DIR / "monthly_shortfall.json"
+SUBMITTED_FILE = SCRIPT_DIR / "monthly_submitted.json"
 
 # Configure logging
 logging.basicConfig(
@@ -1840,35 +1842,50 @@ class NotificationManager:
             print(f"  [!] Teams notification failed: {e}")
 
     def send_windows_notification(self, title: str, body: str):
-        """Show a Windows toast notification (Action Center)."""
-        if sys.platform != 'win32':
-            return
-        try:
-            from winotify import Notification, audio
-            toast = Notification(
-                app_id="Tempo Automation",
-                title=title,
-                msg=body,
-                duration="long"
-            )
-            toast.set_audio(audio.Default, loop=False)
-            toast.show()
-            logger.info(f"Toast notification shown: {title}")
-            print("  [OK] Desktop notification sent")
-        except ImportError:
-            # Fallback to MessageBox if winotify not installed
+        """Show a desktop notification (Windows toast or Mac osascript)."""
+        if sys.platform == 'win32':
             try:
-                from ctypes import windll, c_int, c_wchar_p
-                windll.user32.MessageBoxW(
-                    c_int(0), c_wchar_p(body), c_wchar_p(title),
-                    0x00000030 | 0x00001000
+                from winotify import Notification, audio
+                toast = Notification(
+                    app_id="Tempo Automation",
+                    title=title,
+                    msg=body,
+                    duration="long"
                 )
-                logger.info(f"MessageBox notification shown: {title}")
-                print("  [OK] Desktop notification shown")
-            except Exception as e2:
-                logger.warning(f"Notification failed: {e2}")
-        except Exception as e:
-            logger.warning(f"Toast notification failed: {e}")
+                toast.set_audio(audio.Default, loop=False)
+                toast.show()
+                logger.info(f"Toast notification shown: {title}")
+                print("  [OK] Desktop notification sent")
+            except ImportError:
+                # Fallback to MessageBox if winotify not installed
+                try:
+                    from ctypes import windll, c_int, c_wchar_p
+                    windll.user32.MessageBoxW(
+                        c_int(0), c_wchar_p(body), c_wchar_p(title),
+                        0x00000030 | 0x00001000
+                    )
+                    logger.info(
+                        f"MessageBox notification shown: {title}"
+                    )
+                    print("  [OK] Desktop notification shown")
+                except Exception as e2:
+                    logger.warning(f"Notification failed: {e2}")
+            except Exception as e:
+                logger.warning(f"Toast notification failed: {e}")
+        elif sys.platform == 'darwin':
+            try:
+                import subprocess as sp
+                safe_title = title.replace('"', '\\"')
+                safe_body = body.replace('"', '\\"')
+                script = (
+                    f'display notification "{safe_body}" '
+                    f'with title "{safe_title}"'
+                )
+                sp.Popen(['osascript', '-e', script])
+                logger.info(f"Mac notification shown: {title}")
+                print("  [OK] Desktop notification sent")
+            except Exception as e:
+                logger.warning(f"Mac notification failed: {e}")
 
     def send_shortfall_email(self, title: str, body: str,
                              facts: List[Dict] = None):
@@ -1964,15 +1981,25 @@ class TempoAutomation:
         oh = self._get_overhead_config()
         pto_key = oh.get('pto_story_key', '')
 
-        # Check Jira for existing worklogs on PTO day
+        # Check existing hours -- Tempo is source of truth
         existing = []
+        jira_seconds = 0
         if self.jira_client:
             existing = self.jira_client.get_my_worklogs(
                 target_date, target_date
             )
-        existing_seconds = sum(
-            wl['time_spent_seconds'] for wl in existing
-        )
+            jira_seconds = sum(
+                wl['time_spent_seconds'] for wl in existing
+            )
+        tempo_seconds = 0
+        if self.tempo_client.account_id:
+            tempo_worklogs = self.tempo_client.get_user_worklogs(
+                target_date, target_date
+            )
+            tempo_seconds = sum(
+                twl.get('timeSpentSeconds', 0) for twl in tempo_worklogs
+            )
+        existing_seconds = max(jira_seconds, tempo_seconds)
 
         if existing_seconds >= total_seconds:
             print(
@@ -3150,73 +3177,135 @@ class TempoAutomation:
         return created
     
     def submit_timesheet(self):
-        """Submit monthly timesheet with hours verification."""
-        today = date.today()
-        last_day = calendar.monthrange(today.year, today.month)[1]
+        """Submit monthly timesheet with per-day gap detection.
 
-        if today.day != last_day:
-            logger.info(
-                f"Skipping submission -- today is {today}, "
-                f"last day is {today.replace(day=last_day)}"
-            )
+        Runs from day 28 onwards (or last 7 days for short months).
+        - If shortfalls found: saves shortfall JSON, does NOT submit.
+        - If no shortfalls and last day: auto-submits.
+        - If no shortfalls but not last day: reports clean status.
+        """
+        today = date.today()
+        last_day_num = calendar.monthrange(today.year, today.month)[1]
+        is_last_day = (today.day == last_day_num)
+        period = f"{today.year}-{today.month:02d}"
+
+        # Guard: already submitted this month
+        if self._is_already_submitted(period):
             print(
-                f"[SKIP] Not the last day of the month "
-                f"({today.day}/{last_day}). Skipping submission."
+                f"[OK] Timesheet for {period} was already submitted."
+            )
+            logger.info(
+                f"Skipping submission: {period} already submitted"
             )
             return
 
-        logger.info("Starting timesheet submission")
+        # Guard: only run in submission window (last 7 days)
+        submission_start = max(1, last_day_num - 6)
+        if today.day < submission_start:
+            print(
+                f"[SKIP] Not in submission window yet "
+                f"(day {today.day}/{last_day_num}). "
+                f"Window opens on day {submission_start}."
+            )
+            logger.info(
+                f"Skipping submission -- day {today.day} "
+                f"before window (day {submission_start})"
+            )
+            return
+
+        logger.info("Starting monthly submission check")
         now_ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"\n{'='*60}")
-        print(f"TEMPO MONTHLY TIMESHEET SUBMISSION ({now_ts})")
+        print(f"TEMPO MONTHLY SUBMISSION CHECK ({now_ts})")
         print(f"{'='*60}\n")
 
-        # --- Monthly hours verification ---
-        first_day_str = today.replace(day=1).strftime('%Y-%m-%d')
-        last_day_str = today.strftime('%Y-%m-%d')
-        working_days = self.schedule_mgr.count_working_days(
-            first_day_str, last_day_str
-        )
-        expected = self.schedule_mgr.get_expected_hours(
-            first_day_str, last_day_str
-        )
-
-        # Get actual hours from Jira
-        actual = 0.0
-        if self.jira_client:
-            worklogs = self.jira_client.get_my_worklogs(
-                first_day_str, last_day_str
-            )
-            actual = sum(
-                wl['time_spent_seconds'] for wl in worklogs
-            ) / 3600
+        # --- Per-day gap detection ---
+        gap_data = self._detect_monthly_gaps(today.year, today.month)
 
         print("Monthly Hours Check:")
         print(
-            f"  Expected: {expected:.1f}h "
-            f"({working_days} working days x "
-            f"{self.schedule_mgr.daily_hours}h)"
+            f"  Working days: {gap_data['working_days']}  |  "
+            f"Expected: {gap_data['expected']:.1f}h  |  "
+            f"Actual: {gap_data['actual']:.1f}h"
         )
-        print(f"  Actual:   {actual:.1f}h")
 
-        shortfall = expected - actual
-        if shortfall > 0.5:
-            print(f"  [!] SHORTFALL: {shortfall:.1f}h missing")
-            self._send_shortfall_notification(
-                'monthly', first_day_str, last_day_str,
-                expected, actual
+        if gap_data['gaps']:
+            total_gap = sum(g['gap'] for g in gap_data['gaps'])
+            print(
+                f"  [!] SHORTFALL: {total_gap:.1f}h missing "
+                f"across {len(gap_data['gaps'])} day(s)\n"
             )
-        else:
-            print("  [OK] Hours complete")
-        print()
+            print(
+                f"  {'Date':<12} {'Day':<10} {'Logged':>7} "
+                f"{'Expected':>8} {'Gap':>6}"
+            )
+            print(f"  {'-'*46}")
+            for g in gap_data['gaps']:
+                print(
+                    f"  {g['date']:<12} {g['day']:<10} "
+                    f"{g['logged']:>6.1f}h "
+                    f"{g['expected']:>7.1f}h "
+                    f"{g['gap']:>5.1f}h"
+                )
+            print()
 
-        # --- Submit ---
-        period = f"{today.year}-{today.month:02d}"
+            # Save shortfall data for tray app
+            self._save_shortfall_data(gap_data)
+            print(
+                f"  [INFO] Shortfall saved to "
+                f"{SHORTFALL_FILE.name}"
+            )
+
+            # Send notification
+            first_day_str = today.replace(day=1).strftime('%Y-%m-%d')
+            self._send_shortfall_notification(
+                'monthly', first_day_str,
+                today.strftime('%Y-%m-%d'),
+                gap_data['expected'], gap_data['actual']
+            )
+
+            # DO NOT submit
+            print(
+                "\n  [!] Timesheet NOT submitted due to shortfall."
+            )
+            print(
+                "      Fix gaps via tray menu or "
+                "--fix-shortfall, then --submit again."
+            )
+            logger.info(
+                f"Submission blocked: {len(gap_data['gaps'])} "
+                f"days with shortfall ({total_gap:.1f}h)"
+            )
+            return
+
+        # --- No shortfall ---
+        print("  [OK] Hours complete -- no shortfalls detected\n")
+
+        # Clean up stale shortfall file
+        if SHORTFALL_FILE.exists():
+            SHORTFALL_FILE.unlink()
+            logger.info("Stale shortfall file removed")
+
+        if not is_last_day:
+            print(
+                f"  [INFO] No shortfalls. Auto-submission will "
+                f"happen on {today.replace(day=last_day_num)}."
+            )
+            return
+
+        # --- Last day, no shortfall: submit ---
+        print(f"Submitting timesheet for {period}...")
         success = self.tempo_client.submit_timesheet(period)
 
         if success:
-            print(f"[OK] Timesheet submitted successfully for {period}")
+            print(
+                f"[OK] Timesheet submitted successfully "
+                f"for {period}"
+            )
+            self._save_submitted_marker(period)
             self.notifier.send_submission_confirmation(period)
+            if SHORTFALL_FILE.exists():
+                SHORTFALL_FILE.unlink()
         else:
             print(f"[FAIL] Failed to submit timesheet for {period}")
 
@@ -3225,6 +3314,361 @@ class TempoAutomation:
             f"Timesheet submission "
             f"{'successful' if success else 'failed'}"
         )
+
+    # ------------------------------------------------------------------
+    # Monthly gap detection & shortfall fix
+    # ------------------------------------------------------------------
+
+    def _detect_monthly_gaps(self, year: int, month: int) -> dict:
+        """Detect per-day hour shortfalls for a given month.
+
+        Fetches all worklogs for the month in one API call, groups by
+        date, then compares each working day against daily_hours.
+
+        Args:
+            year: Calendar year (e.g. 2026)
+            month: Calendar month (1-12)
+
+        Returns:
+            Dict with keys: period, expected, actual, gaps (list of
+            shortfall days), working_days, day_details (all working days)
+        """
+        last_day_num = calendar.monthrange(year, month)[1]
+        first_date = date(year, month, 1)
+        last_date = date(year, month, last_day_num)
+        today = date.today()
+
+        # Don't check future days
+        end_date = min(last_date, today)
+
+        first_str = first_date.strftime('%Y-%m-%d')
+        end_str = end_date.strftime('%Y-%m-%d')
+
+        # Fetch worklogs -- Tempo is source of truth (catches manual entries)
+        hours_by_date = {}
+        if self.tempo_client.account_id:
+            tempo_worklogs = self.tempo_client.get_user_worklogs(
+                first_str, end_str
+            )
+            for twl in tempo_worklogs:
+                d = twl.get('startDate', '')
+                hours_by_date[d] = hours_by_date.get(d, 0) + (
+                    twl.get('timeSpentSeconds', 0) / 3600
+                )
+        elif self.jira_client:
+            # Fallback: Jira API (PO/Sales without Tempo account_id)
+            jira_worklogs = self.jira_client.get_my_worklogs(
+                first_str, end_str
+            )
+            for wl in jira_worklogs:
+                d = wl['started']
+                hours_by_date[d] = hours_by_date.get(d, 0) + (
+                    wl['time_spent_seconds'] / 3600
+                )
+
+        daily_hours = self.schedule_mgr.daily_hours
+        gaps = []
+        day_details = []
+        total_expected = 0.0
+        total_actual = 0.0
+        working_day_count = 0
+
+        current = first_date
+        while current <= end_date:
+            day_str = current.strftime('%Y-%m-%d')
+            is_working, reason = self.schedule_mgr.is_working_day(
+                day_str
+            )
+
+            if is_working:
+                working_day_count += 1
+                logged = hours_by_date.get(day_str, 0.0)
+                total_expected += daily_hours
+                total_actual += logged
+                gap = daily_hours - logged
+
+                detail = {
+                    'date': day_str,
+                    'day': current.strftime('%A'),
+                    'logged': round(logged, 2),
+                    'expected': daily_hours,
+                    'gap': round(max(0, gap), 2)
+                }
+                day_details.append(detail)
+
+                if gap > 0.5:
+                    gaps.append(detail)
+
+            current += timedelta(days=1)
+
+        period = f"{year}-{month:02d}"
+        return {
+            'period': period,
+            'expected': round(total_expected, 1),
+            'actual': round(total_actual, 1),
+            'gaps': gaps,
+            'working_days': working_day_count,
+            'day_details': day_details
+        }
+
+    def _save_shortfall_data(self, gap_data: dict) -> None:
+        """Save monthly shortfall data to JSON file."""
+        payload = {
+            'period': gap_data['period'],
+            'detected_at': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+            'expected': gap_data['expected'],
+            'actual': gap_data['actual'],
+            'gaps': gap_data['gaps']
+        }
+        with open(SHORTFALL_FILE, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, indent=2)
+        logger.info(
+            f"Shortfall data saved: {len(gap_data['gaps'])} gap days "
+            f"for {gap_data['period']}"
+        )
+
+    def _save_submitted_marker(self, period: str) -> None:
+        """Record that the timesheet was successfully submitted."""
+        payload = {
+            'period': period,
+            'submitted_at': datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        }
+        with open(SUBMITTED_FILE, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, indent=2)
+        logger.info(f"Submission marker saved for {period}")
+
+    def _is_already_submitted(self, period: str) -> bool:
+        """Check if timesheet was already submitted for this period."""
+        if not SUBMITTED_FILE.exists():
+            return False
+        try:
+            with open(SUBMITTED_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return data.get('period') == period
+        except (json.JSONDecodeError, IOError):
+            return False
+
+    def view_monthly_hours(self, month_str: str = 'current'):
+        """Display per-day hours table for a month.
+
+        Args:
+            month_str: 'current' or 'YYYY-MM' format
+        """
+        if month_str == 'current':
+            today = date.today()
+            year, month = today.year, today.month
+        else:
+            try:
+                parts = month_str.split('-')
+                year, month = int(parts[0]), int(parts[1])
+            except (ValueError, IndexError):
+                print(f"[ERROR] Invalid month format: {month_str}")
+                print("        Use YYYY-MM (e.g., 2026-03)")
+                return
+
+        gap_data = self._detect_monthly_gaps(year, month)
+        month_name = calendar.month_name[month]
+
+        print(f"\n{'='*60}")
+        print(f"MONTHLY HOURS REPORT - {month_name} {year}")
+        print(f"{'='*60}\n")
+
+        print(
+            f"  {'Date':<12} {'Day':<10} {'Logged':>7} "
+            f"{'Expected':>8} {'Status':>10}"
+        )
+        print(f"  {'-'*50}")
+
+        for d in gap_data['day_details']:
+            if d['gap'] > 0.5:
+                status = f"-{d['gap']:.1f}h"
+            elif d['logged'] > d['expected']:
+                over = d['logged'] - d['expected']
+                status = f"+{over:.1f}h"
+            else:
+                status = "[OK]"
+            print(
+                f"  {d['date']:<12} {d['day']:<10} "
+                f"{d['logged']:>6.1f}h "
+                f"{d['expected']:>7.1f}h "
+                f"{status:>10}"
+            )
+
+        print(f"  {'-'*50}")
+        print(
+            f"  {'TOTAL':<12} {'':10} "
+            f"{gap_data['actual']:>6.1f}h "
+            f"{gap_data['expected']:>7.1f}h"
+        )
+
+        shortfall = gap_data['expected'] - gap_data['actual']
+        if shortfall > 0.5:
+            print(
+                f"\n  [!] Shortfall: {shortfall:.1f}h across "
+                f"{len(gap_data['gaps'])} day(s)"
+            )
+        else:
+            print("\n  [OK] All hours accounted for")
+
+        if SHORTFALL_FILE.exists():
+            print(
+                "\n  [INFO] Shortfall file exists. "
+                "Run --fix-shortfall to fix gaps."
+            )
+        print()
+
+    def fix_shortfall(self):
+        """Interactive fix for monthly shortfall gaps."""
+        if not SHORTFALL_FILE.exists():
+            print("\n[OK] No shortfall data found. Nothing to fix.")
+            print(
+                "     Run --submit first to detect gaps, or "
+                "--view-monthly to check hours."
+            )
+            return
+
+        try:
+            with open(SHORTFALL_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"[ERROR] Could not read shortfall file: {e}")
+            return
+
+        gaps = data.get('gaps', [])
+        if not gaps:
+            print(
+                "[OK] Shortfall file exists but has no gaps. "
+                "Cleaning up."
+            )
+            SHORTFALL_FILE.unlink()
+            return
+
+        period = data.get('period', 'unknown')
+        total_gap = sum(g['gap'] for g in gaps)
+
+        print(f"\n{'='*60}")
+        print(f"FIX MONTHLY SHORTFALL - {period}")
+        print(f"{'='*60}\n")
+        print(f"  Detected: {data.get('detected_at', 'unknown')}")
+        print(
+            f"  Total shortfall: {total_gap:.1f}h across "
+            f"{len(gaps)} day(s)"
+        )
+        print()
+        print(
+            f"  #   {'Date':<12} {'Day':<10} {'Logged':>7} "
+            f"{'Expected':>8} {'Gap':>6}"
+        )
+        print(f"  {'-'*48}")
+        for i, g in enumerate(gaps, 1):
+            print(
+                f"  {i:<3} {g['date']:<12} {g['day']:<10} "
+                f"{g['logged']:>6.1f}h "
+                f"{g['expected']:>7.1f}h "
+                f"{g['gap']:>5.1f}h"
+            )
+
+        print()
+        print("  Options:")
+        print("    A       = Fix ALL gap days")
+        print("    1,3,5   = Fix specific days (comma-separated)")
+        print("    Q       = Quit without fixing")
+        print()
+
+        try:
+            choice = input("  Enter choice: ").strip().upper()
+        except (EOFError, KeyboardInterrupt):
+            print("\n  Cancelled.")
+            return
+
+        if choice == 'Q' or not choice:
+            print("  No changes made.")
+            return
+
+        # Determine which days to fix
+        if choice == 'A':
+            to_fix = list(gaps)
+        else:
+            try:
+                indices = [
+                    int(x.strip()) for x in choice.split(',')
+                ]
+                to_fix = []
+                for idx in indices:
+                    if 1 <= idx <= len(gaps):
+                        to_fix.append(gaps[idx - 1])
+                    else:
+                        print(
+                            f"  [!] Ignoring invalid index: {idx}"
+                        )
+            except ValueError:
+                print(
+                    "[ERROR] Invalid input. Use A, Q, or numbers "
+                    "like 1,3,5"
+                )
+                return
+
+        if not to_fix:
+            print("  No valid days selected.")
+            return
+
+        print(f"\n  Fixing {len(to_fix)} day(s)...\n")
+
+        fixed_count = 0
+        for g in to_fix:
+            print(f"  --- Syncing {g['date']} ({g['day']}) ---")
+            try:
+                self.sync_daily(g['date'])
+                fixed_count += 1
+                print(f"  [OK] {g['date']} synced\n")
+            except Exception as e:
+                print(f"  [FAIL] Error syncing {g['date']}: {e}\n")
+                logger.error(
+                    f"Fix shortfall failed for {g['date']}: {e}",
+                    exc_info=True
+                )
+
+        print(f"{'='*60}")
+        print(f"  Fixed {fixed_count}/{len(to_fix)} days.")
+
+        # Update or remove shortfall file
+        if fixed_count == len(gaps):
+            SHORTFALL_FILE.unlink()
+            print("  [OK] All gaps fixed. Shortfall file removed.")
+            print(
+                "\n  You can now submit your timesheet from "
+                "the tray menu."
+            )
+        elif fixed_count > 0:
+            # Partial fix -- re-detect and update
+            parts = period.split('-')
+            updated = self._detect_monthly_gaps(
+                int(parts[0]), int(parts[1])
+            )
+            if updated['gaps']:
+                self._save_shortfall_data(updated)
+                remaining = len(updated['gaps'])
+                print(
+                    f"  [INFO] {remaining} gap(s) remaining. "
+                    f"Shortfall file updated."
+                )
+            else:
+                SHORTFALL_FILE.unlink()
+                print(
+                    "  [OK] All gaps now fixed. "
+                    "Shortfall file removed."
+                )
+                print(
+                    "\n  You can now submit your timesheet from "
+                    "the tray menu."
+                )
+
+        print(f"{'='*60}\n")
+
+        try:
+            input("  Press any key to close...")
+        except (EOFError, KeyboardInterrupt):
+            pass
 
     # ------------------------------------------------------------------
     # Weekly verification
@@ -3436,17 +3880,29 @@ class TempoAutomation:
         """Check if a day has sufficient hours logged."""
         worklogs = []
         existing_keys = set()
-        existing_seconds = 0
+        jira_seconds = 0
 
         if self.jira_client:
             worklogs = self.jira_client.get_my_worklogs(
                 target_date, target_date
             )
-            existing_seconds = sum(
+            jira_seconds = sum(
                 wl['time_spent_seconds'] for wl in worklogs
             )
             existing_keys = {wl['issue_key'] for wl in worklogs}
 
+        # Tempo is source of truth (catches manual Tempo entries)
+        tempo_seconds = 0
+        if self.tempo_client.account_id:
+            tempo_worklogs = self.tempo_client.get_user_worklogs(
+                target_date, target_date
+            )
+            tempo_seconds = sum(
+                twl.get('timeSpentSeconds', 0) for twl in tempo_worklogs
+            )
+
+        # Use higher of Jira vs Tempo (protects against API failure)
+        existing_seconds = max(jira_seconds, tempo_seconds)
         existing_hours = existing_seconds / 3600
         expected_seconds = int(self.schedule_mgr.daily_hours * 3600)
         gap_seconds = max(0, expected_seconds - existing_seconds)
@@ -3609,6 +4065,9 @@ Examples:
   python tempo_automation.py --remove-workday 2026-03-15
   python tempo_automation.py --select-overhead   # Select overhead stories for PI
   python tempo_automation.py --show-overhead      # Show overhead configuration
+  python tempo_automation.py --view-monthly       # Show current month hours
+  python tempo_automation.py --view-monthly 2026-01  # Show January hours
+  python tempo_automation.py --fix-shortfall      # Fix monthly hour shortfalls
         """
     )
 
@@ -3687,6 +4146,17 @@ Examples:
         help='Show current overhead story configuration'
     )
 
+    # Monthly reporting / shortfall fix
+    parser.add_argument(
+        '--view-monthly', nargs='?', const='current',
+        metavar='YYYY-MM',
+        help='Show per-day hours for a month (default: current)'
+    )
+    parser.add_argument(
+        '--fix-shortfall', action='store_true',
+        help='Interactive fix for monthly hour shortfalls'
+    )
+
     args = parser.parse_args()
 
     # Set up dual output if --logfile is provided
@@ -3754,6 +4224,11 @@ Examples:
             automation.select_overhead_stories()
         elif args.show_overhead:
             automation.show_overhead_config()
+        # Monthly hours / shortfall
+        elif args.view_monthly is not None:
+            automation.view_monthly_hours(args.view_monthly)
+        elif args.fix_shortfall:
+            automation.fix_shortfall()
         # Submit timesheet
         elif args.submit:
             automation.submit_timesheet()
