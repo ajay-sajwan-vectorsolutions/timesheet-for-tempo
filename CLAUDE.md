@@ -157,7 +157,8 @@ python tray_app.py --register / --unregister         # Auto-start control
 - [ ] Teams webhook: uncomment call (line ~2447) + add webhook URL
 - [ ] Test tray app on actual Mac hardware
 - [ ] PyInstaller .exe, --dry-run, retry logic
-- [x] Unit tests Phase 1: ScheduleManager (86 tests), JiraClient (53 tests) -- 139 total, pytest + responses + freezegun
+- [x] Unit tests Phase 1: ScheduleManager (86 tests), JiraClient (53 tests) -- 139 total
+- [x] Unit tests Phase 2: TempoClient (25 tests), TempoAutomation (51 tests) -- 215 total, pytest + responses + freezegun
 
 ### Version History
 | Version | Date | Changes |
