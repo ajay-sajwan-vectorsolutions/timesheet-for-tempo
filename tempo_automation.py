@@ -1981,15 +1981,25 @@ class TempoAutomation:
         oh = self._get_overhead_config()
         pto_key = oh.get('pto_story_key', '')
 
-        # Check Jira for existing worklogs on PTO day
+        # Check existing hours -- Tempo is source of truth
         existing = []
+        jira_seconds = 0
         if self.jira_client:
             existing = self.jira_client.get_my_worklogs(
                 target_date, target_date
             )
-        existing_seconds = sum(
-            wl['time_spent_seconds'] for wl in existing
-        )
+            jira_seconds = sum(
+                wl['time_spent_seconds'] for wl in existing
+            )
+        tempo_seconds = 0
+        if self.tempo_client.account_id:
+            tempo_worklogs = self.tempo_client.get_user_worklogs(
+                target_date, target_date
+            )
+            tempo_seconds = sum(
+                twl.get('timeSpentSeconds', 0) for twl in tempo_worklogs
+            )
+        existing_seconds = max(jira_seconds, tempo_seconds)
 
         if existing_seconds >= total_seconds:
             print(
@@ -3334,20 +3344,27 @@ class TempoAutomation:
         first_str = first_date.strftime('%Y-%m-%d')
         end_str = end_date.strftime('%Y-%m-%d')
 
-        # Fetch ALL worklogs for the month in one call
-        all_worklogs = []
-        if self.jira_client:
-            all_worklogs = self.jira_client.get_my_worklogs(
+        # Fetch worklogs -- Tempo is source of truth (catches manual entries)
+        hours_by_date = {}
+        if self.tempo_client.account_id:
+            tempo_worklogs = self.tempo_client.get_user_worklogs(
                 first_str, end_str
             )
-
-        # Group worklogs by date
-        hours_by_date = {}
-        for wl in all_worklogs:
-            d = wl['started']  # YYYY-MM-DD
-            hours_by_date[d] = hours_by_date.get(d, 0) + (
-                wl['time_spent_seconds'] / 3600
+            for twl in tempo_worklogs:
+                d = twl.get('startDate', '')
+                hours_by_date[d] = hours_by_date.get(d, 0) + (
+                    twl.get('timeSpentSeconds', 0) / 3600
+                )
+        elif self.jira_client:
+            # Fallback: Jira API (PO/Sales without Tempo account_id)
+            jira_worklogs = self.jira_client.get_my_worklogs(
+                first_str, end_str
             )
+            for wl in jira_worklogs:
+                d = wl['started']
+                hours_by_date[d] = hours_by_date.get(d, 0) + (
+                    wl['time_spent_seconds'] / 3600
+                )
 
         daily_hours = self.schedule_mgr.daily_hours
         gaps = []
@@ -3863,17 +3880,29 @@ class TempoAutomation:
         """Check if a day has sufficient hours logged."""
         worklogs = []
         existing_keys = set()
-        existing_seconds = 0
+        jira_seconds = 0
 
         if self.jira_client:
             worklogs = self.jira_client.get_my_worklogs(
                 target_date, target_date
             )
-            existing_seconds = sum(
+            jira_seconds = sum(
                 wl['time_spent_seconds'] for wl in worklogs
             )
             existing_keys = {wl['issue_key'] for wl in worklogs}
 
+        # Tempo is source of truth (catches manual Tempo entries)
+        tempo_seconds = 0
+        if self.tempo_client.account_id:
+            tempo_worklogs = self.tempo_client.get_user_worklogs(
+                target_date, target_date
+            )
+            tempo_seconds = sum(
+                twl.get('timeSpentSeconds', 0) for twl in tempo_worklogs
+            )
+
+        # Use higher of Jira vs Tempo (protects against API failure)
+        existing_seconds = max(jira_seconds, tempo_seconds)
         existing_hours = existing_seconds / 3600
         expected_seconds = int(self.schedule_mgr.daily_hours * 3600)
         gap_seconds = max(0, expected_seconds - existing_seconds)

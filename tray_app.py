@@ -804,17 +804,28 @@ class TrayApp:
             daily_hours = schedule_mgr.daily_hours
             is_working, reason = schedule_mgr.is_working_day(today)
 
-            if is_working and self._automation.jira_client:
+            if is_working:
                 self._set_icon_state('orange', 'Checking hours...')
                 try:
-                    worklogs = (
-                        self._automation.jira_client.get_my_worklogs(
-                            today, today
+                    # Tempo is source of truth (catches manual entries)
+                    tc = self._automation.tempo_client
+                    if tc.account_id:
+                        tempo_wls = tc.get_user_worklogs(today, today)
+                        hours_logged = sum(
+                            w.get('timeSpentSeconds', 0)
+                            for w in tempo_wls
+                        ) / 3600
+                    # Fallback: Jira API if Tempo returned 0
+                    if hours_logged == 0.0 and self._automation.jira_client:
+                        jira_wls = (
+                            self._automation.jira_client.get_my_worklogs(
+                                today, today
+                            )
                         )
-                    )
-                    hours_logged = sum(
-                        w.get('time_spent_seconds', 0) for w in worklogs
-                    ) / 3600
+                        hours_logged = sum(
+                            w.get('time_spent_seconds', 0)
+                            for w in jira_wls
+                        ) / 3600
                     if hours_logged < daily_hours:
                         should_warn = True
                 except Exception as e:

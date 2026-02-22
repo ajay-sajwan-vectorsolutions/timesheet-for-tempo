@@ -1,6 +1,6 @@
 # Tempo Timesheet Automation
 
-**Version:** 3.6 | **Status:** Production | **Updated:** February 22, 2026
+**Version:** 3.7 | **Status:** Production | **Updated:** February 22, 2026
 **Owner:** Ajay Sajwan (ajay.sajwan-ctr@vectorsolutions.com, developer role)
 
 ---
@@ -18,8 +18,8 @@
 Automates daily timesheet entry and monthly submission for a 200-person engineering team.
 Developers get Jira worklogs auto-distributed across active tickets; Tempo syncs from Jira.
 
-- **Main script:** `tempo_automation.py` (4,224 lines, 8 classes)
-- **Tray app:** `tray_app.py` (~1,306 lines, cross-platform: Windows + Mac)
+- **Main script:** `tempo_automation.py` (4,253 lines, 8 classes)
+- **Tray app:** `tray_app.py` (~1,340 lines, cross-platform: Windows + Mac)
 - **Installers:** `install.bat` (Windows), `install.sh` (Mac) -- 7 steps each
 - **Python:** 3.7+ (Ajay: Python 3.14)
 - **Jira:** lmsportal.atlassian.net (REST v3, Basic auth)
@@ -43,15 +43,15 @@ Developers get Jira worklogs auto-distributed across active tickets; Tempo syncs
 
 | Class | Lines | Purpose |
 |-------|-------|---------|
-| DualWriter | 47 | stdout + file dual output (--logfile) |
-| CredentialManager | 91-199 | DPAPI encrypt/decrypt for Windows |
-| ConfigManager | 206-475 | Config, setup wizard, location picker, get_account_id() |
-| ScheduleManager | 477-1120 | Holidays, PTO, overrides, is_working_day(), calendar |
-| JiraClient | ~1125 | Worklogs CRUD, active issues, historical JQL, ADF, get_myself_account_id(), account_id attr |
-| TempoClient | ~1509 | Worklogs, submit timesheet, get period (takes account_id parameter) |
-| NotificationManager | ~1587 | SMTP email, Teams webhook, desktop toast (Win + Mac) |
-| TempoAutomation | ~1918 | Orchestration, sync, verify_week, backfill, overhead, monthly gap detection, shortfall fix |
-| CLI | ~3970-4220 | argparse with 18 arguments (added --view-monthly, --fix-shortfall) |
+| DualWriter | 48 | stdout + file dual output (--logfile) |
+| CredentialManager | 94-199 | DPAPI encrypt/decrypt for Windows |
+| ConfigManager | 209-475 | Config, setup wizard, location picker, get_account_id() |
+| ScheduleManager | 481-1120 | Holidays, PTO, overrides, is_working_day(), calendar |
+| JiraClient | ~1128 | Worklogs CRUD, active issues, historical JQL, ADF, get_myself_account_id(), account_id attr |
+| TempoClient | ~1520 | Worklogs, submit timesheet, get period (takes account_id parameter) |
+| NotificationManager | ~1677 | SMTP email, Teams webhook, desktop toast (Win + Mac) |
+| TempoAutomation | ~1924 | Orchestration, sync, verify_week, backfill, overhead, monthly gap detection, shortfall fix |
+| CLI | ~4047-4253 | argparse with 18 arguments (added --view-monthly, --fix-shortfall) |
 
 ### Key Patterns
 - **Day priority:** working_days > pto > weekend > org_holidays > country_holidays > extra_holidays
@@ -142,7 +142,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 
 ## Current Status
 
-**Working:** Daily sync, idempotent overwrite, smart descriptions, schedule guard (weekends/holidays/PTO), weekly verify, monthly submit with per-day gap detection (blocks submission on shortfall), --view-monthly hours report, --fix-shortfall interactive fix, tray app with favicon (cross-platform: Windows + Mac), tray menu submenus (Configure, Log and Reports), dynamic Submit Timesheet/Fix Shortfall menu items, install.bat + install.sh (7 steps each), DPAPI encryption (plain text fallback on Mac), --stop flag, welcome toast, auto-register autostart (Win: registry, Mac: LaunchAgent), tray auto-restart via daily scheduler (--quiet flag, recovery toast), overhead story support (5 cases), hybrid Jira+Tempo overhead detection, holiday overhead logging, email notifications default disabled, Mac toast via osascript, Mac dialogs via AppleScript, Mac single instance via fcntl file lock, Mac cron (daily + weekly verify + monthly submit with BSD date compat)
+**Working:** Daily sync, idempotent overwrite, smart descriptions, schedule guard (weekends/holidays/PTO), weekly verify, monthly submit with per-day gap detection (blocks submission on shortfall), --view-monthly hours report, --fix-shortfall interactive fix, Tempo as source of truth for hours (gap detection, verify-week, PTO idempotence, tray exit check), tray app with favicon (cross-platform: Windows + Mac), tray menu submenus (Configure, Log and Reports), dynamic Submit Timesheet/Fix Shortfall menu items, install.bat + install.sh (7 steps each), DPAPI encryption (plain text fallback on Mac), --stop flag, welcome toast, auto-register autostart (Win: registry, Mac: LaunchAgent), tray auto-restart via daily scheduler (--quiet flag, recovery toast), overhead story support (5 cases), hybrid Jira+Tempo overhead detection, holiday overhead logging, email notifications default disabled, Mac toast via osascript, Mac dialogs via AppleScript, Mac single instance via fcntl file lock, Mac cron (daily + weekly verify + monthly submit with BSD date compat)
 
 **TODO:**
 - [ ] Test --verify-week with live data
@@ -161,6 +161,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 | v3.1 | Feb 18 | Tray app, favicon, smart exit, confirm dialog |
 | v3.2 | Feb 19 | Hardcoded URLs, install.bat rewrite, --stop, welcome toast |
 | v3.3 | Feb 19 | Doc reorganization, .claude/rules, .claude/skills |
+| v3.7 | Feb 22 | Tempo as source of truth: _detect_monthly_gaps, _check_day_hours, _sync_pto_overhead, _exit_flow now read Tempo API (fixes 128h showing as 16h), Jira fallback for PO/Sales |
 | v3.6 | Feb 22 | Monthly shortfall detection: per-day gap analysis, blocks submission on shortfall, --view-monthly/--fix-shortfall CLI, interactive fix with day selection, tray menu restructure (Configure/Log and Reports submenus), dynamic Submit Timesheet and Fix Shortfall menu items |
 | v3.5 | Feb 22 | Cross-platform Mac support: tray_app.py (osascript dialogs/toasts, LaunchAgent autostart, fcntl mutex), install.sh rewrite (7 steps, overhead, weekly verify cron, BSD date), Mac toast in tempo_automation.py, winotify platform marker |
 | v3.4 | Feb 20 | Overhead story support: 5 cases (default daily 2h overhead, no active tickets, manual overhead, PTO/holidays, planning week), --select-overhead/--show-overhead CLI, hybrid Jira+Tempo detection, JiraClient account_id, TempoClient account_id parameter, holidays log overhead same as PTO, email default disabled, configurable daily_overhead_hours |
