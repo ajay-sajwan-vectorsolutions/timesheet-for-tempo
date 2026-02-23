@@ -217,7 +217,10 @@ class ConfigManager:
         """Load configuration from file or create new one."""
         if not self.config_path.exists():
             logger.info("No configuration found. Starting setup wizard...")
-            return self.setup_wizard()
+            config = self.setup_wizard()
+            if config is None:
+                raise SystemExit(1)
+            return config
         
         try:
             with open(self.config_path, 'r') as f:
@@ -238,7 +241,14 @@ class ConfigManager:
         
         # User information
         print("--- USER INFORMATION ---")
-        user_email = input("Enter your email address: ").strip()
+        import re
+        import base64
+        max_retries = 3
+        while True:
+            user_email = input("Enter your email address: ").strip()
+            if re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', user_email):
+                break
+            print("Invalid email format. Please try again.")
         user_name = ''  # auto-populated from Jira profile after token entry
         user_role = self._select_role()
         
@@ -253,7 +263,67 @@ class ConfigManager:
         print("   3. Give it a name (e.g., 'Tempo Automation')")
         print("   4. Copy the generated token")
         tempo_token = input("\nEnter your Tempo API token: ").strip()
-        
+
+        # Verify Tempo token (retry on failure)
+        print("\nVerifying Tempo API token...")
+        tempo_verified = False
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(
+                    "https://api.tempo.io/4/work-attributes",
+                    headers={
+                        'Authorization': f'Bearer {tempo_token}'
+                    },
+                    timeout=30
+                )
+                resp.raise_for_status()
+                tempo_verified = True
+                print("[OK] Tempo API token verified")
+                break
+            except requests.exceptions.HTTPError as e:
+                if (e.response is not None
+                        and e.response.status_code in (401, 403, 404)):
+                    print(
+                        "\n[FAIL] Authentication failed. "
+                        "The Tempo API token is invalid or expired."
+                    )
+                    if attempt < max_retries - 1:
+                        print(
+                            "Please re-enter your Tempo API "
+                            "token (or press Ctrl+C to cancel)."
+                        )
+                        tempo_token = input(
+                            "Tempo API token: "
+                        ).strip()
+                    else:
+                        print(
+                            "\n[FAIL] Could not verify Tempo "
+                            "token after 3 attempts."
+                        )
+                        print()
+                        print(
+                            "***********   Setup cannot "
+                            "continue without valid "
+                            "credentials.   *************"
+                        )
+                        print(
+                            "***********   Please start a "
+                            "fresh setup with correct "
+                            "credentials.   ***********"
+                        )
+                        print("\nSetup aborted.")
+                        return None
+                else:
+                    logger.warning(
+                        f"Could not verify Tempo token: {e}"
+                    )
+                    break
+            except Exception as e:
+                logger.warning(
+                    f"Could not verify Tempo token: {e}"
+                )
+                break
+
         if user_role == "developer":
             print("\n[INFO] To get your Jira API token:")
             print("   1. Go to https://id.atlassian.com/manage-profile/security/api-tokens")
@@ -261,24 +331,82 @@ class ConfigManager:
             jira_token = input("\nEnter your Jira API token: ").strip()
             jira_email = user_email
 
-            # Fetch display name from Jira profile
-            try:
-                import base64
-                creds = base64.b64encode(
-                    f"{user_email}:{jira_token}".encode()
-                ).decode()
-                resp = requests.get(
-                    f"https://{jira_url}/rest/api/3/myself",
-                    headers={'Authorization': f'Basic {creds}'},
-                    timeout=30
-                )
-                resp.raise_for_status()
-                jira_name = resp.json().get('displayName', '')
-                if jira_name:
-                    user_name = jira_name
-                    print(f"[OK] Welcome, {user_name}!")
-            except Exception as e:
-                logger.warning(f"Could not fetch Jira profile: {e}")
+            # Fetch display name from Jira profile (retry on failure)
+            for attempt in range(max_retries):
+                try:
+                    creds = base64.b64encode(
+                        f"{jira_email}:{jira_token}".encode()
+                    ).decode()
+                    resp = requests.get(
+                        f"https://{jira_url}/rest/api/3/myself",
+                        headers={'Authorization': f'Basic {creds}'},
+                        timeout=30
+                    )
+                    resp.raise_for_status()
+                    jira_name = resp.json().get('displayName', '')
+                    if jira_name:
+                        user_name = jira_name
+                        print(f"[OK] Welcome, {user_name}!")
+                    break
+                except requests.exceptions.HTTPError as e:
+                    if e.response is not None and e.response.status_code == 401:
+                        print(
+                            "\n[FAIL] Authentication failed. "
+                            "Either the email or Jira API token "
+                            "is incorrect."
+                        )
+                        if attempt < max_retries - 1:
+                            print(
+                                "Please re-enter your credentials "
+                                "(or press Ctrl+C to cancel)."
+                            )
+                            while True:
+                                jira_email = input(
+                                    "Email address: "
+                                ).strip()
+                                if re.match(
+                                    r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                                    jira_email
+                                ):
+                                    break
+                                print(
+                                    "Invalid email format. "
+                                    "Please try again."
+                                )
+                            user_email = jira_email
+                            jira_token = input(
+                                "Jira API token: "
+                            ).strip()
+                        else:
+                            print(
+                                "\n[FAIL] Could not verify Jira "
+                                "credentials after 3 attempts."
+                            )
+                            print()
+                            print(
+                                "***********   Setup cannot "
+                                "continue without valid "
+                                "credentials.   *************"
+                            )
+                            print(
+                                "***********   Please start a "
+                                "fresh setup with correct "
+                                "credentials.   ***********"
+                            )
+                            print(
+                                "\nSetup aborted."
+                            )
+                            return None
+                    else:
+                        logger.warning(
+                            f"Could not fetch Jira profile: {e}"
+                        )
+                        break
+                except Exception as e:
+                    logger.warning(
+                        f"Could not fetch Jira profile: {e}"
+                    )
+                    break
 
             if not user_name:
                 user_name = input(
@@ -4216,7 +4344,10 @@ Examples:
         if args.setup:
             config_manager = ConfigManager.__new__(ConfigManager)
             config_manager.config_path = CONFIG_FILE
-            config_manager.config = config_manager.setup_wizard()
+            config = config_manager.setup_wizard()
+            if config is None:
+                raise SystemExit(1)
+            config_manager.config = config
             return
 
         # Schedule management commands that only need ScheduleManager

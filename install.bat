@@ -13,6 +13,16 @@ REM 6. Set up system tray app (auto-start on login)
 REM 7. Optionally run a test sync
 REM ============================================================================
 
+REM ============================================================================
+REM Check for Administrator privileges (required for schtasks)
+REM ============================================================================
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Requesting Administrator privileges...
+    powershell -Command "Start-Process -Verb RunAs -FilePath cmd.exe -ArgumentList '/c cd /d \"%~dp0.\" && \"%~f0\"'"
+    exit /b
+)
+
 echo.
 echo ============================================================
 echo TEMPO TIMESHEET AUTOMATION - WINDOWS INSTALLER
@@ -95,7 +105,7 @@ if exist "%SCRIPT_DIR%lib" (
         pause
         exit /b 1
     )
-    echo [OK] Dependencies installed (requests, holidays, pystray, Pillow, winotify)
+    echo [OK] Dependencies installed ^(requests, holidays, pystray, Pillow, winotify^)
 )
 echo.
 
@@ -181,18 +191,18 @@ echo [OK] Wrapper scripts generated with detected Python path
 echo.
 
 REM Daily sync task (weekdays only at 6:00 PM, uses OK/Cancel dialog wrapper)
-echo Creating daily sync task (Mon-Fri at 6:00 PM)...
+echo Creating daily sync task ^(Mon-Fri at 6:00 PM^)...
 schtasks /Create /TN "TempoAutomation-DailySync" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 18:00 /TR "\"%SCRIPT_DIR%run_daily.bat\"" /F >nul 2>&1
 
 if %errorlevel% equ 0 (
-    echo [OK] Daily sync task created (weekdays only)
+    echo [OK] Daily sync task created ^(weekdays only^)
 ) else (
     echo [FAIL] Failed to create daily sync task
     echo   You may need to run this as Administrator
 )
 
 REM Weekly verification task (Friday at 4:00 PM)
-echo Creating weekly verification task (Fridays at 4:00 PM)...
+echo Creating weekly verification task ^(Fridays at 4:00 PM^)...
 schtasks /Create /TN "TempoAutomation-WeeklyVerify" /SC WEEKLY /D FRI /ST 16:00 /TR "\"%SCRIPT_DIR%run_weekly.bat\"" /F >nul 2>&1
 
 if %errorlevel% equ 0 (
@@ -202,9 +212,9 @@ if %errorlevel% equ 0 (
     echo   You may need to run this as Administrator
 )
 
-REM Monthly submission task (11:00 PM on days 28-31, script checks if last day)
-echo Creating monthly submission task (last day of month at 11:00 PM)...
-schtasks /Create /TN "TempoAutomation-MonthlySubmit" /SC MONTHLY /D 28,29,30,31 /ST 23:00 /TR "\"%SCRIPT_DIR%run_monthly.bat\"" /F >nul 2>&1
+REM Monthly submission task (11:00 PM on last day of each month)
+echo Creating monthly submission task ^(last day of month at 11:00 PM^)...
+schtasks /Create /TN "TempoAutomation-MonthlySubmit" /SC MONTHLY /MO LASTDAY /M * /ST 23:00 /TR "\"%SCRIPT_DIR%run_monthly.bat\"" /F >nul 2>&1
 
 if %errorlevel% equ 0 (
     echo [OK] Monthly submission task created
