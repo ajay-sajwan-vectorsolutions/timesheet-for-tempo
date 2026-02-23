@@ -27,7 +27,9 @@ monthly_submitted.json
 # Test scripts (local only)
 test_*.bat
 
-# Zip bundles
+# Build artifacts
+build_tmp/
+dist/
 *.zip
 
 # Stray pip output
