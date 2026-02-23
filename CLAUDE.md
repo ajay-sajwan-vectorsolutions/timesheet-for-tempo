@@ -1,6 +1,6 @@
 # Tempo Timesheet Automation
 
-**Version:** 3.8.1 | **Status:** Production | **Updated:** February 23, 2026
+**Version:** 3.9 | **Status:** Production | **Updated:** February 23, 2026
 **Owner:** Ajay Sajwan (ajay.sajwan-ctr@vectorsolutions.com, developer role)
 
 ---
@@ -155,7 +155,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 
 ## Current Status
 
-**Working:** Daily sync, idempotent overwrite, smart descriptions, schedule guard (weekends/holidays/PTO), weekly verify, monthly submit with per-day gap detection (blocks submission on shortfall), --view-monthly hours report (saves shortfall file on gaps), --fix-shortfall interactive fix, Tempo as source of truth for hours (gap detection, verify-week, PTO idempotence, tray exit check), tray app with favicon (cross-platform: Windows + Mac), tray menu submenus (Configure, Log and Reports), user identity header in tray menu, dynamic Submit Timesheet/Fix Shortfall menu items with update_menu() refresh (after sync, submit, shortfall, and terminal close), cmd /k outer quotes for paths with spaces/hyphens, quiet console (suppress INFO logs for user-facing commands), welcome toast redesign (Welcome {name}! title, time-of-day greeting heading), install.bat + install.sh (7 steps each), DPAPI encryption (plain text fallback on Mac), --stop flag, welcome toast, auto-register autostart (Win: registry, Mac: LaunchAgent), tray auto-restart via daily scheduler (--quiet flag, recovery toast), overhead story support (5 cases), hybrid Jira+Tempo overhead detection, holiday overhead logging, email notifications default disabled, Mac toast via osascript, Mac dialogs via AppleScript, Mac single instance via fcntl file lock, Mac cron (daily + weekly verify + monthly submit with BSD date compat), build_dist.bat (3 zip types with YYYYMMDD-HHMM timestamp: Windows Full with embedded Python, Windows Lite, Mac), install.bat auto-detects Python (embedded or system PATH), run_*.bat regenerated with correct paths during install, tray Configure > Change Sync Time (input dialog, validates HH:MM, updates config, reschedules timer)
+**Working:** Daily sync, idempotent overwrite, smart descriptions, schedule guard (weekends/holidays/PTO), weekly verify, monthly submit with per-day gap detection (blocks submission on shortfall), --view-monthly hours report (saves shortfall file on gaps), --fix-shortfall interactive fix, Tempo as source of truth for hours (gap detection, verify-week, PTO idempotence, tray exit check), tray app with favicon (cross-platform: Windows + Mac), tray menu submenus (Configure, Log and Reports), user identity header in tray menu, dynamic Submit Timesheet/Fix Shortfall menu items with update_menu() refresh (after sync, submit, shortfall, and terminal close), cmd /k outer quotes for paths with spaces/hyphens, quiet console (suppress INFO logs for user-facing commands), welcome toast redesign (Welcome {name}! title, time-of-day greeting heading), install.bat + install.sh (7 steps each), DPAPI encryption (plain text fallback on Mac), --stop flag, welcome toast, auto-register autostart (Win: registry, Mac: LaunchAgent), tray auto-restart via daily scheduler (--quiet flag, recovery toast), overhead story support (5 cases), hybrid Jira+Tempo overhead detection, holiday overhead logging, email notifications default disabled, Mac toast via osascript, Mac dialogs via AppleScript, Mac single instance via fcntl file lock, Mac cron (daily + weekly verify + monthly submit with BSD date compat), build_dist.bat (3 zip types with YYYYMMDD-HHMM timestamp: Windows Full with embedded Python, Windows Lite, Mac), install.bat auto-detects Python (embedded or system PATH), run_*.bat regenerated with correct paths during install, tray Configure > Change Sync Time (input dialog, validates HH:MM, updates config, reschedules timer), early timesheet submission when all remaining days are non-working (PTO/holidays/weekends) -- bypasses 7-day window, works in both CLI and tray menu
 
 **TODO:**
 - [ ] Test --verify-week with live data
@@ -168,7 +168,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 - [x] Unit tests Phase 1: ScheduleManager (86 tests), JiraClient (53 tests) -- 139 total
 - [x] Unit tests Phase 2: TempoClient (25 tests), TempoAutomation (51 tests) -- 215 total
 - [x] Unit tests Phase 3: ConfigManager (49), NotificationManager+DualWriter (36), Integration flows (18) -- 318 total
-- [x] Unit tests Phase 4: CLI dispatch (27), TrayApp (34) -- 379 total, all 8 classes + tray covered
+- [x] Unit tests Phase 4: CLI dispatch (27), TrayApp (37) -- 385 total, all 8 classes + tray covered
 
 ### Version History
 | Version | Date | Changes |
@@ -179,6 +179,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 | v3.1 | Feb 18 | Tray app, favicon, smart exit, confirm dialog |
 | v3.2 | Feb 19 | Hardcoded URLs, install.bat rewrite, --stop, welcome toast |
 | v3.3 | Feb 19 | Doc reorganization, .claude/rules, .claude/skills |
+| v3.9 | Feb 23 | Early timesheet submission: bypasses 7-day window when all remaining days are non-working (PTO/holidays/weekends), tray Submit menu visible mid-month when eligible |
 | v3.8.1 | Feb 23 | Tray UX: cmd /k outer quotes fix, menu auto-refresh after terminal closes, view_monthly saves shortfall file, quiet console for user-facing commands, welcome toast redesign (Welcome {name}! title, time-of-day greeting heading, Welcome back for restart) |
 | v3.8 | Feb 23 | Distribution zips: build_dist.bat (3 zip types with timestamp: Win+Python, Win Lite, Mac), install.bat Python auto-detect, tray menu update_menu() fix for dynamic visibility |
 | v3.7 | Feb 22 | Tempo as source of truth: _detect_monthly_gaps, _check_day_hours, _sync_pto_overhead, _exit_flow now read Tempo API (fixes 128h showing as 16h), Jira fallback for PO/Sales |

@@ -3331,7 +3331,9 @@ class TempoAutomation:
     def submit_timesheet(self):
         """Submit monthly timesheet with per-day gap detection.
 
-        Runs from day 28 onwards (or last 7 days for short months).
+        Runs from day 28 onwards (or last 7 days for short months),
+        or earlier when all remaining days are non-working
+        (PTO/holidays/weekends).
         - If shortfalls found: saves shortfall JSON, does NOT submit.
         - If no shortfalls and last day: auto-submits.
         - If no shortfalls but not last day: reports clean status.
@@ -3351,9 +3353,23 @@ class TempoAutomation:
             )
             return
 
+        # Check early submission eligibility: all remaining days
+        # are non-working (PTO, holidays, weekends)
+        tomorrow = today + timedelta(days=1)
+        last_date = today.replace(day=last_day_num)
+        if tomorrow <= last_date:
+            remaining = self.schedule_mgr.count_working_days(
+                tomorrow.strftime('%Y-%m-%d'),
+                last_date.strftime('%Y-%m-%d')
+            )
+            early_submit_eligible = (remaining == 0)
+        else:
+            early_submit_eligible = True  # today IS last day
+
         # Guard: only run in submission window (last 7 days)
+        # unless early submission is eligible
         submission_start = max(1, last_day_num - 6)
-        if today.day < submission_start:
+        if today.day < submission_start and not early_submit_eligible:
             print(
                 f"[SKIP] Not in submission window yet "
                 f"(day {today.day}/{last_day_num}). "
@@ -3364,6 +3380,17 @@ class TempoAutomation:
                 f"before window (day {submission_start})"
             )
             return
+
+        if early_submit_eligible and today.day < submission_start:
+            print(
+                "[INFO] All remaining days are non-working "
+                "(PTO/holidays/weekends)."
+            )
+            print("       Submitting timesheet early.\n")
+            logger.info(
+                "Early submission: no working days remain "
+                "in month after today"
+            )
 
         logger.info("Starting monthly submission check")
         now_ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -3438,14 +3465,14 @@ class TempoAutomation:
             SHORTFALL_FILE.unlink()
             logger.info("Stale shortfall file removed")
 
-        if not is_last_day:
+        if not is_last_day and not early_submit_eligible:
             print(
                 f"  [INFO] No shortfalls. Auto-submission will "
                 f"happen on {today.replace(day=last_day_num)}."
             )
             return
 
-        # --- Last day, no shortfall: submit ---
+        # --- Last day (or early eligible), no shortfall: submit ---
         print(f"Submitting timesheet for {period}...")
         success = self.tempo_client.submit_timesheet(period)
 

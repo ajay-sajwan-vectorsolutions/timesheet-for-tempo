@@ -1029,6 +1029,80 @@ class TestSubmitTimesheet:
         ta.tempo_client.submit_timesheet.assert_called_once_with("2026-02")
         ta._save_submitted_marker.assert_called_once_with("2026-02")
 
+    def test_early_submit_when_remaining_days_non_working(self, tmp_path):
+        """Mid-month with all remaining days PTO/holiday/weekend submits early."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+        ta._is_already_submitted = MagicMock(return_value=False)
+        ta._detect_monthly_gaps = MagicMock(return_value={
+            "period": "2026-02",
+            "expected": 120.0,
+            "actual": 120.0,
+            "gaps": [],
+            "working_days": 15,
+            "day_details": [],
+        })
+        ta._save_submitted_marker = MagicMock()
+        # count_working_days returns 0 = no working days remain
+        ta.schedule_mgr.count_working_days.return_value = 0
+
+        shortfall_path = tmp_path / "monthly_shortfall.json"
+        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path):
+            with patch("tempo_automation.date") as mock_date:
+                # Feb 15 is well before the normal 7-day window
+                mock_date.today.return_value = date(2026, 2, 15)
+                mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+                ta.submit_timesheet()
+
+        ta.tempo_client.submit_timesheet.assert_called_once_with("2026-02")
+        ta._save_submitted_marker.assert_called_once_with("2026-02")
+
+    def test_early_submit_skipped_when_working_days_remain(self):
+        """Mid-month with working days remaining skips submission."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+        ta._is_already_submitted = MagicMock(return_value=False)
+        ta._detect_monthly_gaps = MagicMock()
+        # count_working_days returns 3 = working days still remain
+        ta.schedule_mgr.count_working_days.return_value = 3
+
+        with patch("tempo_automation.date") as mock_date:
+            mock_date.today.return_value = date(2026, 2, 15)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            ta.submit_timesheet()
+
+        # Should not even get to gap detection
+        ta._detect_monthly_gaps.assert_not_called()
+        ta.tempo_client.submit_timesheet.assert_not_called()
+
+    def test_early_submit_blocked_by_gaps(self, tmp_path):
+        """Early eligible but gaps found does NOT submit."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+        ta._is_already_submitted = MagicMock(return_value=False)
+        ta._detect_monthly_gaps = MagicMock(return_value={
+            "period": "2026-02",
+            "expected": 120.0,
+            "actual": 112.0,
+            "gaps": [{"date": "2026-02-10", "day": "Tuesday",
+                       "logged": 0.0, "expected": 8.0, "gap": 8.0}],
+            "working_days": 15,
+            "day_details": [],
+        })
+        ta._save_shortfall_data = MagicMock()
+        ta._send_shortfall_notification = MagicMock()
+        ta.schedule_mgr.count_working_days.return_value = 0
+
+        shortfall_path = tmp_path / "monthly_shortfall.json"
+        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path):
+            with patch("tempo_automation.date") as mock_date:
+                mock_date.today.return_value = date(2026, 2, 15)
+                mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+                ta.submit_timesheet()
+
+        ta._save_shortfall_data.assert_called_once()
+        ta.tempo_client.submit_timesheet.assert_not_called()
+
 
 # ===========================================================================
 # verify_week

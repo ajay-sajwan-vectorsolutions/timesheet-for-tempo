@@ -218,18 +218,12 @@ class TestSubmitVisible:
 
     def test_hidden_early_in_month(self, app, shortfall_file, submitted_file):
         """Should be hidden on day 1 of a 31-day month."""
-        fake_today = date(2026, 1, 1)
-        with patch("tray_app.date") as mock_date:
-            mock_date.today.return_value = fake_today
-            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        with patch("tray_app._today", return_value=date(2026, 1, 1)):
             assert app._submit_visible(None) is False
 
     def test_visible_last_7_days(self, app, shortfall_file, submitted_file):
         """Should be visible on day 25 of a 28-day month (Feb)."""
-        fake_today = date(2026, 2, 25)
-        with patch("tray_app.date") as mock_date:
-            mock_date.today.return_value = fake_today
-            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        with patch("tray_app._today", return_value=date(2026, 2, 25)):
             assert app._submit_visible(None) is True
 
     def test_hidden_when_shortfall_exists(
@@ -239,10 +233,7 @@ class TestSubmitVisible:
         shortfall_file.write_text(
             json.dumps({"days": ["2026-02-10"]}), encoding="utf-8"
         )
-        fake_today = date(2026, 2, 25)
-        with patch("tray_app.date") as mock_date:
-            mock_date.today.return_value = fake_today
-            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        with patch("tray_app._today", return_value=date(2026, 2, 25)):
             assert app._submit_visible(None) is False
 
     def test_hidden_when_already_submitted(
@@ -252,10 +243,7 @@ class TestSubmitVisible:
         submitted_file.write_text(
             json.dumps({"period": "2026-02"}), encoding="utf-8"
         )
-        fake_today = date(2026, 2, 25)
-        with patch("tray_app.date") as mock_date:
-            mock_date.today.return_value = fake_today
-            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        with patch("tray_app._today", return_value=date(2026, 2, 25)):
             assert app._submit_visible(None) is False
 
     def test_visible_when_submitted_different_period(
@@ -265,11 +253,42 @@ class TestSubmitVisible:
         submitted_file.write_text(
             json.dumps({"period": "2026-01"}), encoding="utf-8"
         )
-        fake_today = date(2026, 2, 25)
-        with patch("tray_app.date") as mock_date:
-            mock_date.today.return_value = fake_today
-            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        with patch("tray_app._today", return_value=date(2026, 2, 25)):
             assert app._submit_visible(None) is True
+
+    def test_visible_early_when_no_working_days_remain(
+        self, app, shortfall_file, submitted_file
+    ):
+        """Visible mid-month when all remaining days are non-working."""
+        mock_schedule = MagicMock()
+        mock_schedule.count_working_days.return_value = 0
+        mock_automation = MagicMock()
+        mock_automation.schedule_mgr = mock_schedule
+        app._automation = mock_automation
+
+        with patch("tray_app._today", return_value=date(2026, 1, 15)):
+            assert app._submit_visible(None) is True
+
+    def test_hidden_early_when_working_days_remain(
+        self, app, shortfall_file, submitted_file
+    ):
+        """Hidden mid-month when working days still remain."""
+        mock_schedule = MagicMock()
+        mock_schedule.count_working_days.return_value = 5
+        mock_automation = MagicMock()
+        mock_automation.schedule_mgr = mock_schedule
+        app._automation = mock_automation
+
+        with patch("tray_app._today", return_value=date(2026, 1, 15)):
+            assert app._submit_visible(None) is False
+
+    def test_hidden_early_when_automation_none(
+        self, app, shortfall_file, submitted_file
+    ):
+        """Falls back to 7-day window when automation is None."""
+        app._automation = None
+        with patch("tray_app._today", return_value=date(2026, 1, 15)):
+            assert app._submit_visible(None) is False
 
 
 # ===========================================================================

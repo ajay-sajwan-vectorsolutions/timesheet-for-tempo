@@ -80,6 +80,25 @@ _handler.setFormatter(
 )
 tray_logger.addHandler(_handler)
 
+# Debug: set TEMPO_DEBUG_DATE=YYYY-MM-DD to override date.today()
+# Example: set TEMPO_DEBUG_DATE=2026-03-15
+_DEBUG_DATE_STR = os.environ.get('TEMPO_DEBUG_DATE', '')
+_DEBUG_DATE = None
+if _DEBUG_DATE_STR:
+    try:
+        _DEBUG_DATE = datetime.strptime(_DEBUG_DATE_STR, '%Y-%m-%d').date()
+        tray_logger.info(f"DEBUG: overriding today to {_DEBUG_DATE}")
+    except ValueError:
+        tray_logger.warning(
+            f"DEBUG: invalid TEMPO_DEBUG_DATE '{_DEBUG_DATE_STR}', ignoring"
+        )
+
+
+def _today() -> date:
+    """Return today's date, or debug override if set."""
+    return _DEBUG_DATE if _DEBUG_DATE else date.today()
+
+
 # Status background colors
 BG_COLORS = {
     'green': (186, 230, 126),
@@ -389,13 +408,34 @@ class TrayApp:
         return SHORTFALL_FILE.exists()
 
     def _submit_visible(self, item) -> bool:
-        """Show 'Submit Timesheet' in last 7 days of month,
+        """Show 'Submit Timesheet' in last 7 days of month
+        (or earlier when all remaining days are non-working),
         when no shortfall file exists and not yet submitted."""
-        today = date.today()
+        today = _today()
         last_day = calendar.monthrange(today.year, today.month)[1]
 
-        # Only show in last 7 days of month
-        if today.day < last_day - 6:
+        # Check if in normal submission window (last 7 days)
+        in_window = (today.day >= last_day - 6)
+
+        # Early submission: show if no working days remain
+        early_eligible = False
+        if not in_window and self._automation:
+            try:
+                tomorrow = today + timedelta(days=1)
+                last_date = today.replace(day=last_day)
+                if tomorrow <= last_date:
+                    remaining = (
+                        self._automation.schedule_mgr
+                        .count_working_days(
+                            tomorrow.strftime('%Y-%m-%d'),
+                            last_date.strftime('%Y-%m-%d')
+                        )
+                    )
+                    early_eligible = (remaining == 0)
+            except Exception:
+                pass
+
+        if not in_window and not early_eligible:
             return False
 
         # Hide if shortfall file exists (must fix first)
@@ -758,7 +798,7 @@ class TrayApp:
             log_f.close()
 
             # Check result by looking at marker files
-            today = date.today()
+            today = _today()
             period = f"{today.year}-{today.month:02d}"
 
             if SUBMITTED_FILE.exists():
