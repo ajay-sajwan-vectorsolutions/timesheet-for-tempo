@@ -757,32 +757,48 @@ class TrayApp:
         Open tempo_automation.py with a CLI argument in a new terminal.
         Windows: cmd /k with CREATE_NEW_CONSOLE.
         Mac: osascript to open Terminal.app with command.
+
+        Waits for the process to finish in a daemon thread, then
+        refreshes the tray menu (so dynamic items like Fix Shortfall
+        appear/disappear based on file changes).
         """
         script = SCRIPT_DIR / 'tempo_automation.py'
         if sys.platform == 'win32':
             python_dir = Path(sys.executable).parent
             python_exe = python_dir / "python.exe"
-            # Quote paths for cmd /k -- hyphens and spaces in paths
-            # cause cmd to misparse unquoted arguments
-            cmd_line = f'"{python_exe}" "{script}" {cli_arg}'
-            subprocess.Popen(
-                ['cmd', '/k', cmd_line],
+            # Outer quotes required: cmd /k strips the first and last "
+            # on the command line.  Without outer quotes, inner quotes
+            # get mangled and paths with spaces/hyphens break.
+            proc = subprocess.Popen(
+                f'cmd /k ""{python_exe}" "{script}" {cli_arg}"',
                 cwd=str(SCRIPT_DIR),
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
         elif sys.platform == 'darwin':
             cmd = f'cd "{SCRIPT_DIR}" && python3 "{script}" {cli_arg}'
-            subprocess.Popen([
+            proc = subprocess.Popen([
                 'osascript', '-e',
                 f'tell app "Terminal" to do script "{cmd}"'
             ])
         else:
             # Linux fallback
-            subprocess.Popen(
+            proc = subprocess.Popen(
                 ['x-terminal-emulator', '-e',
                  'python3', str(script), cli_arg],
                 cwd=str(SCRIPT_DIR)
             )
+
+        # Wait for the terminal to close, then refresh dynamic menu items
+        def _wait_and_refresh():
+            try:
+                proc.wait()
+            except Exception:
+                pass
+            if self._icon:
+                self._icon.update_menu()
+
+        t = threading.Thread(target=_wait_and_refresh, daemon=True)
+        t.start()
 
     def _on_settings(self, icon=None, item=None):
         """Open config.json in the default editor."""

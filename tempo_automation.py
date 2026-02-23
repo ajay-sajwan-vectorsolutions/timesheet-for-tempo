@@ -2837,10 +2837,7 @@ class TempoAutomation:
         # --- PTO story selection ---
         print(f"\n--- PTO Story ---")
         print("Which story for PTO/Holiday days?")
-        print("(Showing all overhead stories, not just your "
-              "normal-day selection)")
-        for i, s in enumerate(display_list, 1):
-            print(f"  {i}. {s['issue_key']}: {s['issue_summary']}")
+        print("(Use the numbered list above)")
         pto_raw = input(
             "Choice (enter number): "
         ).strip()
@@ -3507,16 +3504,21 @@ class TempoAutomation:
                 f"\n  [!] Shortfall: {shortfall:.1f}h across "
                 f"{len(gap_data['gaps'])} day(s)"
             )
+            # Save shortfall file so tray app can show Fix option
+            self._save_shortfall_data(gap_data)
+            print(
+                "\n  [->] To fix gaps, close this window and use "
+                "the tray menu:"
+            )
+            print(
+                "\n       Right-click tray icon"
+                "\n         -> Log and Reports"
+                "\n           -> Fix Monthly Shortfall"
+            )
         else:
             print("\n  [OK] All hours accounted for")
-
-        if SHORTFALL_FILE.exists():
-            if shortfall > 0.5:
-                print(
-                    "\n  [INFO] Run --fix-shortfall to fix gaps."
-                )
-            else:
-                # Fresh detection shows no gaps -- clean up stale file
+            # Clean up stale shortfall file if no gaps remain
+            if SHORTFALL_FILE.exists():
                 SHORTFALL_FILE.unlink()
                 logger.info(
                     "Stale shortfall file removed by view_monthly"
@@ -4157,6 +4159,30 @@ Examples:
     # Set up dual output if --logfile is provided
     if args.logfile:
         sys.stdout = DualWriter(sys.stdout, args.logfile)
+
+    # Suppress console INFO logs for user-facing commands -- the
+    # initialization messages (config loaded, holidays parsed, etc.)
+    # are noise when the user just wants to see a calendar or report.
+    quiet_console = (
+        args.show_schedule is not None
+        or args.view_monthly is not None
+        or args.show_overhead
+        or args.select_overhead
+        or args.fix_shortfall
+        or args.add_pto
+        or args.remove_pto
+        or args.add_holiday
+        or args.remove_holiday
+        or args.add_workday
+        or args.remove_workday
+        or args.manage
+    )
+    if quiet_console:
+        for h in logging.getLogger().handlers:
+            if isinstance(h, logging.StreamHandler) and not isinstance(
+                h, logging.FileHandler
+            ):
+                h.setLevel(logging.WARNING)
 
     try:
         # Run setup if requested
