@@ -328,7 +328,9 @@ class TrayApp:
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
-                'Sync Now',
+                lambda item: (
+                    f'Sync Now (Auto Sync @{self._get_sync_time()})'
+                ),
                 self._on_sync_now,
                 default=True  # activates on double-click
             ),
@@ -342,6 +344,10 @@ class TrayApp:
                     pystray.MenuItem(
                         'Select Overhead',
                         self._on_select_overhead
+                    ),
+                    pystray.MenuItem(
+                        'Change Sync Time',
+                        self._on_change_sync_time
                     ),
                 )
             ),
@@ -610,6 +616,69 @@ class TrayApp:
                 'No PTO Added',
                 '\n'.join(skipped) if skipped
                 else 'No valid dates entered.'
+            )
+
+    def _on_change_sync_time(self, icon=None, item=None):
+        """Show input dialog to change the daily sync time."""
+        import re
+
+        current = self._get_sync_time()
+        try:
+            raw = self._show_input_dialog(
+                f'Current sync time: {current}\n'
+                'Enter new time (HH:MM, 24-hour format):\n\n'
+                'Example: 17:30',
+                'Tempo - Change Sync Time'
+            )
+            if not raw:
+                return
+
+            raw = raw.strip()
+            if not re.match(r'^\d{1,2}:\d{2}$', raw):
+                self._show_toast(
+                    'Invalid Time',
+                    f'"{raw}" is not a valid time.\n'
+                    'Use HH:MM format (e.g. 17:30).'
+                )
+                return
+
+            hour, minute = map(int, raw.split(':'))
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                self._show_toast(
+                    'Invalid Time',
+                    f'Hours must be 0-23, minutes 0-59.'
+                )
+                return
+
+            # Normalize to zero-padded format
+            new_time = f'{hour:02d}:{minute:02d}'
+
+            # Read config, update, write back
+            config_data = {}
+            if CONFIG_FILE.exists():
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+
+            if 'schedule' not in config_data:
+                config_data['schedule'] = {}
+            config_data['schedule']['daily_sync_time'] = new_time
+
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, indent=4)
+
+            self._reload_config()
+            self._schedule_next_sync()
+
+            self._show_toast(
+                'Sync Time Updated',
+                f'Daily sync time changed to {new_time}.'
+            )
+            tray_logger.info(f"Sync time changed to {new_time}")
+
+        except Exception as e:
+            self._show_toast('Error', f'Could not change sync time: {e}')
+            tray_logger.error(
+                f"Change sync time failed: {e}", exc_info=True
             )
 
     def _on_select_overhead(self, icon=None, item=None):

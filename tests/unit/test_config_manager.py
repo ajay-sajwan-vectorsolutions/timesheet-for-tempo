@@ -340,10 +340,10 @@ class TestSetupWizard:
         """Input sequence for a developer setup flow."""
         return [
             "dev@example.com",       # email
-            "Test Developer",        # name
             "1",                     # role: developer
             "tempo-test-token",      # tempo token
             "jira-test-token",       # jira token (developer only)
+            "Test Developer",        # name (fallback after Jira 401)
             "8",                     # daily hours
             "1",                     # location: US
             "no",                    # enable email: no
@@ -353,9 +353,9 @@ class TestSetupWizard:
         """Input sequence for a product owner setup flow."""
         return [
             "po@example.com",        # email
-            "Test PO",               # name
             "2",                     # role: product_owner
             "tempo-po-token",        # tempo token
+            "Test PO",               # name
             "8",                     # daily hours
             "1",                     # location: US
             "no",                    # enable email: no
@@ -449,9 +449,9 @@ class TestSetupWizard:
         """Sales role wizard should work with manual activities."""
         inputs = [
             "sales@example.com",    # email
-            "Test Sales",           # name
             "3",                    # role: sales
             "tempo-sales-token",    # tempo token
+            "Test Sales",           # name
             "8",                    # daily hours
             "1",                    # location: US
             "no",                   # enable email: no
