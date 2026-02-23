@@ -34,3 +34,7 @@ dist/
 
 # Stray pip output
 =0.40
+
+# Test coverage
+.coverage
+htmlcov/
