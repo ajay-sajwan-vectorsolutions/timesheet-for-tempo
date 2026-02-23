@@ -648,12 +648,18 @@ When you click Exit:
 
 ### Welcome Toast
 
-On startup, shows a personalized greeting:
-- Morning (before 12 PM): "Good Morning, Ajay!"
-- Afternoon (12-5 PM): "Good Afternoon, Ajay!"
-- Evening (after 5 PM): "Good Evening, Ajay!"
+On startup, shows a personalized notification:
+- Title (small text at top): "Welcome, Ajay!" with clapping emoji
+- Heading (bold): Time-of-day greeting with emoji
+  - Morning (before 12 PM): "Good Morning!" with sun
+  - Afternoon (12-5 PM): "Good Afternoon!" with sun behind cloud
+  - Evening (after 5 PM): "Good Evening!" with crescent moon
+- Body: "Tempo Automation is running. Your hours will be logged at 18:00 today."
 
-Body: "Tempo Automation is running. Your hours will be logged at 18:00 today."
+When restarted by the scheduler (`--quiet` flag):
+- Title: "Welcome back, Ajay!" with clapping emoji
+- Heading: "The Tempo app was previously terminated and is now back online."
+- Body: "You can continue to use it."
 
 ### Single Instance
 

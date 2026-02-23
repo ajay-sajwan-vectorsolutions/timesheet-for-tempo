@@ -179,7 +179,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 | v3.1 | Feb 18 | Tray app, favicon, smart exit, confirm dialog |
 | v3.2 | Feb 19 | Hardcoded URLs, install.bat rewrite, --stop, welcome toast |
 | v3.3 | Feb 19 | Doc reorganization, .claude/rules, .claude/skills |
-| v3.8.1 | Feb 23 | Tray UX: cmd /k outer quotes fix for paths with spaces/hyphens, menu auto-refresh after terminal closes, view_monthly saves shortfall file, visual tray menu path for fix instruction, suppress console INFO logs for user-facing commands, remove duplicate overhead story list in PTO selection |
+| v3.8.1 | Feb 23 | Tray UX: cmd /k outer quotes fix, menu auto-refresh after terminal closes, view_monthly saves shortfall file, quiet console for user-facing commands, welcome toast redesign (Welcome {name}! title, time-of-day greeting heading, Welcome back for restart) |
 | v3.8 | Feb 23 | Distribution zips: build_dist.bat (3 zip types with timestamp: Win+Python, Win Lite, Mac), install.bat Python auto-detect, tray menu update_menu() fix for dynamic visibility |
 | v3.7 | Feb 22 | Tempo as source of truth: _detect_monthly_gaps, _check_day_hours, _sync_pto_overhead, _exit_flow now read Tempo API (fixes 128h showing as 16h), Jira fallback for PO/Sales |
 | v3.6 | Feb 22 | Monthly shortfall detection: per-day gap analysis, blocks submission on shortfall, --view-monthly/--fix-shortfall CLI, interactive fix with day selection, tray menu restructure (Configure/Log and Reports submenus), dynamic Submit Timesheet and Fix Shortfall menu items |
