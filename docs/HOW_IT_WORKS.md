@@ -597,6 +597,8 @@ Cross-platform system tray application for Windows and macOS. Lives in the syste
 ### Menu Structure
 
 ```
+Ajay Sajwan | Vector Solutions   (user identity header, non-clickable)
+---
 Sync Now                         (double-click or right-click)
 ---
 Configure        -> Add PTO
