@@ -26,6 +26,9 @@ set SCRIPT_DIR=%~dp0
 set BUILD_TMP=%SCRIPT_DIR%build_tmp
 set DIST_DIR=%SCRIPT_DIR%dist
 
+REM Generate timestamp (YYYYMMDD-HHMM)
+for /f %%I in ('powershell -Command "Get-Date -Format yyyyMMdd-HHmm"') do set TIMESTAMP=%%I
+
 echo.
 echo ============================================================
 echo TEMPO AUTOMATION - DISTRIBUTION BUILDER  v%VERSION%
@@ -92,7 +95,7 @@ if exist "%PYTHON_CACHE%\python.exe" if exist "%LIB_CACHE%\requests" (
     REM -- Create zip --
     echo [3/3] Creating zip...
     if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
-    set ZIP_NAME=TempoAutomation-v%VERSION%-Windows-Full.zip
+    set ZIP_NAME=TempoAutomation-v%VERSION%-Windows-Full-%TIMESTAMP%.zip
     if exist "%DIST_DIR%\!ZIP_NAME!" del "%DIST_DIR%\!ZIP_NAME!"
     powershell -Command "Compress-Archive -Path '%STAGE%\*' -DestinationPath '%DIST_DIR%\!ZIP_NAME!'"
     echo.
@@ -180,7 +183,7 @@ call :copy_common_files "%STAGE%"
 call :copy_windows_files "%STAGE%"
 
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
-set ZIP_NAME=TempoAutomation-v%VERSION%-Windows-Full.zip
+set ZIP_NAME=TempoAutomation-v%VERSION%-Windows-Full-%TIMESTAMP%.zip
 if exist "%DIST_DIR%\%ZIP_NAME%" del "%DIST_DIR%\%ZIP_NAME%"
 powershell -Command "Compress-Archive -Path '%STAGE%\*' -DestinationPath '%DIST_DIR%\%ZIP_NAME%'"
 echo.
@@ -210,7 +213,7 @@ echo [OK] Files copied
 
 echo [2/2] Creating zip...
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
-set ZIP_NAME=TempoAutomation-v%VERSION%-Windows-Lite.zip
+set ZIP_NAME=TempoAutomation-v%VERSION%-Windows-Lite-%TIMESTAMP%.zip
 if exist "%DIST_DIR%\%ZIP_NAME%" del "%DIST_DIR%\%ZIP_NAME%"
 powershell -Command "Compress-Archive -Path '%STAGE%\*' -DestinationPath '%DIST_DIR%\%ZIP_NAME%'"
 echo.
@@ -239,7 +242,7 @@ echo [OK] Files copied (no .bat files, no confirm_and_run.py)
 
 echo [2/2] Creating zip...
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
-set ZIP_NAME=TempoAutomation-v%VERSION%-Mac.zip
+set ZIP_NAME=TempoAutomation-v%VERSION%-Mac-%TIMESTAMP%.zip
 if exist "%DIST_DIR%\%ZIP_NAME%" del "%DIST_DIR%\%ZIP_NAME%"
 powershell -Command "Compress-Archive -Path '%STAGE%\*' -DestinationPath '%DIST_DIR%\%ZIP_NAME%'"
 echo.

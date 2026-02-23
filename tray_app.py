@@ -442,6 +442,9 @@ class TrayApp:
             log_f.close()
 
             self._set_icon_state('green', 'Tempo - Sync complete')
+            # Refresh menu in case shortfall state changed
+            if self._icon:
+                self._icon.update_menu()
             self._show_toast(
                 'Sync Complete',
                 'Daily timesheet has been synced successfully.'
@@ -682,6 +685,9 @@ class TrayApp:
                         self._set_icon_state(
                             'green', 'Tempo - Submitted!'
                         )
+                        # Refresh menu to hide Submit Timesheet
+                        if self._icon:
+                            self._icon.update_menu()
                         self._show_toast(
                             'Timesheet Submitted',
                             f'Your timesheet for {period} '
@@ -698,6 +704,10 @@ class TrayApp:
                 self._set_icon_state(
                     'orange', 'Tempo - Shortfall detected'
                 )
+                # Force menu refresh so "Fix Monthly Shortfall"
+                # becomes visible in the Log and Reports submenu
+                if self._icon:
+                    self._icon.update_menu()
                 self._show_toast(
                     'Shortfall Detected',
                     'Your timesheet has gaps. Use '
