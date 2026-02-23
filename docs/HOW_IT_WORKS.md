@@ -7,16 +7,18 @@ A complete guide to the application logic, automated scheduling, and user workfl
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Daily Sync - How Hours Get Logged](#daily-sync---how-hours-get-logged)
-3. [Weekly Verification - Catching Missed Days](#weekly-verification---catching-missed-days)
-4. [Monthly Submission - Timesheet Approval](#monthly-submission---timesheet-approval)
-5. [Overhead Story Logic](#overhead-story-logic)
-6. [Schedule Guard - Skipping Non-Working Days](#schedule-guard---skipping-non-working-days)
-7. [Automated Scheduling](#automated-scheduling)
-8. [System Tray App](#system-tray-app)
-9. [User Workflows](#user-workflows)
-10. [Notification System](#notification-system)
-11. [API Integration](#api-integration)
+2. [Running Locally](#running-locally)
+3. [Daily Sync - How Hours Get Logged](#daily-sync---how-hours-get-logged)
+4. [Weekly Verification - Catching Missed Days](#weekly-verification---catching-missed-days)
+5. [Monthly Submission - Timesheet Approval](#monthly-submission---timesheet-approval)
+6. [Overhead Story Logic](#overhead-story-logic)
+7. [Schedule Guard - Skipping Non-Working Days](#schedule-guard---skipping-non-working-days)
+8. [Automated Scheduling](#automated-scheduling)
+9. [System Tray App](#system-tray-app)
+10. [User Workflows](#user-workflows)
+11. [Notification System](#notification-system)
+12. [API Integration](#api-integration)
+13. [Distribution](#distribution)
 
 ---
 
@@ -25,6 +27,115 @@ A complete guide to the application logic, automated scheduling, and user workfl
 Tempo Timesheet Automation logs your daily work hours automatically by distributing them across your active Jira tickets. It runs on your local machine and syncs directly to Jira (Tempo auto-syncs from Jira). Three automated schedulers handle daily logging, weekly gap detection, and monthly timesheet submission.
 
 **Key principle:** The system is **idempotent** -- re-running for the same date deletes previous entries and creates fresh ones, so it always reflects your current active tickets.
+
+---
+
+## Running Locally
+
+If you already have the setup completed (`config.json` exists with your tokens and preferences), here are all the commands you can run.
+
+### Prerequisites
+
+- Python 3.7+ installed (or embedded Python from the Windows Full zip)
+- Dependencies installed (`pip install -r requirements.txt`)
+- Setup wizard completed (`python tempo_automation.py --setup`)
+
+### Daily Operations
+
+```cmd
+:: Sync today's hours (the main command -- run this every day)
+python tempo_automation.py
+
+:: Sync a specific past date
+python tempo_automation.py --date 2026-02-15
+
+:: Weekly verification -- checks Mon-Fri for gaps and backfills
+python tempo_automation.py --verify-week
+
+:: View per-day hours for current month
+python tempo_automation.py --view-monthly
+
+:: View per-day hours for a specific month
+python tempo_automation.py --view-monthly 2026-01
+
+:: Fix monthly shortfalls interactively (select which gap days to re-sync)
+python tempo_automation.py --fix-shortfall
+
+:: Submit monthly timesheet (blocks if shortfalls exist)
+python tempo_automation.py --submit
+```
+
+### Schedule Management
+
+```cmd
+:: Add PTO days (comma-separated)
+python tempo_automation.py --add-pto 2026-03-10,2026-03-11,2026-03-12
+
+:: Remove a PTO day
+python tempo_automation.py --remove-pto 2026-03-12
+
+:: Add an extra holiday (org-declared day off)
+python tempo_automation.py --add-holiday 2026-04-14
+
+:: Remove an extra holiday
+python tempo_automation.py --remove-holiday 2026-04-14
+
+:: Add a compensatory working day (e.g., weekend work)
+python tempo_automation.py --add-workday 2026-11-08
+
+:: Remove a working day override
+python tempo_automation.py --remove-workday 2026-11-08
+
+:: View current month calendar (shows working days, PTO, holidays)
+python tempo_automation.py --show-schedule
+
+:: View a specific month's calendar
+python tempo_automation.py --show-schedule 2026-03
+
+:: Interactive schedule management menu
+python tempo_automation.py --manage
+```
+
+### Overhead Stories
+
+```cmd
+:: Select overhead stories for current PI (interactive)
+python tempo_automation.py --select-overhead
+
+:: View current overhead configuration
+python tempo_automation.py --show-overhead
+```
+
+### Setup and Configuration
+
+```cmd
+:: Re-run the setup wizard (reconfigure tokens, role, location)
+python tempo_automation.py --setup
+
+:: Dual output to console + log file
+python tempo_automation.py --logfile daily-timesheet.log
+```
+
+### System Tray App
+
+```cmd
+:: Windows: run tray app without console window
+pythonw tray_app.py
+
+:: Mac: run tray app in background
+python3 tray_app.py &
+
+:: Register auto-start on login
+python tray_app.py --register
+
+:: Remove auto-start
+python tray_app.py --unregister
+
+:: Stop a running tray app instance
+python tray_app.py --stop
+```
+
+**Note for Windows Full zip users:** Replace `python` with `python\python.exe` (the embedded Python in the zip). The `run_daily.bat`, `run_weekly.bat`, and `run_monthly.bat` wrappers already use the correct Python path.
 
 ---
 
@@ -410,14 +521,14 @@ Three mechanisms keep the automation running without manual intervention.
 
 ### System Tray App (Recommended)
 
-The tray app is a persistent background process that lives in your Windows system tray.
+The tray app is a persistent background process that lives in your system tray (Windows) or menu bar (Mac).
 
 | Feature | Detail |
 |---------|--------|
 | Icon | Company favicon on colored background (green=idle, orange=pending, red=error) |
 | Sync notification | Toast notification at configured time (default 6 PM) |
 | Sync trigger | Click "Sync Now" or double-click tray icon |
-| Auto-start | Registers itself to start on Windows login |
+| Auto-start | Windows: registry, Mac: LaunchAgent plist |
 | Shutdown | Right-click > Exit (checks hours first) |
 
 **How the timer works:**
@@ -454,6 +565,18 @@ Task Scheduler fires at 6 PM
 
 **Both the tray app and Task Scheduler can coexist safely** because the sync is idempotent. If both fire for the same day, the second run simply overwrites what the first created.
 
+### Mac Cron Jobs
+
+On macOS, the `install.sh` installer sets up three cron jobs:
+
+| Cron | Schedule | What It Does |
+|------|----------|-------------|
+| Daily sync | Mon-Fri at 6:00 PM | Runs `tempo_automation.py` for today |
+| Weekly verify | Fridays at 4:00 PM | Runs `--verify-week` to check and backfill gaps |
+| Monthly submit | Last day of month at 11:00 PM | Runs `--submit` (uses BSD `date -v+1d` to detect last day) |
+
+**Note:** Mac cron uses `date -v+1d +%d` to check for the last day of the month (if tomorrow is the 1st, today is the last day). This differs from GNU `date -d tomorrow`.
+
 ### Manual Execution
 
 You can always run commands directly:
@@ -468,6 +591,8 @@ python tempo_automation.py --submit              # Submit monthly
 ---
 
 ## System Tray App
+
+Cross-platform system tray application for Windows and macOS. Lives in the system tray/menu bar and provides one-click access to all automation features.
 
 ### Menu Structure
 
@@ -490,14 +615,16 @@ Exit
 |-----------|-------------|
 | **Sync Now** | Triggers daily sync immediately (background thread) |
 | **Configure > Add PTO** | Opens dialog to enter PTO dates (validates format, rejects weekends) |
-| **Configure > Select Overhead** | Opens console for interactive overhead story selection |
+| **Configure > Select Overhead** | Opens terminal for interactive overhead story selection |
 | **Log and Reports > Daily Log** | Opens daily-timesheet.log in text editor |
-| **Log and Reports > Schedule** | Opens console with current month calendar |
-| **Log and Reports > View Monthly Hours** | Opens console with per-day hours report for the month |
-| **Log and Reports > Fix Monthly Shortfall** | Opens console for interactive shortfall fix (only visible when gaps exist) |
+| **Log and Reports > Schedule** | Opens terminal with current month calendar |
+| **Log and Reports > View Monthly Hours** | Opens terminal with per-day hours report for the month |
+| **Log and Reports > Fix Monthly Shortfall** | Opens terminal for interactive shortfall fix (only visible when gaps exist) |
 | **Submit Timesheet** | Submits monthly timesheet (only visible in last week of month when no gaps) |
 | **Settings** | Opens config.json in default editor |
 | **Exit** | Checks if hours are logged, warns if not, offers to restart at sync time |
+
+**Dynamic menu items:** "Fix Monthly Shortfall" appears only when `monthly_shortfall.json` exists (created by a failed submission). "Submit Timesheet" appears only in the last 7 days of the month when there are no shortfalls and the timesheet hasn't been submitted yet. The menu refreshes automatically after sync, submission, and shortfall detection via `update_menu()`.
 
 ### Icon States
 
@@ -512,10 +639,10 @@ Exit
 
 When you click Exit:
 1. Checks if today is a working day
-2. Fetches your logged hours from Jira
+2. Fetches your logged hours from Tempo (with Jira fallback)
 3. If hours < daily target (8h):
    - Shows warning: "You haven't logged 8h today (5.2h). Exit anyway?"
-   - YES: Creates one-time scheduled task to restart tray at sync time
+   - YES (Windows): Creates one-time scheduled task to restart tray at sync time
    - NO: Stays running
 4. If hours are sufficient: exits cleanly
 
@@ -530,11 +657,33 @@ Body: "Tempo Automation is running. Your hours will be logged at 18:00 today."
 
 ### Single Instance
 
-Uses a Windows mutex to prevent multiple instances. If you try to start a second instance, it exits silently.
+Prevents multiple tray app instances from running simultaneously:
+- **Windows:** Named kernel mutex (`TempoTrayApp_SingleInstance_Mutex`)
+- **Mac:** File lock via `fcntl` on `.tray_app.lock`
+
+If a second instance is launched, it exits silently.
 
 ### Remote Shutdown
 
 The `--stop` flag creates a `_tray_stop.signal` file. A background thread in the running instance checks for this file every 1 second and shuts down when found. Used by the installer to stop the old instance before starting a fresh one.
+
+### Auto-Start on Login
+
+- **Windows:** Registry entry under `HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`
+- **Mac:** LaunchAgent plist at `~/Library/LaunchAgents/com.tempo.trayapp.plist`
+
+Auto-registers on first run. Use `--register` / `--unregister` to manage manually.
+
+### Platform Differences
+
+| Feature | Windows | Mac |
+|---------|---------|-----|
+| Toast notifications | winotify library | `osascript display notification` |
+| Dialogs (Add PTO) | VBScript InputBox / ctypes MessageBox | `osascript display dialog` |
+| Open terminal | `cmd /k "python.exe" "script.py" --arg` | `osascript 'tell app "Terminal" to do script "..."'` |
+| Open file | `os.startfile()` / `notepad` | `subprocess.Popen(['open', path])` |
+| Auto-start | Registry | LaunchAgent plist |
+| Single instance | Kernel mutex | fcntl file lock |
 
 ---
 
@@ -661,14 +810,19 @@ Shows current overhead configuration, PI details, selected stories, and distribu
 
 ## Notification System
 
-### Windows Toast Notifications
+### Toast Notifications
 
-Used throughout the application:
+Used throughout the application on both platforms:
 - Welcome toast on tray app startup
 - "Time to log hours" at sync time
 - "Sync complete" / "Sync failed" after sync
 - "Overhead not configured" warning
 - Weekly/monthly shortfall alerts
+
+| Platform | Implementation |
+|----------|---------------|
+| Windows | winotify library (rich notifications with app icon) |
+| Mac | `osascript display notification` (native macOS notifications) |
 
 ### Email Notifications
 
@@ -702,6 +856,8 @@ Timesheet submitted for manager approval
 
 **Important:** For developers, the script writes to Jira only. Tempo automatically syncs from Jira. The script never writes directly to Tempo for developer worklogs.
 
+**Tempo as source of truth (v3.7+):** For reading hours (monthly gap detection, daily hours check, PTO/overhead sync, tray exit check), the system queries Tempo API as the primary source and falls back to Jira. This catches manually-entered Tempo worklogs that don't exist in Jira. The pattern used is `max(jira_seconds, tempo_seconds)` to protect against partial API failures.
+
 ### Jira API (REST v3)
 
 | Operation | Endpoint | When Used |
@@ -718,7 +874,7 @@ Timesheet submitted for manager approval
 | Operation | Endpoint | When Used |
 |-----------|----------|-----------|
 | Get account ID | `GET /user` | Setup wizard |
-| Get worklogs | `GET /worklogs/user/{id}` | Cross-check with Jira (manual overhead detection) |
+| Get worklogs | `GET /worklogs/user/{id}` | Monthly gap detection, daily hours check, overhead sync, tray exit check |
 | Create worklog | `POST /worklogs` | PO/Sales manual activities only |
 | Get period | `GET /timesheet-approvals/periods` | Monthly submission |
 | Submit timesheet | `POST /timesheet-approvals/submit` | Monthly submission |
@@ -762,7 +918,22 @@ Timesheet submitted for manager approval
 | `--remove-holiday DATE` | Remove an extra holiday |
 | `--add-workday DATE` | Add a compensatory working day |
 | `--remove-workday DATE` | Remove a working day override |
+| `--logfile FILE` | Dual output to console + log file |
 
 ---
 
-*Last updated: February 22, 2026*
+## Distribution
+
+Three distribution zip types are available, built via `build_dist.bat`:
+
+| Zip | Size | Python Required? | Use Case |
+|-----|------|-----------------|----------|
+| **Windows Full** | ~40-50MB | No (embedded Python 3.12) | Team members without Python installed |
+| **Windows Lite** | ~200KB | Yes (system Python 3.7+) | Team members with Python already |
+| **Mac** | ~200KB | Yes (system python3) | macOS users |
+
+Zips are timestamped (e.g., `TempoAutomation-v3.8-Windows-Full-20260223-0957.zip`) for easy version tracking. First build of the Windows Full option downloads Python + dependencies (~1-2 min); subsequent builds use the cached `python/` and `lib/` directories (~5 sec).
+
+---
+
+*Last updated: February 23, 2026*
