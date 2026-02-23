@@ -996,7 +996,7 @@ class TrayApp:
             except Exception as e:
                 tray_logger.error(f"Failed to update icon: {e}")
 
-    def _show_toast(self, title: str, body: str):
+    def _show_toast(self, title: str, body: str, app_name: str = ''):
         """Show a desktop notification (Windows toast or Mac osascript)."""
         if sys.platform == 'win32':
             if not WINOTIFY_OK:
@@ -1006,7 +1006,7 @@ class TrayApp:
                 return
             try:
                 toast = Notification(
-                    app_id='Tempo Automation',
+                    app_id=app_name or 'Tempo Automation',
                     title=title,
                     msg=body,
                     duration='long',
@@ -1144,26 +1144,31 @@ class TrayApp:
         # so the icon renders before the notification fires)
         if not self._import_error:
             def _startup_toast():
+                user_name = ''
+                if self._config:
+                    user_name = self._config.get(
+                        'user', {}
+                    ).get('name', '')
+                    user_name = (
+                        user_name.split()[0]
+                        if user_name else ''
+                    )
+                welcome_app = (
+                    f'Welcome back, {user_name}! \U0001F44F'
+                    if user_name
+                    else f'Welcome back! \U0001F44F'
+                )
                 if quiet:
                     # Restarted by daily scheduler
                     self._show_toast(
-                        'Tempo Automation',
-                        'Hey, the Tempo app was previously '
-                        'terminated and is now back online.\n'
-                        'You can continue to use it.'
+                        'The Tempo app was previously '
+                        'terminated and is now back online.',
+                        'You can continue to use it.',
+                        app_name=welcome_app
                     )
                 else:
                     # Normal login start -- full welcome greeting
                     sync_time = self._get_sync_time()
-                    user_name = ''
-                    if self._config:
-                        user_name = self._config.get(
-                            'user', {}
-                        ).get('name', '')
-                        user_name = (
-                            user_name.split()[0]
-                            if user_name else ''
-                        )
                     hour = datetime.now().hour
                     if hour < 12:
                         time_greeting = 'Good Morning'
@@ -1174,19 +1179,20 @@ class TrayApp:
                     else:
                         time_greeting = 'Good Evening'
                         emoji = '\U0001F319'  # crescent moon
-                    title = (
-                        f'{time_greeting}, {user_name}! {emoji}'
+                    welcome_app = (
+                        f'Welcome, {user_name}! \U0001F44F'
                         if user_name
-                        else f'{time_greeting}! {emoji}'
+                        else f'Welcome! \U0001F44F'
                     )
                     self._show_toast(
-                        title,
+                        f'{time_greeting}! {emoji}',
                         f'Tempo Automation is running.\n'
                         f'Your hours will be logged at '
                         f'{sync_time} today.\n'
                         f'Right-click the tray icon to sync '
                         f'now, add PTO, or manage your '
-                        f'schedule.'
+                        f'schedule.',
+                        app_name=welcome_app
                     )
             welcome_timer = threading.Timer(2.0, _startup_toast)
             welcome_timer.daemon = True
