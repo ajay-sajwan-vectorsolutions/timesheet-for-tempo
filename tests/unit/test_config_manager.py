@@ -343,11 +343,29 @@ class TestSetupWizard:
             "1",                     # role: developer
             "tempo-test-token",      # tempo token
             "jira-test-token",       # jira token (developer only)
-            "Test Developer",        # name (fallback after Jira 401)
+            # name auto-populated from Jira /myself mock
             "8",                     # daily hours
             "1",                     # location: US
             "no",                    # enable email: no
         ]
+
+    def _register_jira_myself(self):
+        """Register a successful Jira /myself response for developer tests."""
+        responses_lib.add(
+            responses_lib.GET,
+            "https://lmsportal.atlassian.net/rest/api/3/myself",
+            json={"displayName": "Test Developer", "accountId": "test-id"},
+            status=200,
+        )
+
+    def _register_tempo_user(self):
+        """Register a successful Tempo response for token verification."""
+        responses_lib.add(
+            responses_lib.GET,
+            "https://api.tempo.io/4/work-attributes",
+            json={"results": []},
+            status=200,
+        )
 
     def _po_inputs(self):
         """Input sequence for a product owner setup flow."""
@@ -365,9 +383,12 @@ class TestSetupWizard:
             "no",                    # add another? no
         ]
 
+    @responses_lib.activate
     @patch("builtins.input")
     def test_developer_wizard_flow(self, mock_input, tmp_path):
         """Developer wizard should produce a full config with Jira token."""
+        self._register_tempo_user()
+        self._register_jira_myself()
         mock_input.side_effect = self._developer_inputs()
         cfg_path = tmp_path / "config.json"
 
@@ -385,9 +406,11 @@ class TestSetupWizard:
         assert config["schedule"]["state"] == ""
         assert config["notifications"]["email_enabled"] is False
 
+    @responses_lib.activate
     @patch("builtins.input")
     def test_po_wizard_flow(self, mock_input, tmp_path):
         """PO wizard should produce a config with manual activities and no Jira token."""
+        self._register_tempo_user()
         mock_input.side_effect = self._po_inputs()
         cfg_path = tmp_path / "config.json"
 
@@ -402,9 +425,12 @@ class TestSetupWizard:
         assert config["manual_activities"][0]["activity"] == "Stakeholder Meetings"
         assert config["manual_activities"][0]["hours"] == 3.0
 
+    @responses_lib.activate
     @patch("builtins.input")
     def test_saves_config_after_wizard(self, mock_input, tmp_path):
         """The wizard should persist the config file to disk."""
+        self._register_tempo_user()
+        self._register_jira_myself()
         mock_input.side_effect = self._developer_inputs()
         cfg_path = tmp_path / "config.json"
 
@@ -417,9 +443,12 @@ class TestSetupWizard:
             saved = json.load(f)
         assert saved["user"]["email"] == "dev@example.com"
 
+    @responses_lib.activate
     @patch("builtins.input")
     def test_developer_gets_jira_token_prompt(self, mock_input, tmp_path):
         """Developer role should prompt for a Jira API token."""
+        self._register_tempo_user()
+        self._register_jira_myself()
         inputs = self._developer_inputs()
         mock_input.side_effect = inputs
         cfg_path = tmp_path / "config.json"
@@ -432,9 +461,11 @@ class TestSetupWizard:
         assert config["jira"]["api_token"] != ""
         assert config["jira"]["api_token"] == "jira-test-token"
 
+    @responses_lib.activate
     @patch("builtins.input")
     def test_non_developer_skips_jira_token(self, mock_input, tmp_path):
         """Non-developer roles (PO/Sales) should not get a Jira token prompt."""
+        self._register_tempo_user()
         mock_input.side_effect = self._po_inputs()
         cfg_path = tmp_path / "config.json"
 
@@ -444,9 +475,11 @@ class TestSetupWizard:
 
         assert config["jira"]["api_token"] == ""
 
+    @responses_lib.activate
     @patch("builtins.input")
     def test_sales_wizard_flow(self, mock_input, tmp_path):
         """Sales role wizard should work with manual activities."""
+        self._register_tempo_user()
         inputs = [
             "sales@example.com",    # email
             "3",                    # role: sales
@@ -468,9 +501,12 @@ class TestSetupWizard:
         assert config["manual_activities"] == []
         assert config["jira"]["api_token"] == ""
 
+    @responses_lib.activate
     @patch("builtins.input")
     def test_wizard_sets_hardcoded_jira_url(self, mock_input, tmp_path):
         """The wizard should set the hardcoded Jira URL (org default)."""
+        self._register_tempo_user()
+        self._register_jira_myself()
         mock_input.side_effect = self._developer_inputs()
         cfg_path = tmp_path / "config.json"
 
@@ -480,9 +516,12 @@ class TestSetupWizard:
 
         assert config["jira"]["url"] == "lmsportal.atlassian.net"
 
+    @responses_lib.activate
     @patch("builtins.input")
     def test_wizard_config_has_all_required_sections(self, mock_input, tmp_path):
         """The wizard output must contain all top-level config sections."""
+        self._register_tempo_user()
+        self._register_jira_myself()
         mock_input.side_effect = self._developer_inputs()
         cfg_path = tmp_path / "config.json"
 
