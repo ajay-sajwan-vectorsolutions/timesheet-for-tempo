@@ -1,0 +1,35 @@
+{
+  "version": "2026.1",
+  "holidays": {
+    "US": {
+      "2026": {
+        "common": [
+          {"date": "2026-01-01", "name": "New Year's Day"},
+          {"date": "2026-01-19", "name": "Martin Luther King Jr. Day"},
+          {"date": "2026-05-25", "name": "Memorial Day"},
+          {"date": "2026-07-04", "name": "Independence Day (Observed)"},
+          {"date": "2026-09-07", "name": "Labor Day"},
+          {"date": "2026-11-26", "name": "Thanksgiving Day"},
+          {"date": "2026-12-25", "name": "Christmas Day"}
+        ]
+      },
+      "2027": {
+        "common": [
+          {"date": "2027-01-01", "name": "New Year's Day"}
+        ]
+      }
+    },
+    "IN": {
+      "2026": {
+        "common": [
+          {"date": "2026-01-26", "name": "Republic Day"},
+          {"date": "2026-08-15", "name": "Independence Day"},
+          {"date": "2026-10-02", "name": "Gandhi Jayanti"}
+        ],
+        "MH": [
+          {"date": "2026-05-01", "name": "Maharashtra Day"}
+        ]
+      }
+    }
+  }
+}
