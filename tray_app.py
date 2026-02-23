@@ -308,9 +308,25 @@ class TrayApp:
         # Re-arm for tomorrow
         self._schedule_next_sync()
 
+    def _get_user_label(self) -> str:
+        """Build user identity label from config."""
+        if not self._config:
+            return ''
+        name = self._config.get('user', {}).get('name', '')
+        if name:
+            return f'{name} | Vector Solutions'
+        return ''
+
     def _build_menu(self) -> 'pystray.Menu':
         """Build the right-click context menu with submenus."""
+        user_label = self._get_user_label()
         return pystray.Menu(
+            pystray.MenuItem(
+                f'\U0001F464 {user_label}',
+                lambda: None,
+                visible=bool(user_label)
+            ),
+            pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 'Sync Now',
                 self._on_sync_now,
