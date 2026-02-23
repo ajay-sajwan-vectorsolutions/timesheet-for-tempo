@@ -762,11 +762,10 @@ class TrayApp:
         if sys.platform == 'win32':
             python_dir = Path(sys.executable).parent
             python_exe = python_dir / "python.exe"
-            # Quote paths for cmd /k -- hyphens and spaces in paths
-            # cause cmd to misparse unquoted arguments
-            cmd_line = f'"{python_exe}" "{script}" {cli_arg}'
+            # Pass as string -- Popen with a list runs list2cmdline()
+            # which double-escapes quotes, breaking paths with hyphens
             subprocess.Popen(
-                ['cmd', '/k', cmd_line],
+                f'cmd /k "{python_exe}" "{script}" {cli_arg}',
                 cwd=str(SCRIPT_DIR),
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
