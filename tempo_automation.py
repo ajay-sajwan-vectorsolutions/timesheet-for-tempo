@@ -3511,45 +3511,39 @@ class TempoAutomation:
             print("\n  [OK] All hours accounted for")
 
         if SHORTFALL_FILE.exists():
-            print(
-                "\n  [INFO] Shortfall file exists. "
-                "Run --fix-shortfall to fix gaps."
-            )
+            if shortfall > 0.5:
+                print(
+                    "\n  [INFO] Run --fix-shortfall to fix gaps."
+                )
+            else:
+                # Fresh detection shows no gaps -- clean up stale file
+                SHORTFALL_FILE.unlink()
+                logger.info(
+                    "Stale shortfall file removed by view_monthly"
+                )
         print()
 
     def fix_shortfall(self):
         """Interactive fix for monthly shortfall gaps."""
-        if not SHORTFALL_FILE.exists():
-            print("\n[OK] No shortfall data found. Nothing to fix.")
-            print(
-                "     Run --submit first to detect gaps, or "
-                "--view-monthly to check hours."
-            )
-            return
+        # Always re-detect gaps from Tempo (don't trust stale file)
+        today = date.today()
+        gap_data = self._detect_monthly_gaps(today.year, today.month)
+        gaps = gap_data.get('gaps', [])
 
-        try:
-            with open(SHORTFALL_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"[ERROR] Could not read shortfall file: {e}")
-            return
-
-        gaps = data.get('gaps', [])
         if not gaps:
-            print(
-                "[OK] Shortfall file exists but has no gaps. "
-                "Cleaning up."
-            )
-            SHORTFALL_FILE.unlink()
+            print("\n[OK] No shortfall detected. All hours accounted for.")
+            # Clean up stale shortfall file if it exists
+            if SHORTFALL_FILE.exists():
+                SHORTFALL_FILE.unlink()
+                logger.info("Stale shortfall file removed")
             return
 
-        period = data.get('period', 'unknown')
+        period = gap_data.get('period', 'unknown')
         total_gap = sum(g['gap'] for g in gaps)
 
         print(f"\n{'='*60}")
         print(f"FIX MONTHLY SHORTFALL - {period}")
         print(f"{'='*60}\n")
-        print(f"  Detected: {data.get('detected_at', 'unknown')}")
         print(
             f"  Total shortfall: {total_gap:.1f}h across "
             f"{len(gaps)} day(s)"
@@ -3633,7 +3627,8 @@ class TempoAutomation:
 
         # Update or remove shortfall file
         if fixed_count == len(gaps):
-            SHORTFALL_FILE.unlink()
+            if SHORTFALL_FILE.exists():
+                SHORTFALL_FILE.unlink()
             print("  [OK] All gaps fixed. Shortfall file removed.")
             print(
                 "\n  You can now submit your timesheet from "
