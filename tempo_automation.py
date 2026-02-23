@@ -239,7 +239,7 @@ class ConfigManager:
         # User information
         print("--- USER INFORMATION ---")
         user_email = input("Enter your email address: ").strip()
-        user_name = input("Enter your full name: ").strip()
+        user_name = ''  # auto-populated from Jira profile after token entry
         user_role = self._select_role()
         
         # Jira/Tempo configuration
@@ -260,9 +260,36 @@ class ConfigManager:
             print("   2. Click 'Create API token'")
             jira_token = input("\nEnter your Jira API token: ").strip()
             jira_email = user_email
+
+            # Fetch display name from Jira profile
+            try:
+                import base64
+                creds = base64.b64encode(
+                    f"{user_email}:{jira_token}".encode()
+                ).decode()
+                resp = requests.get(
+                    f"https://{jira_url}/rest/api/3/myself",
+                    headers={'Authorization': f'Basic {creds}'},
+                    timeout=30
+                )
+                resp.raise_for_status()
+                jira_name = resp.json().get('displayName', '')
+                if jira_name:
+                    user_name = jira_name
+                    print(f"[OK] Welcome, {user_name}!")
+            except Exception as e:
+                logger.warning(f"Could not fetch Jira profile: {e}")
+
+            if not user_name:
+                user_name = input(
+                    "Enter your full name: "
+                ).strip()
         else:
             jira_token = ""
             jira_email = user_email
+            user_name = input(
+                "Enter your full name: "
+            ).strip()
         
         # Work schedule & location
         print("\n--- WORK SCHEDULE & LOCATION ---")
