@@ -19,7 +19,7 @@ Runs daily at a scheduled time and:
 
 ## Prerequisites
 
-- Windows 10/11 (Mac/Linux: Python code is cross-platform, but tray app is Windows-only)
+- Windows 10/11 or macOS (full cross-platform support since v3.5)
 - Python 3.7 or higher
 - A Jira API token (developers)
 - A Tempo API token (all users)
@@ -48,20 +48,23 @@ Get the following files from your team lead and place them all in one folder (e.
 
 ```
 tempo_automation.py          # Main automation script
-tray_app.py                  # System tray app (Windows)
-confirm_and_run.py           # OK/Cancel dialog for Task Scheduler
+tray_app.py                  # System tray app (Windows + Mac)
+confirm_and_run.py           # OK/Cancel dialog for Task Scheduler (Windows)
 org_holidays.json            # Organization holiday definitions
 requirements.txt             # Python dependencies
 config_template.json         # Configuration template
-run_daily.bat                # Batch wrapper for daily sync
-run_weekly.bat               # Batch wrapper for weekly verification
-run_monthly.bat              # Batch wrapper for monthly submission
-install.bat                  # Automated installer (recommended)
+run_daily.bat                # Batch wrapper for daily sync (Windows)
+run_weekly.bat               # Batch wrapper for weekly verification (Windows)
+run_monthly.bat              # Batch wrapper for monthly submission (Windows)
+install.bat                  # Windows installer (auto-detects Python)
+install.sh                   # Mac/Linux installer (7 steps)
 assets/
   favicon.ico                # Company icon for tray app
 ```
 
-**Quick install option:** Instead of Steps 3-7, you can right-click `install.bat` and select **"Run as Administrator"**. It handles everything automatically.
+**Quick install option (Windows):** Instead of Steps 3-7, you can right-click `install.bat` and select **"Run as Administrator"**. It handles everything automatically.
+
+**Quick install option (Mac):** Run `chmod +x install.sh && ./install.sh` -- it handles dependencies, setup wizard, overhead config, cron jobs, and tray app setup.
 
 ---
 
@@ -239,6 +242,29 @@ python tray_app.py --unregister    # Remove auto-start
 python tray_app.py --stop          # Stop a running tray app instance
 ```
 
+### Option A2: System Tray App on Mac
+
+**Start the tray app:**
+```bash
+python3 /path/to/tray_app.py &
+```
+
+The Mac tray app supports:
+- Native macOS toast notifications via `osascript`
+- LaunchAgent auto-start (auto-registers on first run)
+- Dialog boxes via AppleScript (`display dialog`)
+- Single-instance enforcement via `fcntl` file lock
+- All the same menu features as Windows
+
+**Tray icon colors and menu options** are the same as Windows.
+
+**Mac-specific commands:**
+```bash
+python3 tray_app.py --register      # Register LaunchAgent auto-start
+python3 tray_app.py --unregister    # Remove LaunchAgent
+python3 tray_app.py --stop          # Stop running tray app
+```
+
 ### Option B: Windows Task Scheduler
 
 If you prefer a fully hands-off approach without a tray icon, use Task Scheduler.
@@ -277,6 +303,27 @@ schtasks /Query /TN "TempoAutomation-DailySync"
 schtasks /Query /TN "TempoAutomation-WeeklyVerify"
 schtasks /Query /TN "TempoAutomation-MonthlySubmit"
 ```
+
+### Option C: Mac Cron Jobs
+
+If you prefer scheduled automation on Mac without the tray app:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add these lines (adjust paths):
+# Daily sync at 6 PM (weekdays)
+0 18 * * 1-5 cd /path/to/tempo && python3 tempo_automation.py >> daily-timesheet.log 2>&1
+
+# Weekly verify on Fridays at 4 PM
+0 16 * * 5 cd /path/to/tempo && python3 tempo_automation.py --verify-week >> daily-timesheet.log 2>&1
+
+# Monthly submit on last day (BSD date compatible)
+0 23 28-31 * * [ "$(date -v+1d +\%d)" = "01" ] && cd /path/to/tempo && python3 tempo_automation.py --submit >> daily-timesheet.log 2>&1
+```
+
+**Note:** The `install.sh` script sets up cron jobs automatically.
 
 **Note:** Both options can coexist safely -- the sync is idempotent (re-running overwrites previous entries). If you close the tray app, the daily scheduler will auto-restart it with a recovery message.
 

@@ -2,7 +2,7 @@
 
 **Automate your daily Tempo timesheet entry and monthly submission -- save 15+ minutes every day.**
 
-Version 3.8 | Python 3.7+ | Windows + macOS
+Version 3.9 | Python 3.7+ | Windows + macOS
 
 ---
 
@@ -25,7 +25,7 @@ This automation script eliminates the manual burden of timesheet management:
 - **Daily sync** -- distributes hours equally across active Jira tickets (IN DEVELOPMENT / CODE REVIEW)
 - **Smart descriptions** -- generates meaningful worklog comments from ticket description + recent comments
 - **Idempotent** -- safe to re-run anytime; deletes previous entries then creates fresh ones
-- **Monthly submission** -- verifies total hours and submits timesheet on the last day of each month
+- **Monthly submission** -- verifies total hours and submits timesheet on the last day of each month (or earlier when all remaining days are non-working)
 - **Weekly verification** -- Friday check catches missed days and backfills using historical ticket data
 - **Overhead stories** -- automatically logs overhead hours on PTO days, holidays, and when no active tickets exist
 
@@ -381,8 +381,8 @@ Then delete the installation folder.
 ## Project Structure
 
 ```
-tempo_automation.py          # Main script (4,224 lines, 8 classes)
-tray_app.py                  # System tray app (~1,306 lines, cross-platform)
+tempo_automation.py          # Main script (4,253 lines, 8 classes)
+tray_app.py                  # System tray app (~1,458 lines, cross-platform)
 confirm_and_run.py           # OK/Cancel dialog for Task Scheduler (Windows)
 config.json                  # User config (gitignored, contains tokens)
 config_template.json         # Config template for new users
@@ -404,6 +404,7 @@ examples/                    # Example configs for each role
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.9 | Feb 23, 2026 | Early timesheet submission: bypasses 7-day window when all remaining days are non-working (PTO/holidays/weekends), tray Submit menu visible mid-month when eligible |
 | 3.8 | Feb 22, 2026 | Distribution zips: build_dist.bat (Win+Python, Win Lite, Mac), install.bat auto-detects Python (embedded or system), run_*.bat regenerated with correct paths |
 | 3.6 | Feb 22, 2026 | Monthly shortfall detection: per-day gap analysis, blocks submission on shortfall, --view-monthly/--fix-shortfall CLI, interactive fix, tray menu restructure with submenus, dynamic Submit Timesheet menu |
 | 3.5 | Feb 22, 2026 | Cross-platform: Mac support for tray app (osascript dialogs, LaunchAgent auto-start, fcntl mutex), install.sh rewrite (7 steps, overhead config, weekly verify cron, BSD date compat), Mac toast notifications via osascript |

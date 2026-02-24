@@ -2,7 +2,7 @@
 
 **Created:** February 22, 2026
 **Branch:** feature/v3.5/mac-compatibility (or feature/v3.5/windows-installer)
-**Status:** Planning
+**Status:** IMPLEMENTED -- v3.5 (Feb 22, 2026)
 
 ---
 

@@ -7,6 +7,7 @@
 ## 1. Packaging & Distribution (Priority: High)
 
 ### Option A: PyInstaller .exe (Recommended first step)
+- **Status:** NOT YET IMPLEMENTED -- still a future enhancement
 - **Effort:** ~30 minutes, zero code changes
 - **What:** Bundle Python + dependencies into a single `.exe`
 - **User experience:** Double-click to run, no Python install needed
@@ -16,18 +17,19 @@
   - config.json would live next to the .exe
   - Need to handle SCRIPT_DIR path resolution for bundled mode
   - Can use `--icon` flag for custom icon
+- **Workaround (v3.8):** Windows Full distribution zip includes embedded Python 3.12 -- no system Python install needed
 
-### Option B: System Tray App with built-in scheduler
-- **Effort:** 1-2 days
-- **What:** Same .exe but runs as a tray icon app with built-in daily scheduler
-- **Libraries:** `pystray` or `PyQt` for tray, `schedule` or `APScheduler` for timer
-- **User experience:** Install once, auto-starts with Windows, runs silently in tray
-- **Features:**
-  - Tray icon shows status (green = OK, red = error)
-  - Right-click menu: Run Now, View Log, Settings, Exit
-  - Auto-starts with Windows (registry entry or Start Menu shortcut)
-  - Built-in scheduler eliminates need for Task Scheduler
-- **Limitation:** Windows-only unless cross-platform GUI framework used
+### Option B: System Tray App with built-in scheduler -- IMPLEMENTED (v3.1)
+- **Implemented in:** v3.1 (Feb 18, 2026), enhanced through v3.9
+- **What was built:** Full system tray app (`tray_app.py`, ~1,458 lines) with:
+  - pystray-based tray icon with company favicon
+  - Color-coded status (green=idle, orange=pending, animated orange/red=syncing, red=error)
+  - Right-click menu: Sync Now, Configure submenu, Log and Reports submenu, Submit Timesheet, Settings, Exit
+  - Auto-starts with Windows (registry) and Mac (LaunchAgent)
+  - Built-in scheduler with configurable sync time
+  - Toast notifications (winotify on Windows, osascript on Mac)
+  - Smart exit with hours verification
+  - Dynamic menu items (Submit Timesheet, Fix Shortfall) with auto-refresh
 
 ### Option C: Chrome Extension
 - **Effort:** 1-2 weeks (full rewrite)
@@ -62,29 +64,17 @@ Start with **Option A** (PyInstaller .exe) for immediate wins. Upgrade to **Opti
 
 ---
 
-## 2. Mac/Linux Support (Priority: Medium)
+## 2. Mac/Linux Support (Priority: Medium) -- IMPLEMENTED (v3.5)
 
-### Current State
-- Python script is fully cross-platform, works on Mac/Linux as-is
-- Only the wrapper scripts and scheduling are Windows-specific
+**Implemented in:** v3.5 (Feb 22, 2026)
 
-### What's Needed
-1. **Shell scripts** (`run_daily.sh`, `run_monthly.sh`) equivalent to .bat files
-2. **Cron jobs** instead of Task Scheduler:
-   ```
-   # Daily at 6 PM
-   0 18 * * * /path/to/run_daily.sh
-
-   # Last day of month at 11 PM
-   0 23 28-31 * * [ "$(date -v+1d +\%d)" = "01" ] && /path/to/run_monthly.sh
-   ```
-3. **`python3`** instead of `python` in shell scripts
-4. **`install.sh`** equivalent to `install.bat`
-
-### No Python Code Changes Needed
-- UTF-8 is native on Mac/Linux
-- All libraries are cross-platform
-- Path handling uses `pathlib.Path` (cross-platform)
+Everything listed below was built:
+- `install.sh` -- 7-step Mac installer (deps, setup wizard, overhead, cron, tray app)
+- Cron jobs for daily sync, weekly verify, monthly submit (BSD date compatible)
+- `tray_app.py` -- full Mac support (osascript toasts/dialogs, LaunchAgent auto-start, fcntl mutex)
+- `tempo_automation.py` -- Mac toast notifications via osascript
+- Platform guards: `sys.platform == 'win32'` / `== 'darwin'`
+- `winotify` marked Windows-only in requirements.txt
 
 ---
 
@@ -108,24 +98,15 @@ Start with **Option A** (PyInstaller .exe) for immediate wins. Upgrade to **Opti
 - e.g., higher priority tickets get more hours
 - Could read from ticket priority field or custom config
 
-### Holiday/Leave Calendar -- IN PROGRESS (see IMPLEMENTATION_PLAN_V3.md)
-- ~~Skip logging on holidays and leave days~~
-- ~~Integrate with company calendar or manual config~~
-- ~~Avoid unnecessary API calls on non-work days~~
-- **Status:** Being implemented as part of v3. Includes:
-  - Weekend guard (skip Sat/Sun)
-  - Org-level holidays (org_holidays.json with auto-fetch)
-  - `holidays` library for country/state holidays (US + India)
-  - PTO management (--add-pto, --remove-pto)
-  - Override system (extra_holidays, working_days for compensatory days)
-  - Schedule management CLI + interactive menu
-  - Weekly/monthly hours verification
-  - MS Teams webhook notifications for shortfalls
+### Holiday/Leave Calendar -- IMPLEMENTED (v3.0)
+- **Implemented in:** v3.0 (Feb 17, 2026)
+- All items completed: weekend guard, org holidays (auto-fetch), country/state holidays (100+ countries), PTO management, override system, schedule CLI, interactive menu, weekly/monthly verification
+- Enhanced in v3.4: overhead story logging on PTO/holidays
+- Enhanced in v3.6: monthly shortfall detection, --view-monthly, --fix-shortfall
 
-### Backfill Mode -- PARTIALLY IN PROGRESS (see IMPLEMENTATION_PLAN_V3.md)
-- ~~`--from 2026-02-01 --to 2026-02-10` to log multiple days at once~~
-- ~~Useful for catching up after vacation~~
-- **Status:** `--verify-week` handles weekly backfill automatically. Date-range backfill deferred.
+### Backfill Mode -- PARTIALLY IMPLEMENTED (v3.0)
+- `--verify-week` handles weekly backfill automatically (v3.0)
+- Date-range backfill (`--from --to`) deferred as a future enhancement
 
 ### Slack Notifications
 - Alternative to email notifications
