@@ -2,7 +2,7 @@
 
 **Created:** February 19, 2026
 **Branch:** feature/v3.4/overhead-story-support
-**Status:** Planning
+**Status:** IMPLEMENTED -- v3.4 (Feb 20, 2026)
 
 ---
 

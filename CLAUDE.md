@@ -99,18 +99,25 @@ v2/
 │       ├── test-apis/              # /test-apis
 │       └── update-docs/            # /update-docs
 ├── docs/
+│   ├── PRESENTATION.md             # Markdown presentation for GitHub browsing
 │   ├── guides/                     # User-facing docs
 │   │   ├── SETUP_GUIDE.md
 │   │   ├── QUICK_REFERENCE.md
 │   │   └── HANDOFF.md
-│   ├── plans/                      # Implementation plans (historical)
+│   ├── plans/                      # Implementation plans (all IMPLEMENTED)
 │   │   ├── IMPLEMENTATION_PLAN_V3.md
 │   │   ├── IMPLEMENTATION_PLAN_V4.md
 │   │   ├── WEEKLY_VERIFY_PLAN.md
 │   │   └── DISTRIBUTION_ZIPS_PLAN.md
 │   ├── releases/                   # Release notes
+│   │   ├── CHANGELOG.md            # Consolidated v1.0-v3.9 changelog
 │   │   ├── VERSION_2_RELEASE_NOTES.md
 │   │   └── FUTURE_ENHANCEMENTS.md
+│   ├── images/                     # Screenshots and images
+│   ├── site/                       # GitHub Pages presentation site
+│   │   ├── index.html              # Single-page dark theme site
+│   │   ├── style.css               # Styles
+│   │   └── favicon.ico/png         # Icons
 │   └── business/                   # Executive docs
 └── archive/                        # Deprecated files
 ```

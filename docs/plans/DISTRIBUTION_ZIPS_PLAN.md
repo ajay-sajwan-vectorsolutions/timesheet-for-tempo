@@ -1,5 +1,7 @@
 # Build Script: Generate Distribution Zip Files
 
+**Status:** IMPLEMENTED -- v3.8 (Feb 23, 2026)
+
 ## Context
 
 The project needs a way to create distribution zip files for team members. Currently, users must have Python pre-installed and the `run_*.bat` files contain hardcoded absolute paths from Ajay's machine. We need a single build script (`build_dist.bat`) that generates 3 zip types, and an updated `install.bat` that auto-detects Python (embedded or system) and regenerates wrapper scripts with correct paths.
