@@ -722,13 +722,12 @@ class TestRemoteFetch:
         # Org holidays should still be available from the local file
         assert "2026-12-25" in sm._org_holidays
 
-    def test_fetch_no_update_when_version_matches(self, base_config, tmp_path):
-        """File is not rewritten if remote version matches local version."""
+    def test_fetch_always_overwrites_local_file(self, base_config, tmp_path):
+        """Remote data always overwrites local file (URL is source of truth)."""
         same_data = dict(ORG_HOLIDAYS_DATA)
         hol_path = tmp_path / "org_holidays.json"
-        hol_path.write_text(json.dumps(same_data), encoding="utf-8")
+        hol_path.write_text(json.dumps({"version": "old"}), encoding="utf-8")
         cfg_path = tmp_path / "config.json"
-        original_mtime = hol_path.stat().st_mtime
 
         mock_resp = MagicMock()
         mock_resp.json.return_value = same_data
@@ -743,8 +742,11 @@ class TestRemoteFetch:
         ):
             sm = ScheduleManager(base_config)
 
-        # mtime should be unchanged (no rewrite)
-        assert hol_path.stat().st_mtime == original_mtime
+        # Local file should contain remote data
+        with open(hol_path, 'r') as f:
+            saved = json.load(f)
+        assert saved.get('version') == same_data.get('version')
+        assert "2026-12-25" in sm._org_holidays
 
 
 # ===========================================================================

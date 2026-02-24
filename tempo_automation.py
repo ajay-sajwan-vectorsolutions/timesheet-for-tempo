@@ -656,16 +656,18 @@ class ScheduleManager:
     # ------------------------------------------------------------------
 
     def _load_org_holidays(self):
-        """Load org holidays from local file, auto-fetch from URL if configured."""
-        # Try auto-fetch first
-        self._fetch_remote_org_holidays()
+        """Load org holidays from URL (primary) with local file as fallback."""
+        # Try fetching from URL first (source of truth)
+        remote_data = self._fetch_remote_org_holidays()
 
-        # Load local file
-        if ORG_HOLIDAYS_FILE.exists():
+        if remote_data:
+            self._org_holidays_data = remote_data
+        elif ORG_HOLIDAYS_FILE.exists():
+            # Fallback to local file when URL is unavailable
             try:
                 with open(ORG_HOLIDAYS_FILE, 'r') as f:
                     self._org_holidays_data = json.load(f)
-                logger.info("Org holidays loaded from local file")
+                logger.info("Org holidays loaded from local file (fallback)")
             except Exception as e:
                 logger.warning(f"Could not load org_holidays.json: {e}")
                 self._org_holidays_data = {}
@@ -703,13 +705,20 @@ class ScheduleManager:
             f"{self.country_code}/{self.state or 'all'}"
         )
 
-    def _fetch_remote_org_holidays(self):
-        """Fetch org_holidays.json from central URL if version is newer."""
+    def _fetch_remote_org_holidays(self) -> Optional[Dict]:
+        """Fetch org_holidays.json from central URL (source of truth).
+
+        Always uses remote data when available and saves a local
+        copy as backup for offline use.
+
+        Returns:
+            Remote data dict if fetch succeeded, None otherwise.
+        """
         holidays_url = self.config.get(
             'organization', {}
         ).get('holidays_url', '')
         if not holidays_url:
-            return
+            return None
 
         try:
             response = requests.get(holidays_url, timeout=10)
@@ -717,30 +726,17 @@ class ScheduleManager:
             remote_data = response.json()
             remote_version = remote_data.get('version', '')
 
-            # Load local version for comparison
-            local_version = ''
-            if ORG_HOLIDAYS_FILE.exists():
-                with open(ORG_HOLIDAYS_FILE, 'r') as f:
-                    local_data = json.load(f)
-                    local_version = local_data.get('version', '')
-
-            if remote_version != local_version:
-                with open(ORG_HOLIDAYS_FILE, 'w') as f:
-                    json.dump(remote_data, f, indent=2)
-                logger.info(
-                    f"Org holidays updated: {local_version} -> "
-                    f"{remote_version}"
-                )
-                print(
-                    f"[INFO] Org holidays updated to version "
-                    f"{remote_version}"
-                )
-            else:
-                logger.debug(
-                    f"Org holidays up to date: {local_version}"
-                )
+            # Always save remote data to local file as backup
+            with open(ORG_HOLIDAYS_FILE, 'w') as f:
+                json.dump(remote_data, f, indent=2)
+            logger.info(
+                f"Org holidays fetched from URL (version: "
+                f"{remote_version})"
+            )
+            return remote_data
         except Exception as e:
             logger.warning(f"Could not fetch remote org holidays: {e}")
+            return None
 
     def _load_country_holidays(self):
         """Load country holidays from holidays library."""
