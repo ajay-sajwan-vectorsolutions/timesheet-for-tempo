@@ -4,6 +4,8 @@
 
 Version 3.9 | Python 3.7+ | Windows + macOS
 
+[View Presentation (Dark Theme)](https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/) | [View Case Study (Light Theme)](https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/case-study.html)
+
 ---
 
 ## Overview
