@@ -4,7 +4,7 @@
 
 Version 3.9 | Python 3.7+ | Windows + macOS
 
-[View Presentation (Dark Theme)](https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/) | [View Case Study (Light Theme)](https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/case-study.html)
+<a href="https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/" target="_blank">View Presentation (Dark Theme)</a> | <a href="https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/case-study.html" target="_blank">View Case Study (Light Theme)</a>
 
 ---
 
@@ -32,7 +32,7 @@ This automation script eliminates the manual burden of timesheet management:
 - **Overhead stories** -- automatically logs overhead hours on PTO days, holidays, and when no active tickets exist
 
 ### Schedule Management
-- **Holiday detection** -- org holidays (auto-fetched from central URL) + national/state holidays (100+ countries)
+- **Holiday detection** -- org holidays (always fetched from central URL, local file as fallback) + national/state holidays (100+ countries)
 - **PTO management** -- add/remove PTO dates via CLI or tray app; script skips those days
 - **Override system** -- extra holidays (ad-hoc) and compensatory working days (weekend work)
 - **Calendar view** -- visual month calendar showing working days, holidays, PTO

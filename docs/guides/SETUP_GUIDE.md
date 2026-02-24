@@ -462,9 +462,8 @@ python tray_app.py --stop          :: Stop running tray app
 ## How Holidays Work
 
 ### Automatic (No Setup Needed)
-- **Org holidays** are loaded from `org_holidays.json` (ships with the script, auto-fetched from central URL)
+- **Org holidays** are always fetched from the central URL on every run (the local `org_holidays.json` is saved as a backup for offline use)
 - **National/state holidays** are detected automatically based on your `country_code` and `state` settings
-- The script auto-fetches the latest org holiday list on every run (if a central URL is configured)
 
 ### What You Manage
 - **PTO days** -- add before going on leave (`--add-pto`)
@@ -482,9 +481,9 @@ When dates conflict, this priority order applies:
 7. **Default** -- it's a working day
 
 ### Annual Holiday Refresh
-- Your admin updates the central `org_holidays.json` file in December each year
-- The script auto-fetches the new version on your next run
-- If you're on long PTO at year start, it updates automatically when you return
+- Your admin updates the central holiday list at the URL in December each year
+- The script always picks up the latest list on your next run (no version check needed)
+- The local `org_holidays.json` is automatically kept in sync as a backup
 - In December, the script will warn you if next year's holidays aren't loaded yet
 
 ---
