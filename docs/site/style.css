@@ -749,3 +749,8 @@ footer a:hover { text-decoration: underline; }
   color: var(--accent-blue);
   font-size: 1rem;
 }
+
+.page-views .view-sep {
+  color: var(--border);
+  margin: 0 0.15rem;
+}
