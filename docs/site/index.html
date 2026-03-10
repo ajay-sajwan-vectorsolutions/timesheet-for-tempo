@@ -812,6 +812,10 @@ python tempo_automation.py --submit
      12. Footer
      ============================================================ -->
 <footer>
+  <div class="page-views">
+    <span class="view-icon">&#x1F441;</span>
+    <span id="view-count" class="view-count">--</span> views
+  </div>
   <p><strong>Tempo Timesheet Automation</strong> v3.9</p>
   <p>Built by Vector Solutions Engineering</p>
   <p style="margin-top: 0.5rem;">
@@ -832,6 +836,23 @@ python tempo_automation.py --submit
      Scripts (minimal, no frameworks)
      ============================================================ -->
 <script>
+// Page view counter - only increments on the live GitHub Pages domain
+(function() {
+  var el = document.getElementById('view-count');
+  if (window.location.hostname.indexOf('github.io') === -1) return;
+
+  fetch('https://api.counterapi.dev/v1/tempo-automation-site/page-views/up')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data && typeof data.count === 'number') {
+        el.textContent = data.count.toLocaleString();
+      }
+    })
+    .catch(function() {
+      el.textContent = '--';
+    });
+})();
+
 function showTab(tabId) {
   // Hide all tab contents
   document.querySelectorAll('.tab-content').forEach(function(el) {
