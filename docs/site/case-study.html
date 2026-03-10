@@ -724,6 +724,10 @@ MONTHLY HOURS REPORT - February 2026<br>
      Footer
      ============================================================ -->
 <footer>
+  <div class="page-views">
+    <span class="view-icon">&#x1F441;</span>
+    <span id="view-count" class="view-count">--</span> views
+  </div>
   <div class="footer-brand">Tempo Timesheet Automation</div>
   <p style="margin: 0.75rem 0;">Built by Vector Solutions Engineering &bull; v3.9 &bull; February 2026</p>
   <p>
@@ -738,6 +742,25 @@ MONTHLY HOURS REPORT - February 2026<br>
     <a href="#cover" style="font-size: 0.85rem;">Top &uarr;</a>
   </p>
 </footer>
+
+<script>
+// Page view counter - only increments on the live GitHub Pages domain
+(function() {
+  var el = document.getElementById('view-count');
+  if (window.location.hostname.indexOf('github.io') === -1) return;
+
+  fetch('https://api.counterapi.dev/v1/tempo-automation-site/page-views/up')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data && typeof data.count === 'number') {
+        el.textContent = data.count.toLocaleString();
+      }
+    })
+    .catch(function() {
+      el.textContent = '--';
+    });
+})();
+</script>
 
 </body>
 </html>
