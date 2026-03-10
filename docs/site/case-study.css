@@ -742,6 +742,11 @@ footer a:hover {
   font-size: 1rem;
 }
 
+.page-views .view-sep {
+  color: var(--color-light-gray);
+  margin: 0 0.15rem;
+}
+
 footer .footer-brand {
   font-family: 'DM Mono', monospace;
   font-size: 0.75rem;
