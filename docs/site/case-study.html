@@ -727,6 +727,8 @@ MONTHLY HOURS REPORT - February 2026<br>
   <div class="page-views">
     <span class="view-icon">&#x1F441;</span>
     <span id="view-count" class="view-count">--</span> views
+    <span class="view-sep">&bull;</span>
+    <span id="visitor-count" class="view-count">--</span> unique
   </div>
   <div class="footer-brand">Tempo Timesheet Automation</div>
   <p style="margin: 0.75rem 0;">Built by Vector Solutions Engineering &bull; v3.9 &bull; February 2026</p>
@@ -744,21 +746,40 @@ MONTHLY HOURS REPORT - February 2026<br>
 </footer>
 
 <script>
-// Page view counter - only increments on the live GitHub Pages domain
+// Page view + unique visitor counter - only on live GitHub Pages domain
 (function() {
-  var el = document.getElementById('view-count');
+  var viewEl = document.getElementById('view-count');
+  var visitorEl = document.getElementById('visitor-count');
   if (window.location.hostname.indexOf('github.io') === -1) return;
 
+  // Always increment total views
   fetch('https://api.counterapi.dev/v1/tempo-automation-site/page-views/up')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data && typeof data.count === 'number') {
-        el.textContent = data.count.toLocaleString();
+        viewEl.textContent = data.count.toLocaleString();
       }
     })
-    .catch(function() {
-      el.textContent = '--';
-    });
+    .catch(function() { viewEl.textContent = '--'; });
+
+  // Unique visitors: increment only on first visit per browser
+  var isNew = !localStorage.getItem('tempo_visitor_counted');
+  if (isNew) {
+    fetch('https://api.counterapi.dev/v1/tempo-automation-site/unique-visitors/up')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data && typeof data.count === 'number') {
+          visitorEl.textContent = data.count.toLocaleString();
+          localStorage.setItem('tempo_visitor_counted', data.count);
+        }
+      })
+      .catch(function() { visitorEl.textContent = '--'; });
+  } else {
+    // Returning visitor: show last known unique count from localStorage
+    visitorEl.textContent = Number(
+      localStorage.getItem('tempo_visitor_counted')
+    ).toLocaleString();
+  }
 })();
 </script>
 
