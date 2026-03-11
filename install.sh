@@ -12,7 +12,7 @@
 # 7. Optionally run a test sync
 # ============================================================================
 
-set -e  # Exit on error
+# Note: not using 'set -e' because we have explicit error checks below
 
 echo ""
 echo "============================================================"

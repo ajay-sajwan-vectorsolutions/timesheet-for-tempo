@@ -285,7 +285,7 @@ class TestSubmitTimesheet:
 
         assert result is True
         sent_body = json.loads(responses_lib.calls[-1].request.body)
-        assert sent_body["worker"]["accountId"] == USER_EMAIL
+        assert sent_body["worker"]["accountId"] == ACCOUNT_ID
         assert sent_body["period"]["key"] == "2026-02"
 
     @responses_lib.activate

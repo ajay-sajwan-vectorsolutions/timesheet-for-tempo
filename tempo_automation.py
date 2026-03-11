@@ -32,6 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import html
 
 # Force UTF-8 output to avoid UnicodeEncodeError on Windows when redirecting to file.
 # Under pythonw.exe (no console), sys.stdout/stderr are None -- redirect to devnull.
@@ -421,10 +422,15 @@ class ConfigManager:
         
         # Work schedule & location
         print("\n--- WORK SCHEDULE & LOCATION ---")
-        daily_hours = float(
-            input("Standard work hours per day (default 8): ").strip()
-            or "8"
-        )
+        while True:
+            try:
+                daily_hours = float(
+                    input("Standard work hours per day (default 8): ").strip()
+                    or "8"
+                )
+                break
+            except ValueError:
+                print("  [ERROR] Please enter a valid number.")
 
         country_code, state_code = self._select_location()
 
@@ -478,7 +484,12 @@ class ConfigManager:
                     break
                 
                 activity = input("Activity name (e.g., 'Stakeholder Meetings'): ").strip()
-                hours = float(input("Typical hours per day: ").strip())
+                while True:
+                    try:
+                        hours = float(input("Typical hours per day: ").strip())
+                        break
+                    except ValueError:
+                        print("  [ERROR] Please enter a valid number.")
                 manual_activities.append({
                     "activity": activity,
                     "hours": hours
@@ -604,12 +615,12 @@ class ConfigManager:
         try:
             url = "https://api.tempo.io/4/user"
             headers = {
-                'Authorization': f"Bearer {self.config['tempo']['api_token']}"
+                'Authorization': f"Bearer {self.config.get('tempo', {}).get('api_token', '')}"
             }
             
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
-            
+
             user_data = response.json()
             account_id = user_data.get('accountId')
             
@@ -618,12 +629,12 @@ class ConfigManager:
                 return account_id
             else:
                 logger.warning("Account ID not found in Tempo response, using email")
-                return self.config['user']['email']
-                
+                return self.config.get('user', {}).get('email', '')
+
         except Exception as e:
             logger.error(f"Error fetching Tempo account ID: {e}")
             logger.error(f"Falling back to email as account ID")
-            return self.config['user']['email']
+            return self.config.get('user', {}).get('email', '')
 
 
 # ============================================================================
@@ -636,8 +647,9 @@ ORG_HOLIDAYS_FILE = SCRIPT_DIR / "org_holidays.json"
 class ScheduleManager:
     """Manages working days, holidays, PTO, and schedule overrides."""
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, config_path: Path = None):
         self.config = config
+        self.config_path = config_path or CONFIG_FILE
         self.schedule = config.get('schedule', {})
         self.daily_hours = self.schedule.get('daily_hours', 8)
         self.country_code = self.schedule.get('country_code', 'US')
@@ -919,6 +931,8 @@ class ScheduleManager:
             try:
                 parts = month_str.split('-')
                 year, month = int(parts[0]), int(parts[1])
+                if not (1 <= month <= 12):
+                    raise ValueError(f"Month must be 1-12, got {month}")
             except (ValueError, IndexError):
                 print(f"[ERROR] Invalid month format: {month_str}")
                 print("        Use YYYY-MM (e.g., 2026-03)")
@@ -1146,7 +1160,7 @@ class ScheduleManager:
         )
         self.config['schedule']['working_days'] = sorted(self.working_days)
         try:
-            with open(CONFIG_FILE, 'w') as f:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2)
             logger.info("Schedule config saved")
         except Exception as e:
@@ -1278,15 +1292,26 @@ class ScheduleManager:
 
 class JiraClient:
     """Handles Jira API interactions."""
-    
+
     def __init__(self, config: Dict):
         self.config = config
-        self.base_url = f"https://{config['jira']['url']}"
-        self.email = config['jira']['email']
-        self.api_token = config['jira']['api_token']
+        jira_cfg = config.get('jira', {})
+        self.base_url = f"https://{jira_cfg.get('url', 'lmsportal.atlassian.net')}"
+        self.email = jira_cfg.get('email', '')
+        self.api_token = jira_cfg.get('api_token', '')
         self.session = requests.Session()
         self.session.auth = (self.email, self.api_token)
         self.session.headers.update({'Content-Type': 'application/json'})
+        # Retry on 429 (rate limit) with exponential backoff
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        retry = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429],
+            respect_retry_after_header=True
+        )
+        self.session.mount('https://', HTTPAdapter(max_retries=retry))
         self.account_id = self.get_myself_account_id()
 
     def get_myself_account_id(self) -> str:
@@ -1335,12 +1360,23 @@ class JiraClient:
                 issue_key = issue['key']
                 issue_summary = issue['fields']['summary']
                 
-                # Get worklogs for this issue
+                # Get worklogs for this issue (with pagination)
                 worklog_url = f"{self.base_url}/rest/api/3/issue/{issue_key}/worklog"
-                worklog_response = self.session.get(worklog_url)
-                worklog_response.raise_for_status()
-                
-                issue_worklogs = worklog_response.json().get('worklogs', [])
+                issue_worklogs = []
+                start_at = 0
+                while True:
+                    worklog_response = self.session.get(
+                        worklog_url,
+                        params={'startAt': start_at},
+                        timeout=30
+                    )
+                    worklog_response.raise_for_status()
+                    wl_data = worklog_response.json()
+                    issue_worklogs.extend(wl_data.get('worklogs', []))
+                    total = wl_data.get('total', 0)
+                    start_at += wl_data.get('maxResults', len(issue_worklogs))
+                    if start_at >= total:
+                        break
                 
                 # Filter worklogs by date and current user
                 for wl in issue_worklogs:
@@ -1673,7 +1709,7 @@ class TempoClient:
     
     def __init__(self, config: Dict, account_id: str = ''):
         self.config = config
-        self.api_token = config['tempo']['api_token']
+        self.api_token = config.get('tempo', {}).get('api_token', '')
         self.base_url = "https://api.tempo.io/4"
         self.session = requests.Session()
         self.session.headers.update({
@@ -1701,14 +1737,26 @@ class TempoClient:
                 'from': date_from,
                 'to': date_to
             }
-            
-            response = self.session.get(url, params=params)
-            response.raise_for_status()
-            
-            worklogs = response.json().get('results', [])
-            logger.info(f"Fetched {len(worklogs)} worklogs from Tempo")
-            return worklogs
-            
+
+            all_worklogs = []
+            while url:
+                response = self.session.get(url, params=params, timeout=30)
+                response.raise_for_status()
+
+                data = response.json()
+                all_worklogs.extend(data.get('results', []))
+
+                # Follow pagination via metadata.next
+                next_url = data.get('metadata', {}).get('next')
+                if next_url:
+                    url = next_url
+                    params = {}  # next URL includes query params
+                else:
+                    break
+
+            logger.info(f"Fetched {len(all_worklogs)} worklogs from Tempo")
+            return all_worklogs
+
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching Tempo worklogs: {e}")
             return []
@@ -1739,9 +1787,9 @@ class TempoClient:
                 'description': description
             }
             
-            response = self.session.post(url, json=data)
+            response = self.session.post(url, json=data, timeout=30)
             response.raise_for_status()
-            
+
             logger.info(f"Created Tempo worklog: {issue_key} - {time_seconds}s on {start_date}")
             return True
             
@@ -1768,16 +1816,16 @@ class TempoClient:
             
             data = {
                 'worker': {
-                    'accountId': self.config['user']['email']
+                    'accountId': self.account_id
                 },
                 'period': {
                     'key': period_key
                 }
             }
             
-            response = self.session.post(url, json=data)
+            response = self.session.post(url, json=data, timeout=30)
             response.raise_for_status()
-            
+
             logger.info(f"Successfully submitted timesheet for period: {period_key}")
             return True
             
@@ -1788,14 +1836,14 @@ class TempoClient:
     def _get_current_period(self) -> str:
         """Get current timesheet period key."""
         try:
-            url = "https://api.tempo.io/4/timesheet-approvals/periods"
+            url = f"{self.base_url}/timesheet-approvals/periods"
             
             # Get current date to find matching period
             today = date.today().strftime('%Y-%m-%d')
             
-            response = self.session.get(url)
+            response = self.session.get(url, timeout=30)
             response.raise_for_status()
-            
+
             periods = response.json().get('results', [])
             
             # Find period containing today's date
@@ -1814,7 +1862,7 @@ class TempoClient:
             today_obj = date.today()
             return f"{today_obj.year}-{today_obj.month:02d}"
             
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching Tempo period: {e}")
             # Fallback to simplified format
             today_obj = date.today()
@@ -1830,7 +1878,7 @@ class NotificationManager:
     
     def __init__(self, config: Dict):
         self.config = config
-        self.enabled = config['notifications']['email_enabled']
+        self.enabled = config.get('notifications', {}).get('email_enabled', False)
     
     def send_daily_summary(self, worklogs: List[Dict], total_hours: float):
         """Send daily timesheet summary email."""
@@ -1844,7 +1892,7 @@ class NotificationManager:
         <body>
         <h2>Daily Tempo Timesheet Summary</h2>
         <p><strong>Date:</strong> {date.today().strftime('%B %d, %Y')}</p>
-        <p><strong>Total Hours Logged:</strong> {total_hours:.2f} / {self.config['schedule']['daily_hours']}</p>
+        <p><strong>Total Hours Logged:</strong> {total_hours:.2f} / {self.config.get('schedule', {}).get('daily_hours', 8)}</p>
         
         <h3>Entries:</h3>
         <ul>
@@ -1852,9 +1900,9 @@ class NotificationManager:
         
         for wl in worklogs:
             hours = wl['time_spent_seconds'] / 3600
-            body += f"<li>{wl['issue_key']}: {hours:.2f}h - {wl.get('issue_summary', '')}</li>\n"
+            body += f"<li>{html.escape(wl['issue_key'])}: {hours:.2f}h - {html.escape(wl.get('issue_summary', ''))}</li>\n"
         
-        status = "[OK] Complete" if total_hours >= self.config['schedule']['daily_hours'] else "[!] Incomplete"
+        status = "[OK] Complete" if total_hours >= self.config.get('schedule', {}).get('daily_hours', 8) else "[!] Incomplete"
         body += f"""
         </ul>
         
@@ -1909,19 +1957,20 @@ class NotificationManager:
                 self.config['notifications']['smtp_server'],
                 self.config['notifications']['smtp_port']
             )
-            server.starttls()
-            smtp_password = CredentialManager.decrypt(
-                self.config['notifications'].get('smtp_password', '')
-            )
-            server.login(
-                self.config['notifications']['smtp_user'],
-                smtp_password
-            )
-            server.send_message(msg)
-            server.quit()
-            
-            logger.info(f"Email sent: {subject}")
-            
+            try:
+                server.starttls()
+                smtp_password = CredentialManager.decrypt(
+                    self.config['notifications'].get('smtp_password', '')
+                )
+                server.login(
+                    self.config['notifications']['smtp_user'],
+                    smtp_password
+                )
+                server.send_message(msg)
+                logger.info(f"Email sent: {subject}")
+            finally:
+                server.quit()
+
         except Exception as e:
             logger.error(f"Error sending email: {e}")
 
@@ -2046,8 +2095,8 @@ class NotificationManager:
         facts_html = ""
         if facts:
             rows = "".join(
-                f"<tr><td><strong>{f['title']}</strong></td>"
-                f"<td>{f['value']}</td></tr>"
+                f"<tr><td><strong>{html.escape(str(f['title']))}</strong></td>"
+                f"<td>{html.escape(str(f['value']))}</td></tr>"
                 for f in facts
             )
             facts_html = (
@@ -2245,7 +2294,7 @@ class TempoAutomation:
         
         worklogs_created = []
         
-        if self.config['user']['role'] == 'developer':
+        if self.config.get('user', {}).get('role') == 'developer':
             # Auto-log time across active Jira tickets
             worklogs_created = self._auto_log_jira_worklogs(target_date)
         else:
@@ -2264,9 +2313,9 @@ class TempoAutomation:
         print(f"[OK] SYNC COMPLETE ({done_ts})")
         print(f"{'='*60}")
         print(f"Total entries: {len(worklogs_created)}")
-        print(f"Total hours: {total_hours:.2f} / {self.config['schedule']['daily_hours']}")
+        print(f"Total hours: {total_hours:.2f} / {self.schedule_mgr.daily_hours}")
 
-        if total_hours >= self.config['schedule']['daily_hours']:
+        if total_hours >= self.schedule_mgr.daily_hours:
             print("Status: [OK] Complete")
         else:
             print(f"Status: [!] Incomplete ({total_hours:.2f}h logged)")
@@ -2961,7 +3010,7 @@ class TempoAutomation:
                         f"  {s['issue_key']} ({s['issue_summary']}): "
                     ).strip()
                     try:
-                        hrs = float(raw_h)
+                        hrs = min(float(raw_h), remaining)
                     except ValueError:
                         hrs = remaining / (len(selected) - i)
                     remaining -= hrs
@@ -3292,10 +3341,13 @@ class TempoAutomation:
         
         # Check existing entries
         tempo_worklogs = self.tempo_client.get_user_worklogs(target_date, target_date)
-        
-        if tempo_worklogs:
-            logger.info("Manual entries already exist for today")
-            print("[SKIP] Timesheet entries already exist for today")
+        existing_hours = sum(
+            wl.get('timeSpentSeconds', 0) for wl in tempo_worklogs
+        ) / 3600
+
+        if existing_hours >= self.schedule_mgr.daily_hours:
+            logger.info("Manual entries already meet daily hours")
+            print("[SKIP] Timesheet entries already meet daily hours")
             return tempo_worklogs
         
         # Create entries from configuration
@@ -3305,13 +3357,13 @@ class TempoAutomation:
             # Ask your Jira admin what issue key to use for general time tracking
             issue_key = self.config.get('organization', {}).get('default_issue_key', 'GENERAL-001')
             
-            time_seconds = int(activity['hours'] * 3600)
+            time_seconds = int(activity.get('hours', 0) * 3600)
             
             success = self.tempo_client.create_worklog(
                 issue_key=issue_key,
                 time_seconds=time_seconds,
                 start_date=target_date,
-                description=activity['activity']
+                description=activity.get('activity', '')
             )
             
             if success:
@@ -3458,7 +3510,7 @@ class TempoAutomation:
 
         # Clean up stale shortfall file
         if SHORTFALL_FILE.exists():
-            SHORTFALL_FILE.unlink()
+            SHORTFALL_FILE.unlink(missing_ok=True)
             logger.info("Stale shortfall file removed")
 
         if not is_last_day and not early_submit_eligible:
@@ -3480,7 +3532,7 @@ class TempoAutomation:
             self._save_submitted_marker(period)
             self.notifier.send_submission_confirmation(period)
             if SHORTFALL_FILE.exists():
-                SHORTFALL_FILE.unlink()
+                SHORTFALL_FILE.unlink(missing_ok=True)
         else:
             print(f"[FAIL] Failed to submit timesheet for {period}")
 
@@ -3540,6 +3592,14 @@ class TempoAutomation:
                 hours_by_date[d] = hours_by_date.get(d, 0) + (
                     wl['time_spent_seconds'] / 3600
                 )
+        else:
+            logger.error(
+                "No API client available for gap detection"
+            )
+            print(
+                "[ERROR] Cannot detect gaps: no Tempo or Jira "
+                "client available. Check API tokens."
+            )
 
         daily_hours = self.schedule_mgr.daily_hours
         gaps = []
@@ -3636,6 +3696,8 @@ class TempoAutomation:
             try:
                 parts = month_str.split('-')
                 year, month = int(parts[0]), int(parts[1])
+                if not (1 <= month <= 12):
+                    raise ValueError(f"Month must be 1-12, got {month}")
             except (ValueError, IndexError):
                 print(f"[ERROR] Invalid month format: {month_str}")
                 print("        Use YYYY-MM (e.g., 2026-03)")
@@ -3697,7 +3759,7 @@ class TempoAutomation:
             print("\n  [OK] All hours accounted for")
             # Clean up stale shortfall file if no gaps remain
             if SHORTFALL_FILE.exists():
-                SHORTFALL_FILE.unlink()
+                SHORTFALL_FILE.unlink(missing_ok=True)
                 logger.info(
                     "Stale shortfall file removed by view_monthly"
                 )
@@ -3714,7 +3776,7 @@ class TempoAutomation:
             print("\n[OK] No shortfall detected. All hours accounted for.")
             # Clean up stale shortfall file if it exists
             if SHORTFALL_FILE.exists():
-                SHORTFALL_FILE.unlink()
+                SHORTFALL_FILE.unlink(missing_ok=True)
                 logger.info("Stale shortfall file removed")
             return
 
@@ -3808,7 +3870,7 @@ class TempoAutomation:
         # Update or remove shortfall file
         if fixed_count == len(gaps):
             if SHORTFALL_FILE.exists():
-                SHORTFALL_FILE.unlink()
+                SHORTFALL_FILE.unlink(missing_ok=True)
             print("  [OK] All gaps fixed. Shortfall file removed.")
             print(
                 "\n  You can now submit your timesheet from "
@@ -3828,7 +3890,7 @@ class TempoAutomation:
                     f"Shortfall file updated."
                 )
             else:
-                SHORTFALL_FILE.unlink()
+                SHORTFALL_FILE.unlink(missing_ok=True)
                 print(
                     "  [OK] All gaps now fixed. "
                     "Shortfall file removed."
@@ -4251,8 +4313,18 @@ Examples:
         '--submit', action='store_true',
         help='Submit monthly timesheet'
     )
+    def valid_date(s: str) -> str:
+        """Validate YYYY-MM-DD date format."""
+        try:
+            datetime.strptime(s, '%Y-%m-%d')
+            return s
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"Invalid date: '{s}'. Use YYYY-MM-DD format."
+            )
+
     parser.add_argument(
-        '--date', type=str,
+        '--date', type=valid_date,
         help='Target date (YYYY-MM-DD)'
     )
     parser.add_argument(

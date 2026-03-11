@@ -16,7 +16,8 @@
   },
 
   "tempo": {
-    "api_token": "your_tempo_api_token_here"
+    "api_token": "your_tempo_api_token_here",
+    "account_id": ""
   },
 
   "organization": {
@@ -26,7 +27,7 @@
   },
 
   "schedule": {
-    "daily_hours": 8,
+    "daily_hours": 8.0,
     "daily_sync_time": "18:00",
     "monthly_submit_day": "last",
     "country_code": "US",

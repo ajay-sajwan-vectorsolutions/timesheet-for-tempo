@@ -115,25 +115,27 @@ CORNER_RADIUS = 12  # rounded corner radius for the background square
 
 # Cache the loaded favicon to avoid re-reading the file on every icon update
 _favicon_cache = None
+_favicon_lock = threading.Lock()
 
 
 def _load_favicon(size: int = 48) -> 'Image':
     """Load and cache the company favicon, resized to fit."""
     global _favicon_cache
-    if _favicon_cache is not None and _favicon_cache.size[0] == size:
-        return _favicon_cache.copy()
-    try:
-        favicon = Image.open(str(FAVICON_PATH))
-        if hasattr(favicon, 'ico') and favicon.ico:
-            best_size = max(favicon.ico.sizes(), key=lambda s: s[0])
-            favicon = favicon.ico.getimage(best_size)
-        favicon = favicon.convert('RGBA')
-        favicon = favicon.resize((size, size), Image.LANCZOS)
-        _favicon_cache = favicon
-        return favicon.copy()
-    except (OSError, IOError, Exception) as e:
-        tray_logger.warning(f"Could not load favicon: {e}")
-        return None
+    with _favicon_lock:
+        if _favicon_cache is not None and _favicon_cache.size[0] == size:
+            return _favicon_cache.copy()
+        try:
+            favicon = Image.open(str(FAVICON_PATH))
+            if hasattr(favicon, 'ico') and favicon.ico:
+                best_size = max(favicon.ico.sizes(), key=lambda s: s[0])
+                favicon = favicon.ico.getimage(best_size)
+            favicon = favicon.convert('RGBA')
+            favicon = favicon.resize((size, size), Image.LANCZOS)
+            _favicon_cache = favicon
+            return favicon.copy()
+        except (OSError, IOError, Exception) as e:
+            tray_logger.warning(f"Could not load favicon: {e}")
+            return None
 
 
 def _make_icon(color: str = 'green') -> 'Image':
@@ -198,6 +200,8 @@ class TrayApp:
         self._import_error = None
         self._anim_timer = None       # animation timer for syncing dot
         self._anim_running = False     # flag to stop animation loop
+        self._stdout_lock = threading.Lock()  # protects sys.stdout swap
+        self._automation_lock = threading.Lock()  # protects self._automation
 
     def _load_automation(self):
         """
@@ -484,7 +488,8 @@ class TrayApp:
             # Re-create automation instance to pick up fresh config
             # (overhead, PTO, etc. may have changed since startup)
             from tempo_automation import TempoAutomation
-            self._automation = TempoAutomation(CONFIG_FILE)
+            with self._automation_lock:
+                self._automation = TempoAutomation(CONFIG_FILE)
 
             # Redirect stdout to daily-timesheet.log so sync output
             # is captured (pythonw.exe has no console)
@@ -495,12 +500,14 @@ class TrayApp:
             log_f.write(f"\n{'='*44}\n")
             log_f.write(f"Run: {dt.now():%Y-%m-%d %H:%M:%S} (Tray App)\n")
             log_f.write(f"{'='*44}\n")
-            old_stdout = sys.stdout
-            sys.stdout = log_f
+            with self._stdout_lock:
+                old_stdout = sys.stdout
+                sys.stdout = log_f
 
             self._automation.sync_daily()
 
-            sys.stdout = old_stdout
+            with self._stdout_lock:
+                sys.stdout = old_stdout
             log_f.close()
 
             self._set_icon_state('green', 'Tempo - Sync complete')
@@ -514,7 +521,8 @@ class TrayApp:
             tray_logger.info("Sync completed successfully")
         except Exception as e:
             # Restore stdout on error
-            sys.stdout = old_stdout
+            with self._stdout_lock:
+                sys.stdout = old_stdout
             if 'log_f' in locals() and not log_f.closed:
                 log_f.close()
             error_msg = str(e)[:200]
@@ -576,10 +584,11 @@ class TrayApp:
         vbs_file = SCRIPT_DIR / "_pto_input.vbs"
         tmp_path_escaped = str(tmp_file).replace("\\", "\\\\")
 
-        # Convert newlines to VBScript line breaks
-        vbs_prompt = prompt.replace('\n', '" & vbCrLf & "')
+        # Escape double-quotes and convert newlines for VBScript
+        vbs_prompt = prompt.replace('"', '""').replace('\n', '" & vbCrLf & "')
+        vbs_title = title.replace('"', '""')
         vbs_content = (
-            f'result = InputBox("{vbs_prompt}", "{title}")\n'
+            f'result = InputBox("{vbs_prompt}", "{vbs_title}")\n'
             'If result <> "" Then\n'
             '  Dim fso, f\n'
             '  Set fso = CreateObject("Scripting.FileSystemObject")\n'
@@ -774,12 +783,12 @@ class TrayApp:
             'Tempo - Submitting timesheet...'
         )
         tray_logger.info("Timesheet submission started from tray")
-        old_stdout = sys.stdout
 
         try:
             # Re-create automation instance for fresh config
             from tempo_automation import TempoAutomation
-            self._automation = TempoAutomation(CONFIG_FILE)
+            with self._automation_lock:
+                self._automation = TempoAutomation(CONFIG_FILE)
 
             # Redirect stdout to daily-timesheet.log
             log_path = SCRIPT_DIR / 'daily-timesheet.log'
@@ -790,11 +799,14 @@ class TrayApp:
                 f"(Tray Submit)\n"
             )
             log_f.write(f"{'='*44}\n")
-            sys.stdout = log_f
+            with self._stdout_lock:
+                old_stdout = sys.stdout
+                sys.stdout = log_f
 
             self._automation.submit_timesheet()
 
-            sys.stdout = old_stdout
+            with self._stdout_lock:
+                sys.stdout = old_stdout
             log_f.close()
 
             # Check result by looking at marker files
@@ -840,18 +852,42 @@ class TrayApp:
                     'tray menu.'
                 )
             else:
-                self._set_icon_state(
-                    'green',
-                    'Tempo - Submission check complete'
-                )
-                self._show_toast(
-                    'Submission Check',
-                    'Hours look good. Submission will '
-                    'happen on the last day of the month.'
-                )
+                # No submitted marker and no shortfall file:
+                # check if today is last day -- if so, submit
+                # failed; otherwise it's a pre-check
+                last_day_num = calendar.monthrange(
+                    today.year, today.month
+                )[1]
+                if today.day == last_day_num:
+                    self._set_icon_state(
+                        'red',
+                        'Tempo - Submission failed'
+                    )
+                    self._show_toast(
+                        'Submission Failed',
+                        'Timesheet submission failed. '
+                        'Check daily-timesheet.log for '
+                        'details.'
+                    )
+                    tray_logger.error(
+                        "Submission failed: no marker file "
+                        "created on last day"
+                    )
+                else:
+                    self._set_icon_state(
+                        'green',
+                        'Tempo - Submission check complete'
+                    )
+                    self._show_toast(
+                        'Submission Check',
+                        'Hours look good. Auto-submission '
+                        'will happen on the last day of '
+                        'the month.'
+                    )
 
         except Exception as e:
-            sys.stdout = old_stdout
+            with self._stdout_lock:
+                sys.stdout = old_stdout
             if 'log_f' in locals() and not log_f.closed:
                 log_f.close()
             error_msg = str(e)[:200]
@@ -866,16 +902,15 @@ class TrayApp:
             )
         finally:
             self._sync_running.clear()
-
-        # Revert icon after 5 seconds
-        def _revert():
-            if not self._sync_running.is_set():
-                self._set_icon_state(
-                    'green', 'Tempo Automation'
-                )
-        revert_timer = threading.Timer(5.0, _revert)
-        revert_timer.daemon = True
-        revert_timer.start()
+            # Revert icon after 5 seconds
+            def _revert():
+                if not self._sync_running.is_set():
+                    self._set_icon_state(
+                        'green', 'Tempo Automation'
+                    )
+            revert_timer = threading.Timer(5.0, _revert)
+            revert_timer.daemon = True
+            revert_timer.start()
 
     def _open_in_terminal(self, cli_arg: str):
         """
@@ -946,12 +981,10 @@ class TrayApp:
 
     def _exit_flow(self):
         """Smart exit: check hours, show dialog, then stop."""
-        from datetime import date as date_cls
-
         should_warn = False
         hours_logged = 0.0
         daily_hours = 8.0
-        today = date_cls.today().strftime('%Y-%m-%d')
+        today = _today().strftime('%Y-%m-%d')
 
         if self._automation:
             schedule_mgr = self._automation.schedule_mgr
@@ -1004,7 +1037,7 @@ class TrayApp:
                 tray_logger.info("User chose to stay running")
                 return
 
-            self._schedule_restart()
+        self._schedule_restart()
 
         tray_logger.info("Tray app exiting")
         self._stop_sync_animation()

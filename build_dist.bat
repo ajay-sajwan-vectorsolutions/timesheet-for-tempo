@@ -16,7 +16,7 @@ REM ============================================================================
 
 setlocal enabledelayedexpansion
 
-set VERSION=3.8
+set VERSION=3.9
 set PYTHON_EMBED_VER=3.12.8
 set PYTHON_EMBED_URL=https://www.python.org/ftp/python/%PYTHON_EMBED_VER%/python-%PYTHON_EMBED_VER%-embed-amd64.zip
 set PYTHON_PTH=python312._pth
