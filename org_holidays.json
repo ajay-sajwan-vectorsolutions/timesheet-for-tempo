@@ -7,51 +7,142 @@
     "US": {
       "2026": {
         "common": [
-          {"date": "2026-01-01", "name": "New Year's Day"},
-          {"date": "2026-01-19", "name": "Martin Luther King Jr. Day"},
-          {"date": "2026-02-16", "name": "Presidents' Day"},
-          {"date": "2026-05-25", "name": "Memorial Day"},
-          {"date": "2026-07-03", "name": "Independence Day (Observed)"},
-          {"date": "2026-09-07", "name": "Labor Day"},
-          {"date": "2026-11-26", "name": "Thanksgiving Day"},
-          {"date": "2026-11-27", "name": "Day after Thanksgiving"},
-          {"date": "2026-12-25", "name": "Christmas Day"}
+          {
+            "date": "2026-01-01",
+            "name": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "name": "Martin Luther King Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "name": "Presidents' Day"
+          },
+          {
+            "date": "2026-05-25",
+            "name": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "name": "Juneteenth Day"
+          },
+          {
+            "date": "2026-07-03",
+            "name": "Independence Day (Observed)"
+          },
+          {
+            "date": "2026-09-07",
+            "name": "Labor Day"
+          },
+          {
+            "date": "2026-11-11",
+            "name": "Veteran's Day (Vector Veterans)"
+          },
+          {
+            "date": "2026-11-26",
+            "name": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-11-27",
+            "name": "Day after Thanksgiving"
+          },
+          {
+            "date": "2026-12-24",
+            "name": "Holiday Break"
+          },
+          {
+            "date": "2026-12-25",
+            "name": "Christmas Day"
+          }
         ]
       }
     },
     "IN": {
       "2026": {
         "common": [
-          {"date": "2026-01-26", "name": "Republic Day"},
-          {"date": "2026-03-14", "name": "Holi"},
-          {"date": "2026-04-02", "name": "Ram Navami"},
-          {"date": "2026-04-14", "name": "Dr. Ambedkar Jayanti"},
-          {"date": "2026-08-15", "name": "Independence Day"},
-          {"date": "2026-10-02", "name": "Gandhi Jayanti"},
-          {"date": "2026-10-20", "name": "Diwali"},
-          {"date": "2026-10-21", "name": "Diwali (Day 2)"},
-          {"date": "2026-11-04", "name": "Guru Nanak Jayanti"},
-          {"date": "2026-12-25", "name": "Christmas Day"}
+          {
+            "date": "2026-01-26",
+            "name": "Republic Day"
+          },
+          {
+            "date": "2026-03-14",
+            "name": "Holi"
+          },
+          {
+            "date": "2026-04-02",
+            "name": "Ram Navami"
+          },
+          {
+            "date": "2026-04-14",
+            "name": "Dr. Ambedkar Jayanti"
+          },
+          {
+            "date": "2026-05-01",
+            "name": "May Day"
+          },
+          {
+            "date": "2026-08-15",
+            "name": "Independence Day"
+          },
+          {
+            "date": "2026-10-02",
+            "name": "Gandhi Jayanti"
+          },
+          {
+            "date": "2026-10-20",
+            "name": "Diwali"
+          },
+          {
+            "date": "2026-10-21",
+            "name": "Diwali (Day 2)"
+          },
+          {
+            "date": "2026-11-04",
+            "name": "Guru Nanak Jayanti"
+          },
+          {
+            "date": "2026-12-25",
+            "name": "Christmas Day"
+          }
         ],
         "MH": [
-          {"date": "2026-02-19", "name": "Shivaji Jayanti"},
-          {"date": "2026-03-30", "name": "Gudi Padwa"},
-          {"date": "2026-05-01", "name": "Maharashtra Day"}
+          {
+            "date": "2026-03-30",
+            "name": "Gudi Padwa"
+          }
         ],
         "TG": [
-          {"date": "2026-06-02", "name": "Telangana Formation Day"},
-          {"date": "2026-10-06", "name": "Bathukamma"}
+          {
+            "date": "2026-06-02",
+            "name": "Telangana Formation Day"
+          },
+          {
+            "date": "2026-10-06",
+            "name": "Bathukamma"
+          }
         ],
         "GJ": [
-          {"date": "2026-01-14", "name": "Uttarayan"},
-          {"date": "2026-05-01", "name": "Gujarat Day"}
+          {
+            "date": "2026-01-14",
+            "name": "Uttarayan"
+          }
         ]
       }
     }
   },
   "locations": {
-    "Pune": {"country": "IN", "state": "MH"},
-    "Hyderabad": {"country": "IN", "state": "TG"},
-    "Gandhinagar": {"country": "IN", "state": "GJ"}
+    "Pune": {
+      "country": "IN",
+      "state": "MH"
+    },
+    "Hyderabad": {
+      "country": "IN",
+      "state": "TG"
+    },
+    "Gandhinagar": {
+      "country": "IN",
+      "state": "GJ"
+    }
   }
 }
