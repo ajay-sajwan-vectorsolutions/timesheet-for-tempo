@@ -437,6 +437,38 @@
       <h4>Toast Notifications</h4>
       <p>Native notifications on Windows (winotify) and Mac (osascript). Status and alerts.</p>
     </div>
+    <div class="feature-item">
+      <h4>Tempo as Source of Truth</h4>
+      <p>4 core methods read Tempo API first with Jira fallback. Catches manual entries Jira can't see.</p>
+    </div>
+    <div class="feature-item">
+      <h4>Tray Auto-Restart</h4>
+      <p>Daily scheduler detects if the tray app was closed and relaunches it with a recovery notification.</p>
+    </div>
+    <div class="feature-item">
+      <h4>Welcome Toast</h4>
+      <p>Personalized greeting on launch with time-of-day message. "Welcome back" on auto-restart.</p>
+    </div>
+    <div class="feature-item">
+      <h4>Smart Exit Check</h4>
+      <p>Verifies today's hours are logged before closing. Warns if worklogs are missing to prevent gaps.</p>
+    </div>
+    <div class="feature-item">
+      <h4>Change Sync Time</h4>
+      <p>Adjust daily sync time from the tray Configure menu. Validates HH:MM and reschedules instantly.</p>
+    </div>
+    <div class="feature-item">
+      <h4>Monthly Reports</h4>
+      <p>--view-monthly shows per-day hours with gap detection. --fix-shortfall fills missing days interactively.</p>
+    </div>
+    <div class="feature-item">
+      <h4>Setup Wizard</h4>
+      <p>Guided first-run: role selection, token entry, location picker (100+ countries), overhead config.</p>
+    </div>
+    <div class="feature-item">
+      <h4>18 CLI Commands</h4>
+      <p>Full command suite: sync, verify, submit, PTO, schedule, overhead, monthly reports, and more.</p>
+    </div>
   </div>
 
   <!-- Who Benefits -->
@@ -715,6 +747,21 @@ MONTHLY HOURS REPORT - February 2026<br>
     <div class="roadmap-item">
       <h4>Date Range Backfill</h4>
       <p>--from / --to flags to backfill multiple days at once.</p>
+      <span class="tag">Planned</span>
+    </div>
+    <div class="roadmap-item">
+      <h4>Auto-Fill on Submit</h4>
+      <p>Auto-fill gap hours on last working day before submitting. No manual fix needed.</p>
+      <span class="tag dark">Next</span>
+    </div>
+    <div class="roadmap-item">
+      <h4>Slack Notifications</h4>
+      <p>Webhook-based Slack alerts for sync status and shortfall warnings.</p>
+      <span class="tag">Planned</span>
+    </div>
+    <div class="roadmap-item">
+      <h4>Token Validation</h4>
+      <p>Verify Jira and Tempo tokens on startup. Fail fast with clear error message.</p>
       <span class="tag">Planned</span>
     </div>
   </div>
