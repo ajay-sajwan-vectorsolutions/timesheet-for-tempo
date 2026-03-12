@@ -19,7 +19,7 @@ REM ============================================================================
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo Requesting Administrator privileges...
-    powershell -Command "Start-Process -Verb RunAs -FilePath cmd.exe -ArgumentList '/c cd /d \"%~dp0.\" && \"%~f0\"'"
+    powershell -Command "Start-Process -Verb RunAs -FilePath cmd.exe -ArgumentList ('/c cd /d \"' + '%~dp0.' + '\" && \"' + '%~f0' + '\"')"
     exit /b
 )
 

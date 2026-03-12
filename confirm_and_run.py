@@ -21,10 +21,14 @@ MUTEX_NAME = 'TempoTrayApp_SingleInstance_Mutex'
 
 def ask_user(title: str, msg: str) -> bool:
     """Show a Win32 OK/Cancel dialog. Returns True if OK clicked."""
-    result = ctypes.windll.user32.MessageBoxW(
-        0, msg, title, MB_OKCANCEL | MB_ICONQUESTION
-    )
-    return result == IDOK
+    if sys.platform == 'win32':
+        result = ctypes.windll.user32.MessageBoxW(
+            0, msg, title, MB_OKCANCEL | MB_ICONQUESTION
+        )
+        return result == IDOK
+    # Mac/Linux: print prompt and auto-confirm
+    print(f"{title}: {msg}")
+    return True
 
 
 def _ensure_tray_running():
@@ -59,7 +63,7 @@ def _ensure_tray_running():
         lock_path = SCRIPT_DIR / '.tray_app.lock'
         if lock_path.exists():
             try:
-                f = open(lock_path, 'w')
+                f = open(lock_path, 'r')
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 # Got the lock -- tray is NOT running, release and start
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
@@ -97,9 +101,15 @@ def main():
 
     # Import and run sync
     sys.path.insert(0, str(SCRIPT_DIR))
-    from tempo_automation import TempoAutomation, CONFIG_FILE
-    automation = TempoAutomation(CONFIG_FILE)
-    automation.sync_daily()
+    try:
+        from tempo_automation import TempoAutomation, CONFIG_FILE
+        automation = TempoAutomation(CONFIG_FILE)
+        automation.sync_daily()
+    except Exception as e:
+        import logging
+        logging.basicConfig(filename=str(SCRIPT_DIR / 'daily-timesheet.log'))
+        logging.error(f"Daily sync failed: {e}", exc_info=True)
+        print(f"[FAIL] Daily sync error: {e}")
 
 
 if __name__ == '__main__':

@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Tempo Timesheet Automation
 
 **Version:** 3.9 | **Status:** Production | **Updated:** February 23, 2026
@@ -156,6 +160,16 @@ build_dist.bat                                       # Menu: Full/Lite/Mac/All
 pythonw tray_app.py                                  # Run (no console)
 python tray_app.py --stop                            # Stop running instance
 python tray_app.py --register / --unregister         # Auto-start control
+
+# Testing
+pip install -r requirements-test.txt                 # Install test deps (once)
+pytest tests/ -v --tb=short                          # Run all 385 tests
+pytest tests/unit/test_schedule_manager.py            # Run one test file
+pytest tests/unit/test_schedule_manager.py::TestIsWorkingDay::test_normal_weekday  # Single test
+pytest tests/ -k "test_daily_sync"                   # Run tests matching name
+pytest tests/ -m integration                         # Run only integration tests
+pytest tests/ -m "not slow"                          # Skip slow tests
+pytest tests/ --cov=tempo_automation                 # Coverage report
 ```
 
 ---
@@ -186,13 +200,13 @@ python tray_app.py --register / --unregister         # Auto-start control
 | v3.1 | Feb 18 | Tray app, favicon, smart exit, confirm dialog |
 | v3.2 | Feb 19 | Hardcoded URLs, install.bat rewrite, --stop, welcome toast |
 | v3.3 | Feb 19 | Doc reorganization, .claude/rules, .claude/skills |
-| v3.9 | Feb 23 | Early timesheet submission: bypasses 7-day window when all remaining days are non-working (PTO/holidays/weekends), tray Submit menu visible mid-month when eligible |
-| v3.8.1 | Feb 23 | Tray UX: cmd /k outer quotes fix, menu auto-refresh after terminal closes, view_monthly saves shortfall file, quiet console for user-facing commands, welcome toast redesign (Welcome {name}! title, time-of-day greeting heading, Welcome back for restart) |
-| v3.8 | Feb 23 | Distribution zips: build_dist.bat (3 zip types with timestamp: Win+Python, Win Lite, Mac), install.bat Python auto-detect, tray menu update_menu() fix for dynamic visibility |
-| v3.7 | Feb 22 | Tempo as source of truth: _detect_monthly_gaps, _check_day_hours, _sync_pto_overhead, _exit_flow now read Tempo API (fixes 128h showing as 16h), Jira fallback for PO/Sales |
-| v3.6 | Feb 22 | Monthly shortfall detection: per-day gap analysis, blocks submission on shortfall, --view-monthly/--fix-shortfall CLI, interactive fix with day selection, tray menu restructure (Configure/Log and Reports submenus), dynamic Submit Timesheet and Fix Shortfall menu items |
-| v3.5 | Feb 22 | Cross-platform Mac support: tray_app.py (osascript dialogs/toasts, LaunchAgent autostart, fcntl mutex), install.sh rewrite (7 steps, overhead, weekly verify cron, BSD date), Mac toast in tempo_automation.py, winotify platform marker |
-| v3.4 | Feb 20 | Overhead story support: 5 cases (default daily 2h overhead, no active tickets, manual overhead, PTO/holidays, planning week), --select-overhead/--show-overhead CLI, hybrid Jira+Tempo detection, JiraClient account_id, TempoClient account_id parameter, holidays log overhead same as PTO, email default disabled, configurable daily_overhead_hours |
+| v3.4 | Feb 20 | Overhead story support (5 cases), hybrid Jira+Tempo detection, email default disabled |
+| v3.5 | Feb 22 | Cross-platform Mac support: tray_app.py, install.sh, osascript, LaunchAgent, fcntl |
+| v3.6 | Feb 22 | Monthly shortfall detection, --view-monthly/--fix-shortfall, tray menu restructure |
+| v3.7 | Feb 22 | Tempo as source of truth for hours (fixes 128h showing as 16h), Jira fallback |
+| v3.8 | Feb 23 | Distribution zips (build_dist.bat), install.bat Python auto-detect |
+| v3.8.1 | Feb 23 | Tray UX: cmd /k fix, menu auto-refresh, quiet console, welcome toast redesign |
+| v3.9 | Feb 23 | Early timesheet submission when all remaining days are non-working |
 
 ---
 

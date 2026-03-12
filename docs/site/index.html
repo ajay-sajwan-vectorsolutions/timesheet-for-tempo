@@ -183,7 +183,7 @@
 <section id="features">
   <div class="section-label">Capabilities</div>
   <h2 class="section-title">Everything You Need. Nothing You Don't.</h2>
-  <p class="section-subtitle">Production-ready with 4,253 lines of tested Python code and 385 automated tests.</p>
+  <p class="section-subtitle">Production-ready with 4,253 lines of tested Python code, 385 automated tests, and 18 CLI commands.</p>
 
   <div class="card-grid">
     <div class="card">
@@ -245,6 +245,46 @@
       <div class="card-icon red">&#x1F512;</div>
       <h3>DPAPI Encryption</h3>
       <p>API tokens encrypted with Windows DPAPI (tied to user account). HTTPS for all API calls. No cloud storage.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#x1F504;</div>
+      <h3>Idempotent Sync</h3>
+      <p>Safe to re-run anytime. Deletes previous entries then creates fresh worklogs. No duplicates, no double-counting.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon purple">&#x1F4CA;</div>
+      <h3>Tempo as Source of Truth</h3>
+      <p>4 core methods read Tempo API first with Jira fallback. Catches manual Tempo entries that Jira can't see.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon green">&#x1F44B;</div>
+      <h3>Welcome Toast</h3>
+      <p>Personalized "Welcome, {name}!" with time-of-day greeting on launch. "Welcome back" toast when auto-restarted.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon orange">&#x1F504;</div>
+      <h3>Tray Auto-Restart</h3>
+      <p>Daily scheduler detects if the tray app was closed and relaunches it automatically with a recovery notification.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon cyan">&#x23F0;</div>
+      <h3>Change Sync Time</h3>
+      <p>Adjust your daily sync time from the tray Configure menu. Input dialog validates HH:MM and reschedules instantly.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon red">&#x1F6AA;</div>
+      <h3>Smart Exit Check</h3>
+      <p>Verifies today's hours are logged before closing the tray app. Warns if worklogs are missing to prevent gaps.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#x1F5C2;</div>
+      <h3>Monthly Reports</h3>
+      <p>--view-monthly shows per-day hours with gap detection. --fix-shortfall interactively fills missing days.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon green">&#x2699;</div>
+      <h3>Setup Wizard</h3>
+      <p>Guided first-run setup: role selection, token entry, location picker (100+ countries), overhead configuration.</p>
     </div>
   </div>
 </section>
@@ -483,6 +523,7 @@
       <button class="tab-btn" onclick="showTab('tab-schedule')">Schedule Calendar</button>
       <button class="tab-btn" onclick="showTab('tab-monthly')">Monthly Report</button>
       <button class="tab-btn" onclick="showTab('tab-tray')">Tray Menu</button>
+      <button class="tab-btn" onclick="showTab('tab-cli-commands')">All Commands</button>
     </div>
 
     <div id="tab-cli" class="tab-content active">
@@ -599,6 +640,39 @@ MONTHLY HOURS REPORT - February 2026<br>
       </div>
 
       <p class="text-muted mt-4">Tray icon colors: <span style="color: var(--accent-green);">Green</span> = idle, <span style="color: var(--accent-orange);">Orange</span> = pending/syncing, <span style="color: var(--accent-red);">Red</span> = error</p>
+    </div>
+
+    <div id="tab-cli-commands" class="tab-content">
+      <h3 class="mb-2">18 CLI Commands</h3>
+      <p class="text-muted mb-2">Full command reference: <code>python tempo_automation.py [option]</code></p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="code-block" style="margin: 0;">
+          <span class="comment"># Core operations</span><br>
+          <span class="keyword">--date</span> 2026-02-15 &nbsp;&nbsp;<span class="comment"># Sync specific date</span><br>
+          <span class="keyword">--verify-week</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Weekly verify &amp; backfill</span><br>
+          <span class="keyword">--submit</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Monthly submit</span><br>
+          <span class="keyword">--setup</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Setup wizard</span><br>
+          <span class="keyword">--manage</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Interactive menu</span><br>
+          <br>
+          <span class="comment"># Schedule</span><br>
+          <span class="keyword">--show-schedule</span> &nbsp;&nbsp;&nbsp;<span class="comment"># Calendar view</span><br>
+          <span class="keyword">--add-pto</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Add PTO dates</span><br>
+          <span class="keyword">--remove-pto</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Remove PTO dates</span>
+        </div>
+        <div class="code-block" style="margin: 0;">
+          <span class="comment"># Monthly reports</span><br>
+          <span class="keyword">--view-monthly</span> &nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Hours per day report</span><br>
+          <span class="keyword">--fix-shortfall</span> &nbsp;&nbsp;&nbsp;<span class="comment"># Interactive gap fix</span><br>
+          <br>
+          <span class="comment"># Overhead</span><br>
+          <span class="keyword">--select-overhead</span> &nbsp;<span class="comment"># Pick overhead stories</span><br>
+          <span class="keyword">--show-overhead</span> &nbsp;&nbsp;&nbsp;<span class="comment"># Display overhead config</span><br>
+          <br>
+          <span class="comment"># Utility</span><br>
+          <span class="keyword">--logfile</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Dual output to file</span><br>
+          <span class="keyword">--quiet</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment"># Suppress console logs</span>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -803,6 +877,24 @@ python tempo_automation.py --submit
       <div class="card-icon red">&#x1F4C5;</div>
       <h3>Date Range Backfill</h3>
       <p>--from / --to flags to backfill multiple days at once after vacation.</p>
+      <span class="badge badge-blue">Planned</span>
+    </div>
+    <div class="card">
+      <div class="card-icon green">&#x1F4E5;</div>
+      <h3>Auto-Fill on Submit</h3>
+      <p>On last working day, auto-fill gap hours before submitting. No manual --fix-shortfall needed.</p>
+      <span class="badge badge-purple">Next</span>
+    </div>
+    <div class="card">
+      <div class="card-icon cyan">&#x1F4AC;</div>
+      <h3>Slack Notifications</h3>
+      <p>Webhook-based Slack alerts for sync status and shortfall warnings. Simpler than SMTP email.</p>
+      <span class="badge badge-blue">Planned</span>
+    </div>
+    <div class="card">
+      <div class="card-icon orange">&#x1F511;</div>
+      <h3>Token Validation</h3>
+      <p>Quick API check on startup to verify Jira and Tempo tokens are valid. Fail fast with clear error.</p>
       <span class="badge badge-blue">Planned</span>
     </div>
   </div>
