@@ -11,7 +11,7 @@
 <body>
 
 <!-- ============================================================
-     Navigation
+     Navigation (7 links, reduced from 10)
      ============================================================ -->
 <nav>
   <div class="nav-inner">
@@ -20,14 +20,11 @@
       Tempo Automation
     </a>
     <div class="nav-links">
-      <a href="#problem">Problem</a>
-      <a href="#solution">Solution</a>
+      <a href="#problem">Problem &amp; Solution</a>
       <a href="#features">Features</a>
-      <a href="#roles">Roles</a>
       <a href="#business">Business Case</a>
       <a href="#timeline">Timeline</a>
-      <a href="#screenshots">Screenshots</a>
-      <a href="#quickstart">Quick Start</a>
+      <a href="#screenshots">Usage</a>
       <a href="#architecture">Architecture</a>
       <a href="#roadmap">Roadmap</a>
     </div>
@@ -35,7 +32,7 @@
 </nav>
 
 <!-- ============================================================
-     1. Hero
+     1. Hero -- NO CHANGE
      ============================================================ -->
 <section class="hero" id="hero">
   <h1 class="hero-title">Tempo Timesheet Automation</h1>
@@ -70,269 +67,306 @@
 </section>
 
 <!-- ============================================================
-     2. Problem Statement
+     2. Problem + Solution -- MERGED INTO TABS
      ============================================================ -->
 <section id="problem">
-  <div class="section-label">The Problem</div>
+  <div class="section-label">Problem &amp; Solution</div>
   <h2 class="section-title">$1.2M Wasted Annually on Manual Timesheets</h2>
-  <p class="section-subtitle">200 employees spend 15-20 minutes every day on manual timesheet entry. 38% of submissions are late. Managers waste 2+ hours per week on follow-ups.</p>
+  <p class="section-subtitle">200 employees spend 15-20 minutes every day on manual timesheet entry. Here's the problem and the fix.</p>
 
-  <div class="comparison">
-    <div class="comparison-card before">
-      <h3><span class="before-label">BEFORE</span> - Manual Entry</h3>
-      <div class="comparison-item">
-        <span class="label">Daily effort per person</span>
-        <span class="value">15-20 min</span>
-      </div>
-      <div class="comparison-item">
-        <span class="label">On-time submissions</span>
-        <span class="value">62%</span>
-      </div>
-      <div class="comparison-item">
-        <span class="label">Manager follow-up/week</span>
-        <span class="value">2 hours</span>
-      </div>
-      <div class="comparison-item">
-        <span class="label">Employee frustration</span>
-        <span class="value">6.8 / 10</span>
-      </div>
-      <div class="comparison-item">
-        <span class="label">Accuracy</span>
-        <span class="value">Guesswork from memory</span>
-      </div>
-      <div class="comparison-item">
-        <span class="label">Annual cost</span>
-        <span class="value" style="color: var(--accent-red);">$1,215,260</span>
+  <span id="solution"></span>
+
+  <div class="tab-container">
+    <div class="tab-buttons">
+      <button class="tab-btn active" onclick="showTab('tab-prob-problem')">The Problem</button>
+      <button class="tab-btn" onclick="showTab('tab-prob-solution')">How It Works</button>
+    </div>
+
+    <div class="tab-panels">
+    <div id="tab-prob-problem" class="tab-content active">
+      <div class="comparison">
+        <div class="comparison-card before">
+          <h3><span class="before-label">BEFORE</span> - Manual Entry</h3>
+          <div class="comparison-item">
+            <span class="label">Daily effort per person</span>
+            <span class="value">15-20 min</span>
+          </div>
+          <div class="comparison-item">
+            <span class="label">On-time submissions</span>
+            <span class="value">62%</span>
+          </div>
+          <div class="comparison-item">
+            <span class="label">Manager follow-up/week</span>
+            <span class="value">2 hours</span>
+          </div>
+          <div class="comparison-item">
+            <span class="label">Employee frustration</span>
+            <span class="value">6.8 / 10</span>
+          </div>
+          <div class="comparison-item">
+            <span class="label">Accuracy</span>
+            <span class="value">Guesswork from memory</span>
+          </div>
+          <div class="comparison-item">
+            <span class="label">Annual cost</span>
+            <span class="value" style="color: var(--accent-red);">$1,215,260</span>
+          </div>
+        </div>
+
+        <div class="comparison-card after">
+          <h3><span class="after-label">AFTER</span> - Automated</h3>
+          <div class="comparison-item">
+            <span class="label">Daily effort per person</span>
+            <span class="value" style="color: var(--accent-green);">&lt; 2 min</span>
+          </div>
+          <div class="comparison-item">
+            <span class="label">On-time submissions</span>
+            <span class="value" style="color: var(--accent-green);">98%</span>
+          </div>
+          <div class="comparison-item">
+            <span class="label">Manager follow-up/week</span>
+            <span class="value" style="color: var(--accent-green);">&lt; 15 min</span>
+          </div>
+          <div class="comparison-item">
+            <span class="label">Employee frustration</span>
+            <span class="value" style="color: var(--accent-green);">2.0 / 10</span>
+          </div>
+          <div class="comparison-item">
+            <span class="label">Accuracy</span>
+            <span class="value" style="color: var(--accent-green);">Automatic from Jira</span>
+          </div>
+          <div class="comparison-item">
+            <span class="label">Annual cost</span>
+            <span class="value" style="color: var(--accent-green);">$2,000 maintenance</span>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="comparison-card after">
-      <h3><span class="after-label">AFTER</span> - Automated</h3>
-      <div class="comparison-item">
-        <span class="label">Daily effort per person</span>
-        <span class="value" style="color: var(--accent-green);">&lt; 2 min</span>
+    <div id="tab-prob-solution" class="tab-content">
+      <p class="section-subtitle" style="margin-bottom: 2rem;">A Python script runs on each developer's machine. No servers. No hosting. No subscriptions.</p>
+
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="flow-step-number">1</div>
+          <h3>Read Jira Tickets</h3>
+          <p>Script queries your active tickets (IN DEVELOPMENT / CODE REVIEW) via Jira REST API</p>
+        </div>
+        <div class="flow-arrow">&#x2192;</div>
+        <div class="flow-step">
+          <div class="flow-step-number">2</div>
+          <h3>Distribute Hours</h3>
+          <p>Splits your 8-hour day equally across tickets with smart descriptions from ticket content</p>
+        </div>
+        <div class="flow-arrow">&#x2192;</div>
+        <div class="flow-step">
+          <div class="flow-step-number">3</div>
+          <h3>Submit to Tempo</h3>
+          <p>Creates Jira worklogs (Tempo auto-syncs). At month-end, submits timesheet for approval.</p>
+        </div>
       </div>
-      <div class="comparison-item">
-        <span class="label">On-time submissions</span>
-        <span class="value" style="color: var(--accent-green);">98%</span>
+
+      <div class="text-center mt-4">
+        <div class="code-block" style="display: inline-block; text-align: left; max-width: 600px;">
+          <span class="comment"># That's it. Run once and forget.</span><br>
+          <span class="keyword">$</span> python tempo_automation.py<br><br>
+          <span class="success">[OK]</span> Found 3 active tickets<br>
+          <span class="success">[OK]</span> Logged 2.67h on TS-101<br>
+          <span class="success">[OK]</span> Logged 2.67h on TS-102<br>
+          <span class="success">[OK]</span> Logged 2.66h on TS-103<br>
+          <span class="success">[OK]</span> <span class="info">SYNC COMPLETE</span> - 8.00 / 8 hours
+        </div>
       </div>
-      <div class="comparison-item">
-        <span class="label">Manager follow-up/week</span>
-        <span class="value" style="color: var(--accent-green);">&lt; 15 min</span>
-      </div>
-      <div class="comparison-item">
-        <span class="label">Employee frustration</span>
-        <span class="value" style="color: var(--accent-green);">2.0 / 10</span>
-      </div>
-      <div class="comparison-item">
-        <span class="label">Accuracy</span>
-        <span class="value" style="color: var(--accent-green);">Automatic from Jira</span>
-      </div>
-      <div class="comparison-item">
-        <span class="label">Annual cost</span>
-        <span class="value" style="color: var(--accent-green);">$2,000 maintenance</span>
-      </div>
+    </div>
     </div>
   </div>
 </section>
 
 <!-- ============================================================
-     3. Solution Overview
-     ============================================================ -->
-<section id="solution">
-  <div class="section-label">How It Works</div>
-  <h2 class="section-title">Three Steps. Fully Automated.</h2>
-  <p class="section-subtitle">A Python script runs on each developer's machine. No servers. No hosting. No subscriptions.</p>
-
-  <div class="flow-steps">
-    <div class="flow-step">
-      <div class="flow-step-number">1</div>
-      <h3>Read Jira Tickets</h3>
-      <p>Script queries your active tickets (IN DEVELOPMENT / CODE REVIEW) via Jira REST API</p>
-    </div>
-    <div class="flow-arrow">&#x2192;</div>
-    <div class="flow-step">
-      <div class="flow-step-number">2</div>
-      <h3>Distribute Hours</h3>
-      <p>Splits your 8-hour day equally across tickets with smart descriptions from ticket content</p>
-    </div>
-    <div class="flow-arrow">&#x2192;</div>
-    <div class="flow-step">
-      <div class="flow-step-number">3</div>
-      <h3>Submit to Tempo</h3>
-      <p>Creates Jira worklogs (Tempo auto-syncs). At month-end, submits timesheet for approval.</p>
-    </div>
-  </div>
-
-  <div class="text-center mt-4">
-    <div class="code-block" style="display: inline-block; text-align: left; max-width: 600px;">
-      <span class="comment"># That's it. Run once and forget.</span><br>
-      <span class="keyword">$</span> python tempo_automation.py<br><br>
-      <span class="success">[OK]</span> Found 3 active tickets<br>
-      <span class="success">[OK]</span> Logged 2.67h on TS-101<br>
-      <span class="success">[OK]</span> Logged 2.67h on TS-102<br>
-      <span class="success">[OK]</span> Logged 2.66h on TS-103<br>
-      <span class="success">[OK]</span> <span class="info">SYNC COMPLETE</span> - 8.00 / 8 hours
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================
-     4. Features
+     3. Features + Roles -- TABBED GROUPS (5 tabs)
      ============================================================ -->
 <section id="features">
   <div class="section-label">Capabilities</div>
   <h2 class="section-title">Everything You Need. Nothing You Don't.</h2>
   <p class="section-subtitle">Production-ready with 4,253 lines of tested Python code, 385 automated tests, and 18 CLI commands.</p>
 
-  <div class="card-grid">
-    <div class="card">
-      <div class="card-icon">&#x1F504;</div>
-      <h3>Daily Auto-Sync</h3>
-      <p>Distributes hours equally across active Jira tickets. Runs at your configured time (default 6 PM).</p>
+  <span id="roles"></span>
+
+  <div class="tab-container">
+    <div class="tab-buttons">
+      <button class="tab-btn active" onclick="showTab('tab-feat-core')">Core Automation</button>
+      <button class="tab-btn" onclick="showTab('tab-feat-intel')">Intelligence</button>
+      <button class="tab-btn" onclick="showTab('tab-feat-desktop')">Desktop App</button>
+      <button class="tab-btn" onclick="showTab('tab-feat-platform')">Platform &amp; Deploy</button>
+      <button class="tab-btn" onclick="showTab('tab-feat-roles')">Roles</button>
     </div>
-    <div class="card">
-      <div class="card-icon green">&#x2705;</div>
-      <h3>Weekly Verification</h3>
-      <p>Friday check catches missed days. Backfills using historical ticket data via Jira's "status WAS" queries.</p>
+
+    <div class="tab-panels">
+    <!-- Tab: Core Automation -->
+    <div id="tab-feat-core" class="tab-content active">
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-icon">&#x1F504;</div>
+          <h3>Daily Auto-Sync</h3>
+          <p>Distributes hours equally across active Jira tickets. Runs at your configured time (default 6 PM).</p>
+        </div>
+        <div class="card">
+          <div class="card-icon green">&#x2705;</div>
+          <h3>Weekly Verification</h3>
+          <p>Friday check catches missed days. Backfills using historical ticket data via Jira's "status WAS" queries.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon purple">&#x1F4E4;</div>
+          <h3>Monthly Submission</h3>
+          <p>Verifies total hours and submits timesheet for approval. Blocks on shortfalls. Early submission when remaining days are non-working.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon orange">&#x1F9EE;</div>
+          <h3>Smart Distribution</h3>
+          <p>Integer division + remainder on last ticket = exact total every time. Generates descriptions from ticket content.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">&#x1F504;</div>
+          <h3>Idempotent Sync</h3>
+          <p>Safe to re-run anytime. Deletes previous entries then creates fresh worklogs. No duplicates, no double-counting.</p>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <div class="card-icon purple">&#x1F4E4;</div>
-      <h3>Monthly Submission</h3>
-      <p>Verifies total hours and submits timesheet for approval. Blocks on shortfalls. Early submission when remaining days are non-working.</p>
+
+    <!-- Tab: Intelligence -->
+    <div id="tab-feat-intel" class="tab-content">
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-icon cyan">&#x1F3D7;</div>
+          <h3>Overhead Stories</h3>
+          <p>5 cases covered: daily overhead, no tickets, manual entries, PTO/holidays, PI planning week.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon green">&#x1F4C5;</div>
+          <h3>Schedule Guard</h3>
+          <p>Skips weekends, org holidays (auto-fetched), national holidays (100+ countries), and PTO days. Override system for comp days.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon purple">&#x1F4CA;</div>
+          <h3>Tempo as Source of Truth</h3>
+          <p>4 core methods read Tempo API first with Jira fallback. Catches manual Tempo entries that Jira can't see.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon purple">&#x26A1;</div>
+          <h3>Early Submission</h3>
+          <p>Submits timesheet mid-month when all remaining days are non-working. No more waiting for the last day.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">&#x1F5C2;</div>
+          <h3>Monthly Reports</h3>
+          <p>--view-monthly shows per-day hours with gap detection. --fix-shortfall interactively fills missing days.</p>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <div class="card-icon orange">&#x1F9EE;</div>
-      <h3>Smart Distribution</h3>
-      <p>Integer division + remainder on last ticket = exact total every time. Generates descriptions from ticket content.</p>
+
+    <!-- Tab: Desktop App -->
+    <div id="tab-feat-desktop" class="tab-content">
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-icon">&#x1F5A5;</div>
+          <h3>System Tray App</h3>
+          <p>Persistent tray icon with color status, one-click sync, PTO dialog, toast notifications, and smart exit check.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon orange">&#x1F514;</div>
+          <h3>Toast Notifications</h3>
+          <p>Native notifications on Windows (winotify) and Mac (osascript). Welcome greeting, sync status, shortfall alerts.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon green">&#x1F44B;</div>
+          <h3>Welcome Toast</h3>
+          <p>Personalized "Welcome, {name}!" with time-of-day greeting on launch. "Welcome back" toast when auto-restarted.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon orange">&#x1F504;</div>
+          <h3>Tray Auto-Restart</h3>
+          <p>Daily scheduler detects if the tray app was closed and relaunches it automatically with a recovery notification.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon cyan">&#x23F0;</div>
+          <h3>Change Sync Time</h3>
+          <p>Adjust your daily sync time from the tray Configure menu. Input dialog validates HH:MM and reschedules instantly.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon red">&#x1F6AA;</div>
+          <h3>Smart Exit Check</h3>
+          <p>Verifies today's hours are logged before closing the tray app. Warns if worklogs are missing to prevent gaps.</p>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <div class="card-icon cyan">&#x1F3D7;</div>
-      <h3>Overhead Stories</h3>
-      <p>5 cases covered: daily overhead, no tickets, manual entries, PTO/holidays, PI planning week.</p>
+
+    <!-- Tab: Platform & Deploy -->
+    <div id="tab-feat-platform" class="tab-content">
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-icon cyan">&#x1F310;</div>
+          <h3>Cross-Platform</h3>
+          <p>Full support for Windows 10/11 and macOS. Platform-specific installers, cron jobs, and native UI elements.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon green">&#x1F4E6;</div>
+          <h3>Distribution Zips</h3>
+          <p>Three zip types: Windows Full (embedded Python), Windows Lite, and Mac. One-click install for team members.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon red">&#x1F512;</div>
+          <h3>DPAPI Encryption</h3>
+          <p>API tokens encrypted with Windows DPAPI (tied to user account). HTTPS for all API calls. No cloud storage.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon green">&#x2699;</div>
+          <h3>Setup Wizard</h3>
+          <p>Guided first-run setup: role selection, token entry, location picker (100+ countries), overhead configuration.</p>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <div class="card-icon green">&#x1F4C5;</div>
-      <h3>Schedule Guard</h3>
-      <p>Skips weekends, org holidays (auto-fetched), national holidays (100+ countries), and PTO days. Override system for comp days.</p>
+
+    <!-- Tab: Roles -->
+    <div id="tab-feat-roles" class="tab-content">
+      <div class="card-grid card-grid-3">
+        <div class="card">
+          <div class="card-icon">&#x1F4BB;</div>
+          <h3>Developer</h3>
+          <p class="mb-2">Hours distributed across active Jira tickets (IN DEVELOPMENT / CODE REVIEW). Smart descriptions generated from ticket content.</p>
+          <table class="data-table">
+            <tr><td class="text-muted">Tokens needed</td><td>Jira + Tempo</td></tr>
+            <tr><td class="text-muted">Time saved/day</td><td style="color: var(--accent-green);">15-20 min</td></tr>
+            <tr><td class="text-muted">Overhead</td><td>2h/day default</td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-icon green">&#x1F4CB;</div>
+          <h3>Product Owner</h3>
+          <p class="mb-2">Hours logged via configured manual activities in Tempo. No Jira token needed.</p>
+          <table class="data-table">
+            <tr><td class="text-muted">Tokens needed</td><td>Tempo only</td></tr>
+            <tr><td class="text-muted">Time saved/day</td><td style="color: var(--accent-green);">10-15 min</td></tr>
+            <tr><td class="text-muted">Activities</td><td>From config</td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-icon orange">&#x1F4C8;</div>
+          <h3>Sales</h3>
+          <p class="mb-2">Pre-configured activities synced via Tempo API. Simplest setup.</p>
+          <table class="data-table">
+            <tr><td class="text-muted">Tokens needed</td><td>Tempo only</td></tr>
+            <tr><td class="text-muted">Time saved/day</td><td style="color: var(--accent-green);">10-15 min</td></tr>
+            <tr><td class="text-muted">Activities</td><td>From config</td></tr>
+          </table>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <div class="card-icon">&#x1F5A5;</div>
-      <h3>System Tray App</h3>
-      <p>Persistent tray icon with color status, one-click sync, PTO dialog, toast notifications, and smart exit check.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon orange">&#x1F514;</div>
-      <h3>Toast Notifications</h3>
-      <p>Native notifications on Windows (winotify) and Mac (osascript). Welcome greeting, sync status, shortfall alerts.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon purple">&#x26A1;</div>
-      <h3>Early Submission</h3>
-      <p>Submits timesheet mid-month when all remaining days are non-working. No more waiting for the last day.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon cyan">&#x1F310;</div>
-      <h3>Cross-Platform</h3>
-      <p>Full support for Windows 10/11 and macOS. Platform-specific installers, cron jobs, and native UI elements.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon green">&#x1F4E6;</div>
-      <h3>Distribution Zips</h3>
-      <p>Three zip types: Windows Full (embedded Python), Windows Lite, and Mac. One-click install for team members.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon red">&#x1F512;</div>
-      <h3>DPAPI Encryption</h3>
-      <p>API tokens encrypted with Windows DPAPI (tied to user account). HTTPS for all API calls. No cloud storage.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon">&#x1F504;</div>
-      <h3>Idempotent Sync</h3>
-      <p>Safe to re-run anytime. Deletes previous entries then creates fresh worklogs. No duplicates, no double-counting.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon purple">&#x1F4CA;</div>
-      <h3>Tempo as Source of Truth</h3>
-      <p>4 core methods read Tempo API first with Jira fallback. Catches manual Tempo entries that Jira can't see.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon green">&#x1F44B;</div>
-      <h3>Welcome Toast</h3>
-      <p>Personalized "Welcome, {name}!" with time-of-day greeting on launch. "Welcome back" toast when auto-restarted.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon orange">&#x1F504;</div>
-      <h3>Tray Auto-Restart</h3>
-      <p>Daily scheduler detects if the tray app was closed and relaunches it automatically with a recovery notification.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon cyan">&#x23F0;</div>
-      <h3>Change Sync Time</h3>
-      <p>Adjust your daily sync time from the tray Configure menu. Input dialog validates HH:MM and reschedules instantly.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon red">&#x1F6AA;</div>
-      <h3>Smart Exit Check</h3>
-      <p>Verifies today's hours are logged before closing the tray app. Warns if worklogs are missing to prevent gaps.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon">&#x1F5C2;</div>
-      <h3>Monthly Reports</h3>
-      <p>--view-monthly shows per-day hours with gap detection. --fix-shortfall interactively fills missing days.</p>
-    </div>
-    <div class="card">
-      <div class="card-icon green">&#x2699;</div>
-      <h3>Setup Wizard</h3>
-      <p>Guided first-run setup: role selection, token entry, location picker (100+ countries), overhead configuration.</p>
     </div>
   </div>
 </section>
 
 <!-- ============================================================
-     5. Who Benefits
-     ============================================================ -->
-<section id="roles">
-  <div class="section-label">Who Benefits</div>
-  <h2 class="section-title">Three Roles. One Solution.</h2>
-  <p class="section-subtitle">Different workflows for different roles, all fully automated.</p>
-
-  <div class="card-grid card-grid-3">
-    <div class="card">
-      <div class="card-icon">&#x1F4BB;</div>
-      <h3>Developer</h3>
-      <p class="mb-2">Hours distributed across active Jira tickets (IN DEVELOPMENT / CODE REVIEW). Smart descriptions generated from ticket content.</p>
-      <table class="data-table">
-        <tr><td class="text-muted">Tokens needed</td><td>Jira + Tempo</td></tr>
-        <tr><td class="text-muted">Time saved/day</td><td style="color: var(--accent-green);">15-20 min</td></tr>
-        <tr><td class="text-muted">Overhead</td><td>2h/day default</td></tr>
-      </table>
-    </div>
-    <div class="card">
-      <div class="card-icon green">&#x1F4CB;</div>
-      <h3>Product Owner</h3>
-      <p class="mb-2">Hours logged via configured manual activities in Tempo. No Jira token needed.</p>
-      <table class="data-table">
-        <tr><td class="text-muted">Tokens needed</td><td>Tempo only</td></tr>
-        <tr><td class="text-muted">Time saved/day</td><td style="color: var(--accent-green);">10-15 min</td></tr>
-        <tr><td class="text-muted">Activities</td><td>From config</td></tr>
-      </table>
-    </div>
-    <div class="card">
-      <div class="card-icon orange">&#x1F4C8;</div>
-      <h3>Sales</h3>
-      <p class="mb-2">Pre-configured activities synced via Tempo API. Simplest setup.</p>
-      <table class="data-table">
-        <tr><td class="text-muted">Tokens needed</td><td>Tempo only</td></tr>
-        <tr><td class="text-muted">Time saved/day</td><td style="color: var(--accent-green);">10-15 min</td></tr>
-        <tr><td class="text-muted">Activities</td><td>From config</td></tr>
-      </table>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================
-     6. Business Case
+     4. Business Case -- COLLAPSIBLE DETAILS
      ============================================================ -->
 <section id="business">
   <div class="section-label">Business Case</div>
@@ -357,80 +391,84 @@
     </div>
   </div>
 
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Role</th>
-        <th>Headcount</th>
-        <th>Time Lost/Month</th>
-        <th>Annual Cost</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>Developers</td>
-        <td>150</td>
-        <td>825 hrs</td>
-        <td>$693,000</td>
-      </tr>
-      <tr>
-        <td>Product Owners</td>
-        <td>30</td>
-        <td>220 hrs</td>
-        <td>$211,200</td>
-      </tr>
-      <tr>
-        <td>Sales Team</td>
-        <td>20</td>
-        <td>147 hrs</td>
-        <td>$114,660</td>
-      </tr>
-      <tr>
-        <td>Manager Follow-ups</td>
-        <td>15</td>
-        <td>130 hrs</td>
-        <td>$140,400</td>
-      </tr>
-      <tr class="highlight-row">
-        <td>Total</td>
-        <td>215</td>
-        <td>1,322 hrs</td>
-        <td>$1,159,260</td>
-      </tr>
-    </tbody>
-  </table>
+  <button class="toggle-btn" onclick="toggleSection('biz-detail')">Show detailed breakdown</button>
 
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 2rem;">
-    <div class="card" style="text-align: center;">
-      <div class="big-number">95%</div>
-      <p>Reduction in manager follow-up time</p>
-    </div>
-    <div class="card" style="text-align: center;">
-      <div class="big-number">98%</div>
-      <p>On-time submission rate (was 62%)</p>
-    </div>
-    <div class="card" style="text-align: center;">
-      <div class="big-number">$0</div>
-      <p>Infrastructure and hosting cost</p>
-    </div>
-    <div class="card" style="text-align: center;">
-      <div class="big-number">$6K</div>
-      <p>Total 5-year investment</p>
+  <div id="biz-detail" class="collapsible">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Role</th>
+          <th>Headcount</th>
+          <th>Time Lost/Month</th>
+          <th>Annual Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Developers</td>
+          <td>150</td>
+          <td>825 hrs</td>
+          <td>$693,000</td>
+        </tr>
+        <tr>
+          <td>Product Owners</td>
+          <td>30</td>
+          <td>220 hrs</td>
+          <td>$211,200</td>
+        </tr>
+        <tr>
+          <td>Sales Team</td>
+          <td>20</td>
+          <td>147 hrs</td>
+          <td>$114,660</td>
+        </tr>
+        <tr>
+          <td>Manager Follow-ups</td>
+          <td>15</td>
+          <td>130 hrs</td>
+          <td>$140,400</td>
+        </tr>
+        <tr class="highlight-row">
+          <td>Total</td>
+          <td>215</td>
+          <td>1,322 hrs</td>
+          <td>$1,159,260</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 2rem;">
+      <div class="card" style="text-align: center;">
+        <div class="big-number">95%</div>
+        <p>Reduction in manager follow-up time</p>
+      </div>
+      <div class="card" style="text-align: center;">
+        <div class="big-number">98%</div>
+        <p>On-time submission rate (was 62%)</p>
+      </div>
+      <div class="card" style="text-align: center;">
+        <div class="big-number">$0</div>
+        <p>Infrastructure and hosting cost</p>
+      </div>
+      <div class="card" style="text-align: center;">
+        <div class="big-number">$6K</div>
+        <p>Total 5-year investment</p>
+      </div>
     </div>
   </div>
 </section>
 
 <!-- ============================================================
-     7. Development Timeline
+     5. Development Timeline -- COMPACT PADDING
      ============================================================ -->
-<section id="timeline">
+<section id="timeline" class="compact">
   <div class="section-label">Development Activity</div>
   <h2 class="section-title">21 Days from Idea to Production</h2>
   <p class="section-subtitle">Rapid iteration from February 3 to February 23, 2026. 10 releases in 3 weeks.</p>
 
   <div style="display: flex; gap: 3rem; flex-wrap: wrap;">
     <div style="flex: 1; min-width: 300px;">
-      <div class="timeline">
+      <div class="timeline timeline-compact">
         <div class="timeline-item">
           <span class="version-tag">v1.0</span>
           <div class="date">February 3, 2026</div>
@@ -464,7 +502,7 @@
       </div>
     </div>
     <div style="flex: 1; min-width: 300px;">
-      <div class="timeline">
+      <div class="timeline timeline-compact">
         <div class="timeline-item">
           <span class="version-tag">v3.4</span>
           <div class="date">February 20, 2026</div>
@@ -499,7 +537,7 @@
     </div>
   </div>
 
-  <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-top: 3rem;">
+  <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-top: 2rem;">
     <span class="badge badge-blue">Python 3.7+</span>
     <span class="badge badge-purple">Jira REST v3</span>
     <span class="badge badge-orange">Tempo API v4</span>
@@ -510,12 +548,14 @@
 </section>
 
 <!-- ============================================================
-     8. Screenshots & Manual
+     6. Usage & Quick Start -- MERGED (Screenshots + Quick Start)
      ============================================================ -->
 <section id="screenshots">
-  <div class="section-label">Screenshots &amp; Manual</div>
+  <div class="section-label">Usage &amp; Quick Start</div>
   <h2 class="section-title">See It in Action</h2>
   <p class="section-subtitle">Real output from the running application.</p>
+
+  <span id="quickstart"></span>
 
   <div class="tab-container">
     <div class="tab-buttons">
@@ -524,8 +564,10 @@
       <button class="tab-btn" onclick="showTab('tab-monthly')">Monthly Report</button>
       <button class="tab-btn" onclick="showTab('tab-tray')">Tray Menu</button>
       <button class="tab-btn" onclick="showTab('tab-cli-commands')">All Commands</button>
+      <button class="tab-btn" onclick="showTab('tab-quickstart')">Quick Start</button>
     </div>
 
+    <div class="tab-panels">
     <div id="tab-cli" class="tab-content active">
       <h3 class="mb-2">Daily Sync Output</h3>
       <p class="text-muted mb-2">Run <code>python tempo_automation.py</code> or <code>python tempo_automation.py --date 2026-02-20</code></p>
@@ -674,40 +716,34 @@ MONTHLY HOURS REPORT - February 2026<br>
         </div>
       </div>
     </div>
-  </div>
-</section>
 
-<!-- ============================================================
-     9. Quick Start Guide
-     ============================================================ -->
-<section id="quickstart">
-  <div class="section-label">Getting Started</div>
-  <h2 class="section-title">Up and Running in 3 Minutes</h2>
-  <p class="section-subtitle">Choose your platform. Download. Install. Done.</p>
+    <div id="tab-quickstart" class="tab-content">
+      <h3 class="mb-2">Up and Running in 3 Minutes</h3>
+      <p class="text-muted mb-2">Choose your platform. Download. Install. Done.</p>
 
-  <div class="flow-steps">
-    <div class="flow-step">
-      <div class="flow-step-number">1</div>
-      <h3>Download</h3>
-      <p>Get the appropriate zip: Windows Full (includes Python), Windows Lite, or Mac</p>
-    </div>
-    <div class="flow-arrow">&#x2192;</div>
-    <div class="flow-step">
-      <div class="flow-step-number">2</div>
-      <h3>Install</h3>
-      <p>Run <code>install.bat</code> (Windows) or <code>./install.sh</code> (Mac). Follow the setup wizard.</p>
-    </div>
-    <div class="flow-arrow">&#x2192;</div>
-    <div class="flow-step">
-      <div class="flow-step-number">3</div>
-      <h3>Done</h3>
-      <p>Tray app starts automatically. Timesheets are filled every day at 6 PM.</p>
-    </div>
-  </div>
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="flow-step-number">1</div>
+          <h3>Download</h3>
+          <p>Get the appropriate zip: Windows Full (includes Python), Windows Lite, or Mac</p>
+        </div>
+        <div class="flow-arrow">&#x2192;</div>
+        <div class="flow-step">
+          <div class="flow-step-number">2</div>
+          <h3>Install</h3>
+          <p>Run <code>install.bat</code> (Windows) or <code>./install.sh</code> (Mac). Follow the setup wizard.</p>
+        </div>
+        <div class="flow-arrow">&#x2192;</div>
+        <div class="flow-step">
+          <div class="flow-step-number">3</div>
+          <h3>Done</h3>
+          <p>Tray app starts automatically. Timesheets are filled every day at 6 PM.</p>
+        </div>
+      </div>
 
-  <div class="mt-4">
-    <h3 class="mb-2">Common Commands</h3>
-    <div class="code-block">
+      <div class="mt-4">
+        <h3 class="mb-2">Common Commands</h3>
+        <div class="code-block">
 <span class="comment"># Daily sync (runs automatically, or manual)</span><br>
 python tempo_automation.py<br>
 <br>
@@ -725,16 +761,19 @@ python tempo_automation.py --view-monthly<br>
 <br>
 <span class="comment"># Submit timesheet (auto-runs at month-end)</span><br>
 python tempo_automation.py --submit
-    </div>
-  </div>
+        </div>
+      </div>
 
-  <div class="mt-4 text-center">
-    <p class="text-muted">Full documentation: <a href="https://github.com/ajay-sajwan-vectorsolutions/timesheet-for-tempo/blob/main/docs/guides/SETUP_GUIDE.md" style="color: var(--accent-blue); text-decoration: none;">SETUP_GUIDE.md</a></p>
+      <div class="mt-4 text-center">
+        <p class="text-muted">Full documentation: <a href="https://github.com/ajay-sajwan-vectorsolutions/timesheet-for-tempo/blob/main/docs/guides/SETUP_GUIDE.md" style="color: var(--accent-blue); text-decoration: none;">SETUP_GUIDE.md</a></p>
+      </div>
+    </div>
+    </div>
   </div>
 </section>
 
 <!-- ============================================================
-     10. Architecture
+     7. Architecture -- COLLAPSIBLE TABLE
      ============================================================ -->
 <section id="architecture">
   <div class="section-label">Architecture</div>
@@ -812,96 +851,100 @@ python tempo_automation.py --submit
     <p class="text-center text-muted mt-2">Developers write to Jira; Tempo auto-syncs. PO/Sales write directly to Tempo.</p>
   </div>
 
-  <table class="data-table mt-4">
-    <thead>
-      <tr>
-        <th>Class</th>
-        <th>Lines</th>
-        <th>Purpose</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr><td>DualWriter</td><td>48</td><td>stdout + file dual output (--logfile)</td></tr>
-      <tr><td>CredentialManager</td><td>105</td><td>DPAPI encrypt/decrypt for Windows</td></tr>
-      <tr><td>ConfigManager</td><td>266</td><td>Config, setup wizard, location picker</td></tr>
-      <tr><td>ScheduleManager</td><td>639</td><td>Holidays, PTO, overrides, calendar</td></tr>
-      <tr><td>JiraClient</td><td>367</td><td>Worklogs CRUD, active issues, JQL, ADF</td></tr>
-      <tr><td>TempoClient</td><td>157</td><td>Worklogs, submit timesheet, periods</td></tr>
-      <tr><td>NotificationManager</td><td>247</td><td>SMTP email, Teams webhook, desktop toast</td></tr>
-      <tr><td>TempoAutomation</td><td>2,123</td><td>Orchestration, sync, verify, backfill, overhead</td></tr>
-      <tr class="highlight-row"><td>Total</td><td>4,253</td><td>+ CLI (206 lines)</td></tr>
-    </tbody>
-  </table>
+  <button class="toggle-btn" onclick="toggleSection('arch-detail')">Show class details</button>
+
+  <div id="arch-detail" class="collapsible">
+    <table class="data-table mt-4">
+      <thead>
+        <tr>
+          <th>Class</th>
+          <th>Lines</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>DualWriter</td><td>48</td><td>stdout + file dual output (--logfile)</td></tr>
+        <tr><td>CredentialManager</td><td>105</td><td>DPAPI encrypt/decrypt for Windows</td></tr>
+        <tr><td>ConfigManager</td><td>266</td><td>Config, setup wizard, location picker</td></tr>
+        <tr><td>ScheduleManager</td><td>639</td><td>Holidays, PTO, overrides, calendar</td></tr>
+        <tr><td>JiraClient</td><td>367</td><td>Worklogs CRUD, active issues, JQL, ADF</td></tr>
+        <tr><td>TempoClient</td><td>157</td><td>Worklogs, submit timesheet, periods</td></tr>
+        <tr><td>NotificationManager</td><td>247</td><td>SMTP email, Teams webhook, desktop toast</td></tr>
+        <tr><td>TempoAutomation</td><td>2,123</td><td>Orchestration, sync, verify, backfill, overhead</td></tr>
+        <tr class="highlight-row"><td>Total</td><td>4,253</td><td>+ CLI (206 lines)</td></tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <!-- ============================================================
-     11. Future Roadmap
+     8. Future Roadmap -- COMPACT ROWS
      ============================================================ -->
 <section id="roadmap">
   <div class="section-label">Future Roadmap</div>
   <h2 class="section-title">What's Next</h2>
   <p class="section-subtitle">Planned enhancements to make the tool even better.</p>
 
-  <div class="card-grid card-grid-3">
-    <div class="card">
-      <div class="card-icon orange">&#x1F4E6;</div>
-      <h3>PyInstaller .exe</h3>
-      <p>Bundle into a single executable. No Python install needed at all. Double-click to run.</p>
-      <span class="badge badge-orange">Planned</span>
-    </div>
-    <div class="card">
-      <div class="card-icon">&#x1F504;</div>
-      <h3>Retry Logic</h3>
-      <p>Exponential backoff for failed API calls. Max 3 retries. Graceful degradation.</p>
-      <span class="badge badge-blue">Planned</span>
-    </div>
-    <div class="card">
-      <div class="card-icon purple">&#x1F4AC;</div>
-      <h3>Teams Webhook</h3>
-      <p>MS Teams notifications for sync status and shortfall alerts. Code exists, needs webhook URL.</p>
-      <span class="badge badge-purple">Ready</span>
-    </div>
-    <div class="card">
-      <div class="card-icon cyan">&#x1F50D;</div>
-      <h3>--dry-run Mode</h3>
-      <p>Show what would be logged without creating worklogs. For testing and verification.</p>
-      <span class="badge badge-blue">Planned</span>
-    </div>
-    <div class="card">
-      <div class="card-icon green">&#x1F4CA;</div>
-      <h3>Weighted Distribution</h3>
-      <p>Allocate more hours to higher-priority tickets instead of equal split.</p>
-      <span class="badge badge-blue">Planned</span>
-    </div>
-    <div class="card">
-      <div class="card-icon red">&#x1F4C5;</div>
-      <h3>Date Range Backfill</h3>
-      <p>--from / --to flags to backfill multiple days at once after vacation.</p>
-      <span class="badge badge-blue">Planned</span>
-    </div>
-    <div class="card">
-      <div class="card-icon green">&#x1F4E5;</div>
-      <h3>Auto-Fill on Submit</h3>
-      <p>On last working day, auto-fill gap hours before submitting. No manual --fix-shortfall needed.</p>
+  <div class="card" style="padding: 0; overflow: hidden;">
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F4E5;</span>
+      <span class="roadmap-title">Auto-Fill on Submit</span>
+      <span class="roadmap-desc">On last working day, auto-fill gap hours before submitting. No manual --fix-shortfall needed.</span>
       <span class="badge badge-purple">Next</span>
     </div>
-    <div class="card">
-      <div class="card-icon cyan">&#x1F4AC;</div>
-      <h3>Slack Notifications</h3>
-      <p>Webhook-based Slack alerts for sync status and shortfall warnings. Simpler than SMTP email.</p>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F4AC;</span>
+      <span class="roadmap-title">Teams Webhook</span>
+      <span class="roadmap-desc">MS Teams notifications for sync status and shortfall alerts. Code exists, needs webhook URL.</span>
+      <span class="badge badge-purple">Ready</span>
+    </div>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F4E6;</span>
+      <span class="roadmap-title">PyInstaller .exe</span>
+      <span class="roadmap-desc">Bundle into a single executable. No Python install needed at all. Double-click to run.</span>
+      <span class="badge badge-orange">Planned</span>
+    </div>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F504;</span>
+      <span class="roadmap-title">Retry Logic</span>
+      <span class="roadmap-desc">Exponential backoff for failed API calls. Max 3 retries. Graceful degradation.</span>
       <span class="badge badge-blue">Planned</span>
     </div>
-    <div class="card">
-      <div class="card-icon orange">&#x1F511;</div>
-      <h3>Token Validation</h3>
-      <p>Quick API check on startup to verify Jira and Tempo tokens are valid. Fail fast with clear error.</p>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F50D;</span>
+      <span class="roadmap-title">--dry-run Mode</span>
+      <span class="roadmap-desc">Show what would be logged without creating worklogs. For testing and verification.</span>
+      <span class="badge badge-blue">Planned</span>
+    </div>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F4CA;</span>
+      <span class="roadmap-title">Weighted Distribution</span>
+      <span class="roadmap-desc">Allocate more hours to higher-priority tickets instead of equal split.</span>
+      <span class="badge badge-blue">Planned</span>
+    </div>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F4C5;</span>
+      <span class="roadmap-title">Date Range Backfill</span>
+      <span class="roadmap-desc">--from / --to flags to backfill multiple days at once after vacation.</span>
+      <span class="badge badge-blue">Planned</span>
+    </div>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F4AC;</span>
+      <span class="roadmap-title">Slack Notifications</span>
+      <span class="roadmap-desc">Webhook-based Slack alerts for sync status and shortfall warnings.</span>
+      <span class="badge badge-blue">Planned</span>
+    </div>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F511;</span>
+      <span class="roadmap-title">Token Validation</span>
+      <span class="roadmap-desc">Quick API check on startup to verify Jira and Tempo tokens are valid. Fail fast with clear error.</span>
       <span class="badge badge-blue">Planned</span>
     </div>
   </div>
 </section>
 
 <!-- ============================================================
-     12. Footer
+     9. Footer
      ============================================================ -->
 <footer>
   <div class="page-views">
@@ -966,19 +1009,135 @@ python tempo_automation.py --submit
   }
 })();
 
+// Sliding indicator: position it under the active button
+function positionIndicator(container) {
+  var activeBtn = container.querySelector('.tab-btn.active');
+  var indicator = container.querySelector('.tab-indicator');
+  if (!activeBtn || !indicator) return;
+  var bar = container.querySelector('.tab-buttons');
+  var barRect = bar.getBoundingClientRect();
+  var btnRect = activeBtn.getBoundingClientRect();
+  indicator.style.left = (btnRect.left - barRect.left) + 'px';
+  indicator.style.width = btnRect.width + 'px';
+}
+
+// Init indicators on load
+(function() {
+  document.querySelectorAll('.tab-buttons').forEach(function(bar) {
+    var ind = document.createElement('div');
+    ind.className = 'tab-indicator';
+    bar.appendChild(ind);
+  });
+  // Position after layout settles
+  setTimeout(function() {
+    document.querySelectorAll('.tab-container').forEach(positionIndicator);
+  }, 50);
+  window.addEventListener('resize', function() {
+    document.querySelectorAll('.tab-container').forEach(positionIndicator);
+  });
+})();
+
+// Tab switching - carousel slide with both panels visible
+var _tabAnimating = false;
 function showTab(tabId) {
-  // Hide all tab contents
-  document.querySelectorAll('.tab-content').forEach(function(el) {
-    el.classList.remove('active');
-  });
-  // Remove active from all buttons
-  document.querySelectorAll('.tab-btn').forEach(function(el) {
-    el.classList.remove('active');
-  });
-  // Show selected tab
-  document.getElementById(tabId).classList.add('active');
-  // Activate the clicked button
-  event.target.classList.add('active');
+  if (_tabAnimating) return;
+  var btn = event.target;
+  var container = btn.closest('.tab-container');
+  var buttons = Array.from(container.querySelectorAll('.tab-btn'));
+  var panels = container.querySelector('.tab-panels');
+  var oldContent = container.querySelector('.tab-content.active');
+  var newContent = document.getElementById(tabId);
+
+  if (oldContent === newContent) return;
+
+  // Direction
+  var oldIdx = buttons.indexOf(container.querySelector('.tab-btn.active'));
+  var newIdx = buttons.indexOf(btn);
+  var goingRight = newIdx > oldIdx;
+
+  // Update button state + slide indicator
+  buttons.forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  positionIndicator(container);
+
+  // Lock panels height to prevent layout jump
+  var panelHeight = panels.offsetHeight;
+  panels.style.height = panelHeight + 'px';
+  _tabAnimating = true;
+
+  // Duration
+  var dur = 400;
+  var ease = 'cubic-bezier(0.4, 0, 0.2, 1)';
+
+  // Position old content absolutely so new can overlap
+  oldContent.classList.add('sliding');
+  oldContent.classList.remove('active');
+  oldContent.style.transition = 'transform ' + dur + 'ms ' + ease + ', opacity ' + dur + 'ms ' + ease;
+  oldContent.style.transform = 'translateX(0)';
+  oldContent.style.opacity = '1';
+
+  // Show new content off-screen
+  newContent.classList.add('sliding');
+  newContent.style.transition = 'transform ' + dur + 'ms ' + ease + ', opacity ' + dur + 'ms ' + ease;
+  newContent.style.transform = goingRight ? 'translateX(60px)' : 'translateX(-60px)';
+  newContent.style.opacity = '0';
+
+  // Force reflow so starting positions register
+  void newContent.offsetWidth;
+
+  // Animate both simultaneously
+  oldContent.style.transform = goingRight ? 'translateX(-60px)' : 'translateX(60px)';
+  oldContent.style.opacity = '0';
+  newContent.style.transform = 'translateX(0)';
+  newContent.style.opacity = '1';
+
+  // Animate panels height to new content
+  var newHeight = newContent.scrollHeight;
+  panels.style.transition = 'height ' + dur + 'ms ' + ease;
+  panels.style.height = newHeight + 'px';
+
+  // Clean up after transition
+  setTimeout(function() {
+    oldContent.classList.remove('sliding');
+    oldContent.style.transition = '';
+    oldContent.style.transform = '';
+    oldContent.style.opacity = '';
+    newContent.classList.remove('sliding');
+    newContent.classList.add('active');
+    newContent.style.transition = '';
+    newContent.style.transform = '';
+    newContent.style.opacity = '';
+    panels.style.transition = '';
+    panels.style.height = '';
+    _tabAnimating = false;
+  }, dur + 20);
+}
+
+// Toggle collapsible sections with slide animation
+function toggleSection(id) {
+  var el = document.getElementById(id);
+  var btn = event.target;
+  if (el.classList.contains('expanded')) {
+    // Collapse: set explicit height first, then animate to 0
+    el.style.maxHeight = el.scrollHeight + 'px';
+    void el.offsetHeight; // force reflow
+    el.style.maxHeight = '0';
+    el.classList.remove('expanded');
+    btn.textContent = btn.textContent.replace('Hide', 'Show');
+  } else {
+    // Expand: measure content, animate to that height
+    el.classList.add('expanded');
+    el.style.maxHeight = el.scrollHeight + 'px';
+    btn.textContent = btn.textContent.replace('Show', 'Hide');
+    // After transition, remove max-height so content can reflow naturally
+    var onEnd = function() {
+      if (el.classList.contains('expanded')) {
+        el.style.maxHeight = 'none';
+      }
+      el.removeEventListener('transitionend', onEnd);
+    };
+    el.addEventListener('transitionend', onEnd);
+  }
 }
 </script>
 

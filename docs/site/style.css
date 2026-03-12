@@ -594,6 +594,17 @@ section + section {
   border-bottom: 1px solid var(--border);
   margin-bottom: 1.5rem;
   flex-wrap: wrap;
+  position: relative;
+}
+
+/* Sliding indicator bar under active tab */
+.tab-indicator {
+  position: absolute;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent-blue);
+  transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1), width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1;
 }
 
 .tab-btn {
@@ -604,18 +615,33 @@ section + section {
   font-size: 0.9rem;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: all 0.2s;
+  transition: color 0.2s;
   font-family: inherit;
 }
 
 .tab-btn:hover { color: var(--text-primary); }
 .tab-btn.active {
   color: var(--accent-blue);
-  border-bottom-color: var(--accent-blue);
+  border-bottom-color: transparent;
+}
+
+/* Tab panels wrapper for carousel slide */
+.tab-panels {
+  position: relative;
+  overflow: hidden;
 }
 
 .tab-content { display: none; }
 .tab-content.active { display: block; }
+
+/* During carousel transition, both panels visible */
+.tab-content.sliding {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
 
 /* --- Responsive --- */
 @media (max-width: 768px) {
@@ -753,4 +779,64 @@ footer a:hover { text-decoration: underline; }
 .page-views .view-sep {
   color: var(--border);
   margin: 0 0.15rem;
+}
+
+/* --- Toggle button for collapsible sections --- */
+.toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+  margin-top: 1rem;
+}
+
+.toggle-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-blue);
+}
+
+/* --- Collapsible content (slide down/up) --- */
+.collapsible {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.collapsible.expanded {
+  opacity: 1;
+}
+
+/* --- Compact section padding --- */
+section.compact { padding: 3rem 2rem; }
+
+/* --- Compact timeline --- */
+.timeline-compact .timeline-item { padding-bottom: 1.25rem; }
+
+/* --- Roadmap compact rows --- */
+.roadmap-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.roadmap-row:last-child { border-bottom: none; }
+.roadmap-row .roadmap-icon { font-size: 1.25rem; flex-shrink: 0; }
+.roadmap-row .roadmap-title { font-weight: 600; min-width: 160px; }
+.roadmap-row .roadmap-desc { color: var(--text-secondary); font-size: 0.9rem; flex: 1; }
+.roadmap-row .badge { flex-shrink: 0; }
+
+@media (max-width: 768px) {
+  .roadmap-row { flex-wrap: wrap; }
+  .roadmap-row .roadmap-title { min-width: auto; }
+  section.compact { padding: 2rem 1.25rem; }
 }
