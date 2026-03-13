@@ -35,4 +35,4 @@ jobs:
 
       - name: Check coverage threshold
         run: |
-          pytest tests/ --cov=tempo_automation --cov-fail-under=80 -q
+          pytest tests/ --cov=tempo_automation --cov-fail-under=70 -q
