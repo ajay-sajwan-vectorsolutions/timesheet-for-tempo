@@ -64,6 +64,7 @@ def _make_automation(config: dict) -> TempoAutomation:
     ta.config_manager = MagicMock()
     ta.config_manager.config = config
     ta.config_manager.config_path = Path("/fake/config.json")
+    ta.dry_run = False
 
     # ScheduleManager mock
     sm = MagicMock()
@@ -77,7 +78,7 @@ def _make_automation(config: dict) -> TempoAutomation:
     jc.get_my_worklogs.return_value = []
     jc.get_my_active_issues.return_value = []
     jc.get_issue_details.return_value = None
-    jc.create_worklog.return_value = True
+    jc.create_worklog.return_value = "12345"
     jc.delete_worklog.return_value = True
     ta.jira_client = jc
 
@@ -289,14 +290,14 @@ class TestDeveloperDailySyncFlow:
         assert ticket_seconds == [14400, 14400]
         assert sum(ticket_seconds) == 28800
 
-    def test_idempotent_overwrite_deletes_before_creating(self, dev_config):
-        """Existing non-overhead worklogs are deleted before new ones.
+    def test_idempotent_overwrite_creates_before_deleting(self, dev_config):
+        """New worklogs are created before old non-overhead ones are deleted.
 
-        Tests the full idempotent overwrite flow:
+        Tests the safe create-before-delete flow:
         1. Existing PROJ-OLD worklog found
-        2. PROJ-OLD deleted
-        3. New worklogs created for active tickets
-        4. Delete happens before create
+        2. New worklogs created for active tickets
+        3. Only then PROJ-OLD deleted
+        4. Create happens before delete (safe pattern)
         """
         ta = _make_automation(dev_config)
 
@@ -318,19 +319,19 @@ class TestDeveloperDailySyncFlow:
             lambda *a, **kw: call_order.append("delete") or True
         )
         ta.jira_client.create_worklog.side_effect = (
-            lambda **kw: call_order.append("create") or True
+            lambda **kw: call_order.append("create") or "99"
         )
 
         ta.sync_daily("2026-02-10")
 
-        # Delete must happen before any create
+        # Create must happen before any delete (safe pattern)
         assert "delete" in call_order, "delete_worklog was never called"
         assert "create" in call_order, "create_worklog was never called"
         first_delete = call_order.index("delete")
         first_create = call_order.index("create")
-        assert first_delete < first_create, (
-            f"Delete at index {first_delete} should precede "
-            f"create at index {first_create}"
+        assert first_create < first_delete, (
+            f"Create at index {first_create} should precede "
+            f"delete at index {first_delete}"
         )
 
     def test_notification_sent_on_working_day(self, dev_config):
@@ -424,3 +425,273 @@ class TestProductOwnerDailySyncFlow:
         ta.jira_client.create_worklog.assert_not_called()
         ta.tempo_client.create_worklog.assert_not_called()
         ta.notifier.send_daily_summary.assert_not_called()
+
+
+# ===========================================================================
+# Overhead Cases (integration)
+# ===========================================================================
+
+@pytest.mark.integration
+class TestOverheadCases:
+    """Integration tests for the 5 overhead story cases."""
+
+    @pytest.fixture
+    def dev_config(self, developer_config):
+        """Return the developer_config fixture from conftest."""
+        return developer_config
+
+    def test_case0_default_daily_overhead(self, dev_config):
+        """Case 0: 2h overhead + remaining 6h to 2 active tickets.
+
+        Expected: 3 create_worklog calls (1 overhead + 2 tickets),
+        total = 8h.
+        """
+        ta = _make_automation(dev_config)
+
+        ta.jira_client.get_my_worklogs.return_value = []
+        ta.tempo_client.get_user_worklogs.return_value = []
+        ta.jira_client.get_my_active_issues.return_value = [
+            {"issue_key": "PROJ-101", "issue_summary": "Auth"},
+            {"issue_key": "PROJ-102", "issue_summary": "Search"},
+        ]
+
+        ta.sync_daily("2026-02-10")
+
+        create_calls = ta.jira_client.create_worklog.call_args_list
+        assert len(create_calls) == 3
+
+        # First call: overhead (2h = 7200s)
+        assert create_calls[0].kwargs["issue_key"] == "OVERHEAD-10"
+        assert create_calls[0].kwargs["time_spent_seconds"] == 7200
+
+        # Remaining: 6h / 2 = 3h each
+        ticket_seconds = [
+            c.kwargs["time_spent_seconds"] for c in create_calls[1:]
+        ]
+        assert ticket_seconds == [10800, 10800]
+        total = sum(c.kwargs["time_spent_seconds"] for c in create_calls)
+        assert total == 28800  # 8h
+
+    def test_case1_no_active_tickets_all_overhead(self, dev_config):
+        """Case 1: No active tickets -> all 8h to overhead stories."""
+        ta = _make_automation(dev_config)
+
+        ta.jira_client.get_my_worklogs.return_value = []
+        ta.tempo_client.get_user_worklogs.return_value = []
+        ta.jira_client.get_my_active_issues.return_value = []
+
+        ta.sync_daily("2026-02-10")
+
+        create_calls = ta.jira_client.create_worklog.call_args_list
+        total = sum(c.kwargs["time_spent_seconds"] for c in create_calls)
+        assert total == 28800
+
+        for c in create_calls:
+            key = c.kwargs["issue_key"]
+            assert key.startswith("OVERHEAD") or key == "DEFAULT-1"
+
+    def test_case2_manual_overhead_preserved(self, dev_config):
+        """Case 2: Existing overhead worklogs are not deleted.
+
+        When a day already has overhead logged, the overwrite logic
+        should preserve those entries.
+        """
+        ta = _make_automation(dev_config)
+
+        # Existing overhead worklog (should NOT be deleted)
+        existing_overhead = {
+            "issue_key": "OVERHEAD-10",
+            "worklog_id": "999",
+            "time_spent_seconds": 7200,
+        }
+        ta.jira_client.get_my_worklogs.return_value = [existing_overhead]
+        ta.tempo_client.get_user_worklogs.return_value = []
+        ta.jira_client.get_my_active_issues.return_value = [
+            {"issue_key": "PROJ-101", "issue_summary": "Auth"},
+        ]
+
+        # Track which worklogs are deleted
+        deleted_keys = []
+        ta.jira_client.delete_worklog.side_effect = (
+            lambda key, wid: deleted_keys.append(key) or True
+        )
+
+        ta.sync_daily("2026-02-10")
+
+        # OVERHEAD-10 should NOT be in the deleted list
+        assert "OVERHEAD-10" not in deleted_keys
+
+    def test_case3_pto_holiday_overhead(self, dev_config):
+        """Case 3: PTO day -> 8h logged to pto_story_key."""
+        ta = _make_automation(dev_config)
+
+        ta.schedule_mgr.is_working_day.return_value = (False, "PTO")
+        ta.jira_client.get_my_worklogs.return_value = []
+        ta.tempo_client.get_user_worklogs.return_value = []
+
+        ta.sync_daily("2026-03-10")
+
+        create_calls = ta.jira_client.create_worklog.call_args_list
+        assert len(create_calls) == 1
+        assert create_calls[0].kwargs["issue_key"] == "OVERHEAD-2"
+        assert create_calls[0].kwargs["time_spent_seconds"] == 28800
+
+        # Active issues should not be fetched for PTO
+        ta.jira_client.get_my_active_issues.assert_not_called()
+
+    def test_case4_planning_week_full_flow(self, dev_config):
+        """Case 4: Planning week -> overhead stories from planning_pi.
+
+        When the current date falls in the planning week (5 working
+        days after PI end), all hours go to overhead (no active tickets).
+        """
+        # Configure planning PI with its own stories
+        dev_config["overhead"]["planning_pi"] = {
+            "pi_identifier": "PI.26.2.APR.17",
+            "pi_end_date": "2026-04-17",
+            "stories": [
+                {"issue_key": "OVERHEAD-20", "summary": "PI Planning",
+                 "hours": 8},
+            ],
+            "distribution": "single",
+        }
+
+        ta = _make_automation(dev_config)
+
+        ta.jira_client.get_my_worklogs.return_value = []
+        ta.tempo_client.get_user_worklogs.return_value = []
+        ta.jira_client.get_my_active_issues.return_value = []
+
+        # Mock _is_planning_week to return True
+        ta._is_planning_week = MagicMock(return_value=True)
+
+        ta.sync_daily("2026-04-20")  # Monday after PI end
+
+        create_calls = ta.jira_client.create_worklog.call_args_list
+        total = sum(c.kwargs["time_spent_seconds"] for c in create_calls)
+        assert total == 28800  # Full 8h to overhead
+
+
+# ===========================================================================
+# PO/Sales Role Tests (integration)
+# ===========================================================================
+
+@pytest.mark.integration
+class TestPOSalesRoles:
+    """Integration tests for Product Owner and Sales roles."""
+
+    @pytest.fixture
+    def po_cfg(self, po_config):
+        """Return the po_config fixture from conftest."""
+        return po_config
+
+    @pytest.fixture
+    def sales_config(self, po_config):
+        """Sales role config (same as PO but with 'sales' role)."""
+        config = dict(po_config)
+        config["user"] = {
+            "email": "sales@example.com",
+            "name": "Test Sales",
+            "role": "sales",
+        }
+        config["manual_activities"] = [
+            {"activity": "Client Calls", "hours": 4},
+            {"activity": "Demos", "hours": 4},
+        ]
+        return config
+
+    def test_po_manual_activities_sync(self, po_cfg):
+        """PO working day: creates Tempo worklogs for manual activities.
+
+        3 manual activities (3h + 2h + 3h = 8h) -> 3 tempo_client calls.
+        """
+        ta = _make_automation(po_cfg)
+
+        ta.tempo_client.get_user_worklogs.return_value = []
+        ta.tempo_client.create_worklog.return_value = True
+
+        ta.sync_daily("2026-02-10")
+
+        tempo_calls = ta.tempo_client.create_worklog.call_args_list
+        assert len(tempo_calls) == 3
+
+        total_seconds = sum(
+            c.kwargs.get("time_seconds", 0) for c in tempo_calls
+        )
+        assert total_seconds == 28800  # 8h
+
+        # Jira should not be used
+        ta.jira_client.create_worklog.assert_not_called()
+
+    def test_po_pto_day_skips(self, po_cfg):
+        """PO on PTO: skip entirely (no overhead for non-developers)."""
+        ta = _make_automation(po_cfg)
+
+        ta.schedule_mgr.is_working_day.return_value = (False, "PTO")
+
+        ta.sync_daily("2026-03-10")
+
+        ta.jira_client.create_worklog.assert_not_called()
+        ta.tempo_client.create_worklog.assert_not_called()
+
+    def test_po_monthly_submit(self, po_cfg, tmp_path):
+        """PO can submit timesheet when no gaps exist."""
+        ta = _make_automation(po_cfg)
+
+        def weekday_schedule(date_str):
+            d = date.fromisoformat(date_str)
+            if d.weekday() >= 5:
+                return (False, "Weekend")
+            return (True, "")
+
+        ta.schedule_mgr.is_working_day.side_effect = weekday_schedule
+        ta.schedule_mgr.count_working_days.return_value = 0
+
+        # Build worklogs for full month (8h every weekday)
+        import calendar as cal
+        worklogs = []
+        last_day = cal.monthrange(2026, 2)[1]
+        for d in range(1, last_day + 1):
+            day = date(2026, 2, d)
+            if day.weekday() < 5:
+                worklogs.append({
+                    "startDate": day.strftime("%Y-%m-%d"),
+                    "timeSpentSeconds": 28800,
+                })
+        ta.tempo_client.get_user_worklogs.return_value = worklogs
+
+        shortfall_path = tmp_path / "monthly_shortfall.json"
+        submitted_path = tmp_path / "monthly_submitted.json"
+
+        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path), \
+             patch("tempo_automation.SUBMITTED_FILE", submitted_path), \
+             patch("tempo_automation.date") as mock_date:
+            mock_date.today.return_value = date(2026, 2, 28)
+            mock_date.fromisoformat = date.fromisoformat
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+
+            ta.submit_timesheet()
+
+        ta.tempo_client.submit_timesheet.assert_called_once_with("2026-02")
+
+    def test_sales_role_manual_activities(self, sales_config):
+        """Sales role uses manual activities same as PO.
+
+        2 manual activities (4h + 4h = 8h) -> 2 tempo_client calls.
+        """
+        ta = _make_automation(sales_config)
+
+        ta.tempo_client.get_user_worklogs.return_value = []
+        ta.tempo_client.create_worklog.return_value = True
+
+        ta.sync_daily("2026-02-10")
+
+        tempo_calls = ta.tempo_client.create_worklog.call_args_list
+        assert len(tempo_calls) == 2
+
+        total_seconds = sum(
+            c.kwargs.get("time_seconds", 0) for c in tempo_calls
+        )
+        assert total_seconds == 28800  # 8h
+
+        ta.jira_client.create_worklog.assert_not_called()

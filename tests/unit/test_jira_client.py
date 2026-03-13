@@ -774,7 +774,7 @@ class TestExtractAdfText:
 class TestCreateWorklog:
 
     @responses_lib.activate
-    def test_returns_true_on_success(self, developer_config):
+    def test_returns_worklog_id_on_success(self, developer_config):
         client = _make_client(developer_config)
         responses_lib.add(
             responses_lib.POST,
@@ -784,7 +784,7 @@ class TestCreateWorklog:
         )
 
         result = client.create_worklog("PROJ-101", 28800, "2026-02-23")
-        assert result is True
+        assert result == "50001"
 
     @responses_lib.activate
     def test_started_formatted_as_iso_datetime(self, developer_config):
@@ -879,7 +879,7 @@ class TestCreateWorklog:
         assert "comment" not in sent_body
 
     @responses_lib.activate
-    def test_returns_false_on_http_error(self, developer_config):
+    def test_returns_none_on_http_error(self, developer_config):
         client = _make_client(developer_config)
         responses_lib.add(
             responses_lib.POST,
@@ -887,10 +887,10 @@ class TestCreateWorklog:
             status=403,
         )
 
-        assert client.create_worklog("PROJ-101", 3600, "2026-02-23") is False
+        assert client.create_worklog("PROJ-101", 3600, "2026-02-23") is None
 
     @responses_lib.activate
-    def test_returns_false_on_network_error(self, developer_config):
+    def test_returns_none_on_network_error(self, developer_config):
         client = _make_client(developer_config)
         responses_lib.add(
             responses_lib.POST,
@@ -898,7 +898,7 @@ class TestCreateWorklog:
             body=requests.exceptions.Timeout("request timed out"),
         )
 
-        assert client.create_worklog("PROJ-101", 3600, "2026-02-23") is False
+        assert client.create_worklog("PROJ-101", 3600, "2026-02-23") is None
 
     @responses_lib.activate
     def test_blank_comment_lines_are_skipped(self, developer_config):

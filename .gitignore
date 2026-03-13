@@ -23,6 +23,7 @@ _pto_input.tmp
 _pto_input.vbs
 monthly_shortfall.json
 monthly_submitted.json
+org_holidays_cache.json
 
 # Test scripts (local only)
 test_*.bat

@@ -57,12 +57,16 @@ class TestCredentialManager:
         assert result is None
 
     @patch("sys.platform", "linux")
+    @patch.object(CredentialManager, "_use_dpapi", False)
+    @patch.object(CredentialManager, "_use_keyring", False)
     def test_encrypt_non_windows_returns_plaintext(self):
         """On non-Windows platforms, encrypt returns the plain text as-is."""
         result = CredentialManager.encrypt("my-secret-token")
         assert result == "my-secret-token"
 
     @patch("sys.platform", "darwin")
+    @patch.object(CredentialManager, "_use_dpapi", False)
+    @patch.object(CredentialManager, "_use_keyring", False)
     def test_encrypt_macos_returns_plaintext(self):
         """On macOS, encrypt returns the plain text as-is (no DPAPI)."""
         result = CredentialManager.encrypt("another-secret")
@@ -82,6 +86,8 @@ class TestCredentialManager:
         assert result is None
 
     @patch("sys.platform", "linux")
+    @patch.object(CredentialManager, "_use_dpapi", False)
+    @patch.object(CredentialManager, "_use_keyring", False)
     def test_decrypt_non_windows_returns_unchanged(self):
         """ENC: prefix on non-Windows returns the value unchanged (cannot decrypt)."""
         encrypted = "ENC:c29tZWJhc2U2NA=="
@@ -89,6 +95,8 @@ class TestCredentialManager:
         assert result == encrypted
 
     @patch("sys.platform", "darwin")
+    @patch.object(CredentialManager, "_use_dpapi", False)
+    @patch.object(CredentialManager, "_use_keyring", False)
     def test_decrypt_macos_enc_prefix_returns_unchanged(self):
         """ENC: prefix on macOS returns the value unchanged."""
         encrypted = "ENC:dGVzdGRhdGE="
@@ -156,7 +164,7 @@ class TestConfigManagerInit:
         bad_file = tmp_path / "config.json"
         bad_file.write_text("{invalid json content!!!", encoding="utf-8")
 
-        with pytest.raises(Exception):
+        with pytest.raises(SystemExit):
             ConfigManager(config_path=bad_file)
 
     def test_custom_config_path(self, tmp_path, developer_config):
@@ -174,7 +182,7 @@ class TestConfigManagerInit:
         empty_file = tmp_path / "config.json"
         empty_file.write_text("", encoding="utf-8")
 
-        with pytest.raises(Exception):
+        with pytest.raises(SystemExit):
             ConfigManager(config_path=empty_file)
 
 
@@ -654,3 +662,129 @@ class TestSelectLocation:
         country, state = cm._select_location()
         assert country == "DE"
         assert state == "BY"
+
+
+# ===========================================================================
+# ConfigManager.validate_config
+# ===========================================================================
+
+class TestConfigValidation:
+    """Tests for _validate_config() called during config loading.
+
+    The validation is integrated into load_config() and raises SystemExit(1)
+    when validation fails.  These tests verify the validation logic by either:
+    - Calling _validate_config() directly on a bare ConfigManager instance
+    - Checking that ConfigManager() raises SystemExit for invalid configs
+    """
+
+    def _make_bare_cm(self):
+        """Create a ConfigManager without calling __init__ (bypasses load)."""
+        return ConfigManager.__new__(ConfigManager)
+
+    def test_missing_user_email(self, developer_config, capsys):
+        """Config with empty user.email -> _validate_config returns False, prints error."""
+        developer_config["user"]["email"] = ""
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(developer_config)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "user.email" in captured.out
+
+    def test_missing_tempo_token(self, developer_config, capsys):
+        """Empty tempo.api_token -> _validate_config returns False."""
+        developer_config["tempo"]["api_token"] = ""
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(developer_config)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "tempo.api_token" in captured.out
+
+    def test_missing_daily_hours(self, developer_config, capsys):
+        """Missing schedule.daily_hours -> _validate_config returns False.
+
+        The current implementation requires daily_hours to be explicitly set
+        (no implicit default during validation).
+        """
+        del developer_config["schedule"]["daily_hours"]
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(developer_config)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "daily_hours" in captured.out
+
+    def test_valid_config_passes(self, developer_config):
+        """A fully valid developer config -> _validate_config returns True."""
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(developer_config)
+
+        assert result is True
+
+    def test_missing_jira_token_developer(self, developer_config, capsys):
+        """Developer role with empty jira.api_token -> validation fails."""
+        developer_config["jira"]["api_token"] = ""
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(developer_config)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "jira.api_token" in captured.out
+
+    def test_missing_jira_token_po_ok(self, po_config):
+        """PO role without jira.api_token -> validation passes."""
+        po_config["jira"]["api_token"] = ""
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(po_config)
+
+        assert result is True
+
+    def test_corrupted_json(self, tmp_path, capsys):
+        """Invalid JSON in config file -> load_config raises SystemExit."""
+        bad_file = tmp_path / "config.json"
+        bad_file.write_text("{not valid json!!!", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            ConfigManager(config_path=bad_file)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "corrupted" in captured.out.lower() or "json" in captured.out.lower()
+
+    def test_empty_config_file(self, tmp_path, capsys):
+        """Empty file -> raises SystemExit with appropriate error message."""
+        empty_file = tmp_path / "config.json"
+        empty_file.write_text("", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            ConfigManager(config_path=empty_file)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "empty" in captured.out.lower() or "setup" in captured.out.lower()
+
+    def test_config_version_present(self):
+        """config_template.json should have a config_version field.
+
+        This documents the expectation that the template includes versioning
+        support for future config migrations.
+        """
+        import os
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "config_template.json"
+        )
+        with open(template_path, "r", encoding="utf-8") as f:
+            template = json.load(f)
+
+        # config_version should be present in the template
+        assert "config_version" in template, (
+            "config_template.json should contain a 'config_version' field"
+        )

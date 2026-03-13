@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # Tempo Timesheet Automation
 
-**Version:** 3.9 | **Status:** Production | **Updated:** February 23, 2026
+**Version:** 4.0 | **Status:** Production | **Updated:** March 13, 2026
 **Owner:** Ajay Sajwan (ajay.sajwan-ctr@vectorsolutions.com, developer role)
 
 ---
@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Automates daily timesheet entry and monthly submission for a 200-person engineering team.
 Developers get Jira worklogs auto-distributed across active tickets; Tempo syncs from Jira.
 
-- **Main script:** `tempo_automation.py` (4,253 lines, 8 classes)
+- **Main script:** `tempo_automation.py` (5,446 lines, 8 classes)
 - **Tray app:** `tray_app.py` (~1,458 lines, cross-platform: Windows + Mac)
 - **Installers:** `install.bat` (Windows), `install.sh` (Mac) -- 7 steps each
 - **Build script:** `build_dist.bat` -- generates 3 distribution zip types
@@ -48,15 +48,15 @@ Developers get Jira worklogs auto-distributed across active tickets; Tempo syncs
 
 | Class | Lines | Purpose |
 |-------|-------|---------|
-| DualWriter | 48 | stdout + file dual output (--logfile) |
-| CredentialManager | 94-199 | DPAPI encrypt/decrypt for Windows |
-| ConfigManager | 209-475 | Config, setup wizard, location picker, get_account_id() |
-| ScheduleManager | 481-1120 | Holidays, PTO, overrides, is_working_day(), calendar |
-| JiraClient | ~1128 | Worklogs CRUD, active issues, historical JQL, ADF, get_myself_account_id(), account_id attr |
-| TempoClient | ~1520 | Worklogs, submit timesheet, get period (takes account_id parameter) |
-| NotificationManager | ~1677 | SMTP email, Teams webhook, desktop toast (Win + Mac) |
-| TempoAutomation | ~1924 | Orchestration, sync, verify_week, backfill, overhead, monthly gap detection, shortfall fix |
-| CLI | ~4047-4253 | argparse with 18 arguments (added --view-monthly, --fix-shortfall) |
+| DualWriter | 55 | stdout + file dual output (--logfile) |
+| CredentialManager | 120-285 | DPAPI encrypt/decrypt for Windows |
+| ConfigManager | 285-822 | Config, setup wizard, location picker, get_account_id() |
+| ScheduleManager | 822-1566 | Holidays, PTO, overrides, is_working_day(), calendar, holiday cache |
+| JiraClient | ~1566 | Worklogs CRUD, active issues, historical JQL, ADF, get_myself_account_id(), account_id attr |
+| TempoClient | ~1984 | Worklogs, submit timesheet, get period, get_timesheet_periods() |
+| NotificationManager | ~2208 | SMTP email, Teams webhook, desktop toast (Win + Mac) |
+| TempoAutomation | ~2459 | Orchestration, sync, verify_week, backfill_range, overhead, monthly gap detection, shortfall fix, approval status |
+| CLI | ~5033-5341 | argparse with 22 arguments (added --backfill, --from-date, --to-date, --approval-status) |
 
 ### Key Patterns
 - **Day priority:** working_days > pto > weekend > org_holidays > country_holidays > extra_holidays
@@ -72,7 +72,7 @@ Developers get Jira worklogs auto-distributed across active tickets; Tempo syncs
 v2/
 ├── CLAUDE.md                       # This file (project context)
 ├── README.md                       # User documentation
-├── tempo_automation.py             # Main script (4,224 lines)
+├── tempo_automation.py             # Main script (5,446 lines)
 ├── tray_app.py                     # System tray app (~1,306 lines, cross-platform)
 ├── confirm_and_run.py              # OK/Cancel dialog for Task Scheduler
 ├── build_dist.bat                  # Build distribution zips (3 types)
@@ -152,6 +152,11 @@ python tempo_automation.py --show-overhead            # Display current overhead
 python tempo_automation.py --view-monthly            # Show current month hours per day
 python tempo_automation.py --view-monthly 2026-01    # Show specific month hours
 python tempo_automation.py --fix-shortfall           # Interactive fix for monthly gaps
+python tempo_automation.py --approval-status         # Current month approval status
+python tempo_automation.py --approval-status 2026-02 # Specific month approval status
+
+# Backfill
+python tempo_automation.py --backfill --from-date 2026-03-01 --to-date 2026-03-10
 
 # Build distribution zips
 build_dist.bat                                       # Menu: Full/Lite/Mac/All
@@ -163,7 +168,7 @@ python tray_app.py --register / --unregister         # Auto-start control
 
 # Testing
 pip install -r requirements-test.txt                 # Install test deps (once)
-pytest tests/ -v --tb=short                          # Run all 385 tests
+pytest tests/ -v --tb=short                          # Run all 500 tests
 pytest tests/unit/test_schedule_manager.py            # Run one test file
 pytest tests/unit/test_schedule_manager.py::TestIsWorkingDay::test_normal_weekday  # Single test
 pytest tests/ -k "test_daily_sync"                   # Run tests matching name
@@ -176,20 +181,31 @@ pytest tests/ --cov=tempo_automation                 # Coverage report
 
 ## Current Status
 
-**Working:** Daily sync, idempotent overwrite, smart descriptions, schedule guard (weekends/holidays/PTO), weekly verify, monthly submit with per-day gap detection (blocks submission on shortfall), --view-monthly hours report (saves shortfall file on gaps), --fix-shortfall interactive fix, Tempo as source of truth for hours (gap detection, verify-week, PTO idempotence, tray exit check), tray app with favicon (cross-platform: Windows + Mac), tray menu submenus (Configure, Log and Reports), user identity header in tray menu, dynamic Submit Timesheet/Fix Shortfall menu items with update_menu() refresh (after sync, submit, shortfall, and terminal close), cmd /k outer quotes for paths with spaces/hyphens, quiet console (suppress INFO logs for user-facing commands), welcome toast redesign (Welcome {name}! title, time-of-day greeting heading), install.bat + install.sh (7 steps each), DPAPI encryption (plain text fallback on Mac), --stop flag, welcome toast, auto-register autostart (Win: registry, Mac: LaunchAgent), tray auto-restart via daily scheduler (--quiet flag, recovery toast), overhead story support (5 cases), hybrid Jira+Tempo overhead detection, holiday overhead logging, email notifications default disabled, Mac toast via osascript, Mac dialogs via AppleScript, Mac single instance via fcntl file lock, Mac cron (daily + weekly verify + monthly submit with BSD date compat), build_dist.bat (3 zip types with YYYYMMDD-HHMM timestamp: Windows Full with embedded Python, Windows Lite, Mac), install.bat auto-detects Python (embedded or system PATH), run_*.bat regenerated with correct paths during install, tray Configure > Change Sync Time (input dialog, validates HH:MM, updates config, reschedules timer), early timesheet submission when all remaining days are non-working (PTO/holidays/weekends) -- bypasses 7-day window, works in both CLI and tray menu
+**Working:** Daily sync, idempotent overwrite (create-before-delete with rollback), smart descriptions, schedule guard (weekends/holidays/PTO), pre-sync health check (Jira + Tempo API validation), retry logic (TempoClient + JiraClient on 429/502/503/504), config schema validation, --dry-run preview mode, progress counters ([i/n] in sync/verify/monthly), --log-format json (structured logging), parallel worklog creation (ThreadPoolExecutor), weekly verify, monthly submit with per-day gap detection (blocks submission on shortfall), --view-monthly hours report (saves shortfall file on gaps), --fix-shortfall interactive fix, date-range backfill (--backfill --from-date --to-date), weighted time distribution (distribution_weights config), approval status tracking (--approval-status), holiday cache with ETag/Last-Modified and 24h TTL, Tempo as source of truth for hours (gap detection, verify-week, PTO idempotence, tray exit check), tray app with favicon (cross-platform: Windows + Mac), tray menu submenus (Configure, Log and Reports), user identity header in tray menu, dynamic Submit Timesheet/Fix Shortfall menu items with update_menu() refresh, cmd /k outer quotes, quiet console, welcome toast redesign, install.bat + install.sh, DPAPI encryption + keyring (Mac/Linux), --stop flag, auto-register autostart, tray auto-restart, overhead story support (5 cases), hybrid Jira+Tempo overhead detection, holiday overhead logging, email notifications default disabled, Mac support (osascript, LaunchAgent, fcntl, cron), build_dist.bat, early timesheet submission, CI/CD (GitHub Actions), ruff + pre-commit
 
 **TODO:**
 - [ ] Test --verify-week with live data
 - [ ] Test monthly submission (end of month)
 - [ ] Test PO/Sales roles
-- [ ] Teams webhook: uncomment call (line ~2447) + add webhook URL
+- [ ] Teams webhook: uncomment call + add webhook URL
 - [ ] Test tray app on actual Mac hardware
-- [ ] PyInstaller .exe, --dry-run, retry logic
-- [ ] Test coverage report (pytest --cov), target 85%+
-- [x] Unit tests Phase 1: ScheduleManager (86 tests), JiraClient (53 tests) -- 139 total
-- [x] Unit tests Phase 2: TempoClient (25 tests), TempoAutomation (51 tests) -- 215 total
-- [x] Unit tests Phase 3: ConfigManager (49), NotificationManager+DualWriter (36), Integration flows (18) -- 318 total
-- [x] Unit tests Phase 4: CLI dispatch (27), TrayApp (37) -- 385 total, all 8 classes + tray covered
+- [ ] PyInstaller .exe
+- [x] Retry logic (TempoClient + JiraClient 502/503/504)
+- [x] Pre-sync health check (Jira + Tempo API validation)
+- [x] Create-before-delete pattern with rollback
+- [x] Config schema validation + config_version
+- [x] --dry-run mode
+- [x] Progress counters in sync, verify, monthly
+- [x] --log-format json (structured logging)
+- [x] CI/CD (GitHub Actions, pytest + coverage)
+- [x] Ruff + pre-commit hooks
+- [x] Cross-platform credentials (keyring for Mac/Linux)
+- [x] Date-range backfill (--backfill --from-date --to-date)
+- [x] Weighted time distribution (distribution_weights config)
+- [x] Approval status tracking (--approval-status)
+- [x] Holiday cache with ETag/Last-Modified TTL
+- [x] Parallel worklog creation (ThreadPoolExecutor)
+- [x] 500 tests total (385 -> 500), all passing, 71% coverage
 
 ### Version History
 | Version | Date | Changes |
@@ -207,6 +223,7 @@ pytest tests/ --cov=tempo_automation                 # Coverage report
 | v3.8 | Feb 23 | Distribution zips (build_dist.bat), install.bat Python auto-detect |
 | v3.8.1 | Feb 23 | Tray UX: cmd /k fix, menu auto-refresh, quiet console, welcome toast redesign |
 | v3.9 | Feb 23 | Early timesheet submission when all remaining days are non-working |
+| v4.0 | Mar 13 | Data safety (create-before-delete, rollback, health check), retry logic (TempoClient), --dry-run, config validation, progress counters, JSON logging, CI/CD, ruff+pre-commit, cross-platform credentials (keyring), date-range backfill, weighted distribution, approval status, holiday cache with TTL, parallel worklog creation, 500 tests |
 
 ---
 

@@ -61,6 +61,7 @@ def _make_automation(config: dict) -> TempoAutomation:
     ta.config_manager = MagicMock()
     ta.config_manager.config = config
     ta.config_manager.config_path = Path("/fake/config.json")
+    ta.dry_run = False
 
     # ScheduleManager mock
     sm = MagicMock()
@@ -74,7 +75,7 @@ def _make_automation(config: dict) -> TempoAutomation:
     jc.get_my_worklogs.return_value = []
     jc.get_my_active_issues.return_value = []
     jc.get_issue_details.return_value = None
-    jc.create_worklog.return_value = True
+    jc.create_worklog.return_value = "12345"
     jc.delete_worklog.return_value = True
     ta.jira_client = jc
 

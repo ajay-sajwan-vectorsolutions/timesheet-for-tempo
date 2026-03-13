@@ -3,6 +3,8 @@
   "_comment2": "This file is created automatically by the setup wizard",
   "_comment3": "You can edit it manually if needed",
 
+  "config_version": "4.0",
+
   "user": {
     "email": "your.email@company.com",
     "name": "Your Full Name",
@@ -34,7 +36,8 @@
     "state": "",
     "pto_days": [],
     "extra_holidays": [],
-    "working_days": []
+    "working_days": [],
+    "distribution_weights": {}
   },
 
   "notifications": {

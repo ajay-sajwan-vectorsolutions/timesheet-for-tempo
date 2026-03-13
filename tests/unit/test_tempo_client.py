@@ -464,3 +464,91 @@ class TestGetCurrentPeriod:
         result = client._get_current_period()
 
         assert result == "2026-02"
+
+
+# ===========================================================================
+# Retry Logic
+# ===========================================================================
+
+class TestRetryLogic:
+    """Tests for HTTP retry configuration on TempoClient and JiraClient."""
+
+    def test_tempo_retry_on_429(self, developer_config):
+        """TempoClient session adapter must include 429 in status_forcelist."""
+        client = _make_client(developer_config)
+        adapter = client.session.get_adapter('https://')
+        assert 429 in adapter.max_retries.status_forcelist
+
+    def test_tempo_retry_on_503(self, developer_config):
+        """TempoClient session adapter must include 503 in status_forcelist."""
+        client = _make_client(developer_config)
+        adapter = client.session.get_adapter('https://')
+        assert 503 in adapter.max_retries.status_forcelist
+
+    def test_tempo_retry_total_is_3(self, developer_config):
+        """TempoClient retry adapter must allow up to 3 total retries."""
+        client = _make_client(developer_config)
+        adapter = client.session.get_adapter('https://')
+        assert adapter.max_retries.total == 3
+
+    def test_tempo_retry_includes_502_and_504(self, developer_config):
+        """TempoClient retry config must include 502 and 504."""
+        client = _make_client(developer_config)
+        adapter = client.session.get_adapter('https://')
+        assert 502 in adapter.max_retries.status_forcelist
+        assert 504 in adapter.max_retries.status_forcelist
+
+    def test_tempo_retry_backoff_factor(self, developer_config):
+        """TempoClient retry config should use exponential backoff."""
+        client = _make_client(developer_config)
+        adapter = client.session.get_adapter('https://')
+        assert adapter.max_retries.backoff_factor >= 1
+
+    @responses_lib.activate
+    def test_jira_retry_on_502(self, developer_config):
+        """JiraClient session adapter must include 502 in status_forcelist."""
+        from tempo_automation import JiraClient
+        # Register the /myself endpoint that JiraClient.__init__ calls
+        responses_lib.add(
+            responses_lib.GET,
+            f"https://{developer_config['jira']['url']}/rest/api/3/myself",
+            json={"accountId": ACCOUNT_ID, "emailAddress": "dev@example.com"},
+            status=200,
+        )
+        jira = JiraClient(developer_config)
+        adapter = jira.session.get_adapter('https://')
+        assert 502 in adapter.max_retries.status_forcelist
+
+    @responses_lib.activate
+    def test_jira_retry_on_504(self, developer_config):
+        """JiraClient session adapter must include 504 in status_forcelist."""
+        from tempo_automation import JiraClient
+        responses_lib.add(
+            responses_lib.GET,
+            f"https://{developer_config['jira']['url']}/rest/api/3/myself",
+            json={"accountId": ACCOUNT_ID, "emailAddress": "dev@example.com"},
+            status=200,
+        )
+        jira = JiraClient(developer_config)
+        adapter = jira.session.get_adapter('https://')
+        assert 504 in adapter.max_retries.status_forcelist
+
+    @responses_lib.activate
+    def test_jira_retry_total_is_3(self, developer_config):
+        """JiraClient retry adapter must allow up to 3 total retries."""
+        from tempo_automation import JiraClient
+        responses_lib.add(
+            responses_lib.GET,
+            f"https://{developer_config['jira']['url']}/rest/api/3/myself",
+            json={"accountId": ACCOUNT_ID, "emailAddress": "dev@example.com"},
+            status=200,
+        )
+        jira = JiraClient(developer_config)
+        adapter = jira.session.get_adapter('https://')
+        assert adapter.max_retries.total == 3
+
+    def test_tempo_retry_respects_retry_after(self, developer_config):
+        """TempoClient retry config must respect Retry-After header."""
+        client = _make_client(developer_config)
+        adapter = client.session.get_adapter('https://')
+        assert adapter.max_retries.respect_retry_after_header is True
