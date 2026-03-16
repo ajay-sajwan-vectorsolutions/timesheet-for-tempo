@@ -29,9 +29,56 @@ echo TEMPO TIMESHEET AUTOMATION - WINDOWS INSTALLER
 echo ============================================================
 echo.
 
-REM Get script directory
-set SCRIPT_DIR=%~dp0
-cd /d "%SCRIPT_DIR%"
+REM Get script directory (source location of this installer)
+set SOURCE_DIR=%~dp0
+
+REM ============================================================================
+REM Upgrade detection: find old tray location from registry, stop it cleanly
+REM ============================================================================
+set IS_UPGRADE=0
+
+python -c "import winreg,re,sys; k=winreg.OpenKey(winreg.HKEY_CURRENT_USER,r'SOFTWARE\Microsoft\Windows\CurrentVersion\Run'); v=winreg.QueryValueEx(k,'TempoTrayApp')[0]; m=re.search(r'\"([^\"]+)tray_app\.py\"',v); print(m.group(1) if m else '')" > "%TEMP%\_tempo_old_path.txt" 2>nul
+
+set OLD_TRAY_PATH=
+for /f "delims=" %%i in ('type "%TEMP%\_tempo_old_path.txt" 2^>nul') do set OLD_TRAY_PATH=%%i
+del "%TEMP%\_tempo_old_path.txt" >nul 2>&1
+
+if not "!OLD_TRAY_PATH!"=="" (
+    for %%i in ("!OLD_TRAY_PATH!") do set OLD_SCRIPT_DIR=%%~dpi
+    if /i not "!OLD_SCRIPT_DIR!"=="C:\tempo-timesheet\" (
+        echo [INFO] Upgrading from previous install at !OLD_SCRIPT_DIR!
+        echo stop > "!OLD_SCRIPT_DIR!_tray_stop.signal"
+        timeout /t 3 /nobreak >nul
+        set IS_UPGRADE=1
+        echo [OK] Old tray instance stopped
+        echo.
+    )
+)
+
+REM ============================================================================
+REM Step 0: Copy files to fixed install location
+REM ============================================================================
+set INSTALL_DIR=C:\tempo-timesheet
+echo Copying files to %INSTALL_DIR%...
+if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
+
+copy /Y "%SOURCE_DIR%tempo_automation.py"  "%INSTALL_DIR%\" >nul
+copy /Y "%SOURCE_DIR%tray_app.py"          "%INSTALL_DIR%\" >nul
+copy /Y "%SOURCE_DIR%confirm_and_run.py"   "%INSTALL_DIR%\" >nul
+copy /Y "%SOURCE_DIR%config_template.json" "%INSTALL_DIR%\" >nul
+copy /Y "%SOURCE_DIR%requirements.txt"     "%INSTALL_DIR%\" >nul
+
+if not exist "%INSTALL_DIR%\assets" mkdir "%INSTALL_DIR%\assets"
+if exist "%SOURCE_DIR%assets\favicon.ico" copy /Y "%SOURCE_DIR%assets\favicon.ico" "%INSTALL_DIR%\assets\" >nul 2>&1
+
+if exist "%SOURCE_DIR%python" xcopy /E /I /Y "%SOURCE_DIR%python" "%INSTALL_DIR%\python\" >nul
+if exist "%SOURCE_DIR%lib"    xcopy /E /I /Y "%SOURCE_DIR%lib"    "%INSTALL_DIR%\lib\"    >nul
+
+REM Redefine SCRIPT_DIR to install location; all subsequent steps use this
+set SCRIPT_DIR=%INSTALL_DIR%\
+cd /d "%INSTALL_DIR%"
+echo [OK] Files installed to %INSTALL_DIR%
+echo.
 
 REM ============================================================================
 REM Detect Python: embedded first, then system PATH
@@ -272,7 +319,9 @@ REM Register auto-start on login
 
 REM Start the tray app now (detached -- no console window, no terminal tab)
 echo Starting tray app...
-echo CreateObject("WScript.Shell").Run """%PYTHONW_EXE%"" ""%SCRIPT_DIR%tray_app.py""", 0, False > "%TEMP%\_tempo_launch.vbs"
+set TRAY_EXTRA=
+if "!IS_UPGRADE!"=="1" set TRAY_EXTRA= --upgraded
+echo CreateObject("WScript.Shell").Run """%PYTHONW_EXE%"" ""%SCRIPT_DIR%tray_app.py""!TRAY_EXTRA!", 0, False > "%TEMP%\_tempo_launch.vbs"
 wscript "%TEMP%\_tempo_launch.vbs"
 del "%TEMP%\_tempo_launch.vbs" >nul 2>&1
 timeout /t 3 /nobreak >nul
@@ -327,9 +376,9 @@ echo     - Weekly:  Fridays at 4:00 PM (verify hours, backfill gaps)
 echo     - Monthly: Last day at 11:00 PM (verify + submit timesheet)
 echo.
 echo Files:
-echo   Config:  %SCRIPT_DIR%config.json
-echo   Log:     %SCRIPT_DIR%daily-timesheet-YYYY-MM.log  (rotates monthly)
-echo   Runtime: %SCRIPT_DIR%tempo_automation.log
+echo   Config:  %INSTALL_DIR%\config.json
+echo   Log:     %INSTALL_DIR%\daily-timesheet-YYYY-MM.log  (rotates monthly)
+echo   Runtime: %INSTALL_DIR%\tempo_automation.log
 echo.
 echo Manual commands:
 echo   python tempo_automation.py              (sync today)

@@ -761,12 +761,61 @@ class TrayApp:
         else:
             subprocess.Popen(['open', str(current_log)])
 
+    def _run_and_show_dialog(self, cli_arg: str, title: str):
+        """Run a read-only CLI command and show captured output in a popup dialog.
+
+        Same pattern as Add PTO: no terminal window, native popup, closes on OK.
+        """
+        script = SCRIPT_DIR / 'tempo_automation.py'
+        python_exe = Path(sys.executable).parent / 'python.exe'
+        try:
+            result = subprocess.run(
+                [str(python_exe), str(script), cli_arg],
+                capture_output=True, text=True,
+                cwd=str(SCRIPT_DIR), timeout=60
+            )
+            output = (result.stdout or '').strip() or (result.stderr or '').strip() or '(no output)'
+        except subprocess.TimeoutExpired:
+            output = 'Timed out.'
+        except Exception as e:
+            output = f'Error: {e}'
+
+        if sys.platform == 'win32':
+            self._show_text_dialog_win(output, title)
+        elif sys.platform == 'darwin':
+            self._show_text_dialog_mac(output, title)
+
+    def _show_text_dialog_win(self, text: str, title: str):
+        """Display multi-line text in a VBScript MsgBox (same mechanism as Add PTO)."""
+        vbs_text = text.replace('"', '""').replace('\n', '" & vbCrLf & "')
+        vbs_title = title.replace('"', '""')
+        vbs_content = f'MsgBox "{vbs_text}", 0, "{vbs_title}"\n'
+        vbs_file = SCRIPT_DIR / '_tempo_output.vbs'
+        try:
+            vbs_file.write_text(vbs_content)
+            subprocess.run(['wscript.exe', str(vbs_file)], timeout=300)
+        except subprocess.TimeoutExpired:
+            pass
+        finally:
+            if vbs_file.exists():
+                vbs_file.unlink()
+
+    def _show_text_dialog_mac(self, text: str, title: str):
+        """Display text in an AppleScript dialog (same mechanism as Add PTO)."""
+        safe_text = text.replace('"', '\\"').replace('\n', '\\n')
+        safe_title = title.replace('"', '\\"')
+        script = f'display dialog "{safe_text}" buttons {{"OK"}} with title "{safe_title}"'
+        try:
+            subprocess.run(['osascript', '-e', script], timeout=300)
+        except subprocess.TimeoutExpired:
+            pass
+
     def _on_view_schedule(self, icon=None, item=None):
-        """Open a terminal window showing the schedule calendar."""
+        """Show schedule calendar in a terminal window."""
         self._open_in_terminal('--show-schedule')
 
     def _on_view_monthly(self, icon=None, item=None):
-        """Open a terminal window showing monthly hours report."""
+        """Show monthly hours report in a terminal window."""
         self._open_in_terminal('--view-monthly')
 
     def _on_fix_shortfall(self, icon=None, item=None):
@@ -1237,13 +1286,15 @@ class TrayApp:
         tray_logger.info("Auto-start not found, registering...")
         register_autostart()
 
-    def run(self, quiet: bool = False):
+    def run(self, quiet: bool = False, upgraded: bool = False):
         """Main entry point -- blocks on pystray message pump.
 
         Args:
             quiet: If True, show a 'back online' toast instead of
                    the full welcome greeting (used when restarted
                    by the daily scheduler).
+            upgraded: If True, show an upgrade success toast instead
+                      of the normal welcome greeting.
         """
         if not PYSTRAY_OK:
             print(
@@ -1338,7 +1389,15 @@ class TrayApp:
                     if user_name
                     else f'Welcome back! \U0001F44F'
                 )
-                if quiet:
+                if upgraded:
+                    self._show_toast(
+                        'The app has been upgraded and is now '
+                        'running from C:\\tempo-timesheet\\\n'
+                        'Right-click the tray icon to get started.',
+                        '',
+                        app_name='Upgrade Complete! \U0001F389'
+                    )
+                elif quiet:
                     # Restarted by daily scheduler
                     self._show_toast(
                         'The Tempo app was previously '
@@ -1538,6 +1597,10 @@ def main():
         '--quiet', action='store_true',
         help='Start with a restart toast instead of welcome greeting'
     )
+    parser.add_argument(
+        '--upgraded', action='store_true',
+        help='Show upgrade success toast on startup'
+    )
     args = parser.parse_args()
 
     if args.register:
@@ -1548,7 +1611,7 @@ def main():
         stop_app()
     else:
         app = TrayApp()
-        app.run(quiet=args.quiet)
+        app.run(quiet=args.quiet, upgraded=args.upgraded)
 
 
 if __name__ == '__main__':
