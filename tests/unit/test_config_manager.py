@@ -344,6 +344,11 @@ class TestGetAccountId:
 class TestSetupWizard:
     """Tests for the interactive setup wizard."""
 
+    @pytest.fixture(autouse=True)
+    def no_backup_config(self, monkeypatch):
+        """Prevent wizard from loading the real AppData backup config."""
+        monkeypatch.setattr("tempo_automation.CONFIG_BACKUP_FILE", None)
+
     def _developer_inputs(self):
         """Input sequence for a developer setup flow."""
         return [

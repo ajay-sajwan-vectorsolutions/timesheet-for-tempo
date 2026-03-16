@@ -1237,8 +1237,8 @@ class TestPreSyncHealthCheck:
         )
         responses_lib.add(
             responses_lib.GET,
-            "https://api.tempo.io/4/user",
-            json={"accountId": "712020:test-uuid"},
+            "https://api.tempo.io/4/work-attributes",
+            json={"results": []},
             status=200,
         )
 
@@ -1277,7 +1277,7 @@ class TestPreSyncHealthCheck:
         # Tempo 401
         responses_lib.add(
             responses_lib.GET,
-            "https://api.tempo.io/4/user",
+            "https://api.tempo.io/4/work-attributes",
             json={"error": "Unauthorized"},
             status=401,
         )
@@ -1320,7 +1320,7 @@ class TestPreSyncHealthCheck:
         # Tempo connection error
         responses_lib.add(
             responses_lib.GET,
-            "https://api.tempo.io/4/user",
+            "https://api.tempo.io/4/work-attributes",
             body=req.exceptions.ConnectionError("Connection refused"),
         )
 
