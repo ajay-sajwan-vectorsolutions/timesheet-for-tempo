@@ -110,6 +110,19 @@ if exist "%SCRIPT_DIR%lib" (
 echo.
 
 REM ============================================================================
+REM Restore previous config from AppData backup (re-installation support)
+REM ============================================================================
+
+if not exist "%SCRIPT_DIR%config.json" (
+    if exist "%APPDATA%\TempoAutomation\config.json" (
+        echo [INFO] Previous installation detected - restoring config from AppData backup...
+        copy "%APPDATA%\TempoAutomation\config.json" "%SCRIPT_DIR%config.json" >nul
+        echo [OK] Config restored - existing credentials will be revalidated automatically
+        echo.
+    )
+)
+
+REM ============================================================================
 REM Run setup wizard
 REM ============================================================================
 

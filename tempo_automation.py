@@ -102,6 +102,23 @@ LOG_FILE = SCRIPT_DIR / "tempo_automation.log"
 SHORTFALL_FILE = SCRIPT_DIR / "monthly_shortfall.json"
 SUBMITTED_FILE = SCRIPT_DIR / "monthly_submitted.json"
 
+# Persistent backup location for config -- survives re-installation to a new folder
+# Windows: %APPDATA%\TempoAutomation\config.json
+# Mac/Linux: ~/.config/TempoAutomation/config.json
+def _get_config_backup_path() -> Optional[Path]:
+    try:
+        if sys.platform == 'win32':
+            appdata = os.environ.get('APPDATA', '')
+            if appdata:
+                return Path(appdata) / "TempoAutomation" / "config.json"
+        else:
+            return Path.home() / ".config" / "TempoAutomation" / "config.json"
+    except Exception:
+        pass
+    return None
+
+CONFIG_BACKUP_FILE: Optional[Path] = _get_config_backup_path()
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -403,155 +420,171 @@ class ConfigManager:
         return valid
 
     def setup_wizard(self) -> Dict:
-        """Interactive setup wizard for first-time configuration."""
-        print("\n" + "="*60)
-        print("TEMPO AUTOMATION - FIRST TIME SETUP")
-        print("="*60)
-        print("\nThis wizard will help you set up the automation.")
-        print("Your credentials will be stored locally and encrypted.\n")
-        
-        # User information
-        print("--- USER INFORMATION ---")
+        """Interactive setup wizard for first-time or re-installation setup.
+
+        On re-installation, existing credentials are revalidated automatically.
+        Questions are only asked for credentials that are missing or invalid.
+        """
         import re
         import base64
         max_retries = 3
-        while True:
-            user_email = input("Enter your email address: ").strip()
-            if re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', user_email):
-                break
-            print("Invalid email format. Please try again.")
-        user_name = ''  # auto-populated from Jira profile after token entry
-        user_role = self._select_role()
-        
-        # Jira/Tempo configuration
+
+        # Load existing config for reuse on re-installation.
+        # Check local script dir first; fall back to persistent AppData backup
+        # so re-installs to a new folder still detect prior credentials.
+        existing: Dict = {}
+        existing_source = ''
+        for candidate in [self.config_path, CONFIG_BACKUP_FILE]:
+            if candidate and candidate.exists():
+                try:
+                    with open(candidate, 'r') as f:
+                        existing = json.loads(f.read())
+                    existing_source = str(candidate)
+                    break
+                except Exception:
+                    existing = {}
+
+        has_existing = bool(existing)
+
+        print("\n" + "="*60)
+        if has_existing:
+            print("TEMPO AUTOMATION - SETUP (RE-INSTALLATION DETECTED)")
+            print("="*60)
+            print(f"\nExisting configuration found: {existing_source}")
+            print(
+                "Valid credentials will be reused automatically."
+                " Only invalid or missing credentials will be asked.\n"
+            )
+        else:
+            print("TEMPO AUTOMATION - FIRST TIME SETUP")
+            print("="*60)
+            print("\nThis wizard will help you set up the automation.")
+            print("Your credentials will be stored locally and encrypted.\n")
+
+        # ------------------------------------------------------------------ #
+        # USER INFORMATION                                                     #
+        # ------------------------------------------------------------------ #
+        print("--- USER INFORMATION ---")
+
+        # Email
+        existing_email = existing.get('user', {}).get('email', '')
+        if existing_email:
+            print(f"Email address: {existing_email} (reusing existing)")
+            user_email = existing_email
+        else:
+            while True:
+                user_email = input("Enter your email address: ").strip()
+                if re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', user_email):
+                    break
+                print("Invalid email format. Please try again.")
+
+        # Name (populated later from Jira profile if possible)
+        user_name = existing.get('user', {}).get('name', '')
+
+        # Role
+        existing_role = existing.get('user', {}).get('role', '')
+        if existing_role in ('developer', 'product_owner', 'sales'):
+            print(f"Role: {existing_role} (reusing existing)")
+            user_role = existing_role
+        else:
+            user_role = self._select_role()
+
+        # ------------------------------------------------------------------ #
+        # JIRA/TEMPO CONFIGURATION                                            #
+        # ------------------------------------------------------------------ #
         print("\n--- JIRA/TEMPO CONFIGURATION ---")
         jira_url = "lmsportal.atlassian.net"
         print(f"Jira URL: {jira_url} (organization default)")
-        
-        print("\n[INFO] To get your Tempo API token:")
-        print("   1. Go to https://lmsportal.atlassian.net/plugins/servlet/ac/io.tempo.jira/tempo-app#!/configuration/api-integration")
-        print("   2. Click 'New Token'")
-        print("   3. Give it a name (e.g., 'Tempo Automation')")
-        print("   4. Copy the generated token")
-        tempo_token = input("\nEnter your Tempo API token: ").strip()
 
-        # Verify Tempo token (retry on failure)
-        print("\nVerifying Tempo API token...")
-        tempo_verified = False
-        for attempt in range(max_retries):
+        # -- Tempo token ---------------------------------------------------
+        existing_tempo_token = existing.get('tempo', {}).get('api_token', '')
+        tempo_token = existing_tempo_token
+        tempo_needs_input = True
+
+        if existing_tempo_token:
+            print("\nTempo API token: [found existing] - verifying...")
             try:
                 resp = requests.get(
                     "https://api.tempo.io/4/work-attributes",
                     headers={
-                        'Authorization': f'Bearer {tempo_token}'
+                        'Authorization': f'Bearer {existing_tempo_token}'
                     },
                     timeout=30
                 )
                 resp.raise_for_status()
-                tempo_verified = True
-                print("[OK] Tempo API token verified")
-                break
+                print("[OK] Existing Tempo token is still valid - reusing")
+                tempo_needs_input = False
             except requests.exceptions.HTTPError as e:
                 if (e.response is not None
-                        and e.response.status_code in (401, 403, 404)):
+                        and e.response.status_code in (401, 403)):
                     print(
-                        "\n[FAIL] Authentication failed. "
-                        "The Tempo API token is invalid or expired."
+                        "[FAIL] Existing Tempo token is invalid or "
+                        "expired. A new token is required."
                     )
-                    if attempt < max_retries - 1:
-                        print(
-                            "Please re-enter your Tempo API "
-                            "token (or press Ctrl+C to cancel)."
-                        )
-                        tempo_token = input(
-                            "Tempo API token: "
-                        ).strip()
-                    else:
-                        print(
-                            "\n[FAIL] Could not verify Tempo "
-                            "token after 3 attempts."
-                        )
-                        print()
-                        print(
-                            "***********   Setup cannot "
-                            "continue without valid "
-                            "credentials.   *************"
-                        )
-                        print(
-                            "***********   Please start a "
-                            "fresh setup with correct "
-                            "credentials.   ***********"
-                        )
-                        print("\nSetup aborted.")
-                        return None
+                    tempo_token = ''
                 else:
+                    # Non-auth HTTP error (e.g. 500) -- reuse token
                     logger.warning(
-                        f"Could not verify Tempo token: {e}"
+                        f"Could not fully verify Tempo token: {e}"
                     )
-                    break
+                    print(
+                        "[!] Could not verify Tempo token "
+                        "(network/server issue) - reusing existing"
+                    )
+                    tempo_needs_input = False
             except Exception as e:
                 logger.warning(
                     f"Could not verify Tempo token: {e}"
                 )
-                break
+                print(
+                    "[!] Could not verify Tempo token "
+                    "(network issue) - reusing existing"
+                )
+                tempo_needs_input = False
 
-        if user_role == "developer":
-            print("\n[INFO] To get your Jira API token:")
-            print("   1. Go to https://id.atlassian.com/manage-profile/security/api-tokens")
-            print("   2. Click 'Create API token'")
-            jira_token = input("\nEnter your Jira API token: ").strip()
-            jira_email = user_email
+        if tempo_needs_input:
+            print("\n[INFO] To get your Tempo API token:")
+            print(
+                "   1. Go to https://lmsportal.atlassian.net/plugins/"
+                "servlet/ac/io.tempo.jira/tempo-app#!/configuration/"
+                "api-integration"
+            )
+            print("   2. Click 'New Token'")
+            print("   3. Give it a name (e.g., 'Tempo Automation')")
+            print("   4. Copy the generated token")
+            tempo_token = input("\nEnter your Tempo API token: ").strip()
 
-            # Fetch display name from Jira profile (retry on failure)
             for attempt in range(max_retries):
                 try:
-                    creds = base64.b64encode(
-                        f"{jira_email}:{jira_token}".encode()
-                    ).decode()
                     resp = requests.get(
-                        f"https://{jira_url}/rest/api/3/myself",
-                        headers={'Authorization': f'Basic {creds}'},
+                        "https://api.tempo.io/4/work-attributes",
+                        headers={
+                            'Authorization': f'Bearer {tempo_token}'
+                        },
                         timeout=30
                     )
                     resp.raise_for_status()
-                    jira_name = resp.json().get('displayName', '')
-                    if jira_name:
-                        user_name = jira_name
-                        print(f"[OK] Welcome, {user_name}!")
+                    print("[OK] Tempo API token verified")
                     break
                 except requests.exceptions.HTTPError as e:
-                    if e.response is not None and e.response.status_code == 401:
+                    if (e.response is not None
+                            and e.response.status_code in (401, 403, 404)):
                         print(
                             "\n[FAIL] Authentication failed. "
-                            "Either the email or Jira API token "
-                            "is incorrect."
+                            "The Tempo API token is invalid or expired."
                         )
                         if attempt < max_retries - 1:
                             print(
-                                "Please re-enter your credentials "
-                                "(or press Ctrl+C to cancel)."
+                                "Please re-enter your Tempo API "
+                                "token (or press Ctrl+C to cancel)."
                             )
-                            while True:
-                                jira_email = input(
-                                    "Email address: "
-                                ).strip()
-                                if re.match(
-                                    r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-                                    jira_email
-                                ):
-                                    break
-                                print(
-                                    "Invalid email format. "
-                                    "Please try again."
-                                )
-                            user_email = jira_email
-                            jira_token = input(
-                                "Jira API token: "
+                            tempo_token = input(
+                                "Tempo API token: "
                             ).strip()
                         else:
                             print(
-                                "\n[FAIL] Could not verify Jira "
-                                "credentials after 3 attempts."
+                                "\n[FAIL] Could not verify Tempo "
+                                "token after 3 attempts."
                             )
                             print()
                             print(
@@ -564,101 +597,291 @@ class ConfigManager:
                                 "fresh setup with correct "
                                 "credentials.   ***********"
                             )
-                            print(
-                                "\nSetup aborted."
-                            )
+                            print("\nSetup aborted.")
                             return None
                     else:
                         logger.warning(
-                            f"Could not fetch Jira profile: {e}"
+                            f"Could not verify Tempo token: {e}"
                         )
                         break
                 except Exception as e:
                     logger.warning(
-                        f"Could not fetch Jira profile: {e}"
+                        f"Could not verify Tempo token: {e}"
                     )
                     break
 
+        # -- Jira token (developers only) ----------------------------------
+        if user_role == "developer":
+            existing_jira_token = existing.get('jira', {}).get('api_token', '')
+            existing_jira_email = existing.get('jira', {}).get('email', user_email)
+            jira_token = existing_jira_token
+            jira_email = existing_jira_email
+            jira_needs_input = True
+
+            if existing_jira_token:
+                print("\nJira API token: [found existing] - verifying...")
+                try:
+                    creds = base64.b64encode(
+                        f"{jira_email}:{existing_jira_token}".encode()
+                    ).decode()
+                    resp = requests.get(
+                        f"https://{jira_url}/rest/api/3/myself",
+                        headers={'Authorization': f'Basic {creds}'},
+                        timeout=30
+                    )
+                    resp.raise_for_status()
+                    jira_name = resp.json().get('displayName', '')
+                    if jira_name:
+                        user_name = jira_name
+                        print(
+                            f"[OK] Existing Jira token is still valid"
+                            f" - Welcome, {user_name}!"
+                        )
+                    else:
+                        print(
+                            "[OK] Existing Jira token is still valid"
+                            " - reusing"
+                        )
+                    jira_needs_input = False
+                except requests.exceptions.HTTPError as e:
+                    if e.response is not None and e.response.status_code == 401:
+                        print(
+                            "[FAIL] Existing Jira token is invalid or "
+                            "expired. A new token is required."
+                        )
+                        jira_token = ''
+                    else:
+                        logger.warning(
+                            f"Could not fully verify Jira token: {e}"
+                        )
+                        print(
+                            "[!] Could not verify Jira token "
+                            "(network/server issue) - reusing existing"
+                        )
+                        jira_needs_input = False
+                except Exception as e:
+                    logger.warning(
+                        f"Could not verify Jira token: {e}"
+                    )
+                    print(
+                        "[!] Could not verify Jira token "
+                        "(network issue) - reusing existing"
+                    )
+                    jira_needs_input = False
+
+            if jira_needs_input:
+                print("\n[INFO] To get your Jira API token:")
+                print(
+                    "   1. Go to https://id.atlassian.com/manage-profile/"
+                    "security/api-tokens"
+                )
+                print("   2. Click 'Create API token'")
+                jira_token = input("\nEnter your Jira API token: ").strip()
+                jira_email = user_email
+
+                for attempt in range(max_retries):
+                    try:
+                        creds = base64.b64encode(
+                            f"{jira_email}:{jira_token}".encode()
+                        ).decode()
+                        resp = requests.get(
+                            f"https://{jira_url}/rest/api/3/myself",
+                            headers={'Authorization': f'Basic {creds}'},
+                            timeout=30
+                        )
+                        resp.raise_for_status()
+                        jira_name = resp.json().get('displayName', '')
+                        if jira_name:
+                            user_name = jira_name
+                            print(f"[OK] Welcome, {user_name}!")
+                        break
+                    except requests.exceptions.HTTPError as e:
+                        if (e.response is not None
+                                and e.response.status_code == 401):
+                            print(
+                                "\n[FAIL] Authentication failed. "
+                                "Either the email or Jira API token "
+                                "is incorrect."
+                            )
+                            if attempt < max_retries - 1:
+                                print(
+                                    "Please re-enter your credentials "
+                                    "(or press Ctrl+C to cancel)."
+                                )
+                                while True:
+                                    jira_email = input(
+                                        "Email address: "
+                                    ).strip()
+                                    if re.match(
+                                        r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                                        jira_email
+                                    ):
+                                        break
+                                    print(
+                                        "Invalid email format. "
+                                        "Please try again."
+                                    )
+                                user_email = jira_email
+                                jira_token = input(
+                                    "Jira API token: "
+                                ).strip()
+                            else:
+                                print(
+                                    "\n[FAIL] Could not verify Jira "
+                                    "credentials after 3 attempts."
+                                )
+                                print()
+                                print(
+                                    "***********   Setup cannot "
+                                    "continue without valid "
+                                    "credentials.   *************"
+                                )
+                                print(
+                                    "***********   Please start a "
+                                    "fresh setup with correct "
+                                    "credentials.   ***********"
+                                )
+                                print("\nSetup aborted.")
+                                return None
+                        else:
+                            logger.warning(
+                                f"Could not fetch Jira profile: {e}"
+                            )
+                            break
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not fetch Jira profile: {e}"
+                        )
+                        break
+
             if not user_name:
-                user_name = input(
-                    "Enter your full name: "
-                ).strip()
+                user_name = input("Enter your full name: ").strip()
         else:
             jira_token = ""
             jira_email = user_email
-            user_name = input(
-                "Enter your full name: "
-            ).strip()
-        
-        # Work schedule & location
-        print("\n--- WORK SCHEDULE & LOCATION ---")
-        while True:
-            try:
-                daily_hours = float(
-                    input("Standard work hours per day (default 8): ").strip()
-                    or "8"
-                )
-                break
-            except ValueError:
-                print("  [ERROR] Please enter a valid number.")
+            if not user_name:
+                user_name = input("Enter your full name: ").strip()
 
-        country_code, state_code = self._select_location()
+        # ------------------------------------------------------------------ #
+        # WORK SCHEDULE & LOCATION                                            #
+        # ------------------------------------------------------------------ #
+        print("\n--- WORK SCHEDULE & LOCATION ---")
+
+        existing_daily_hours = existing.get('schedule', {}).get(
+            'daily_hours', None
+        )
+        if existing_daily_hours is not None:
+            print(f"Daily hours: {existing_daily_hours} (reusing existing)")
+            daily_hours = existing_daily_hours
+        else:
+            while True:
+                try:
+                    daily_hours = float(
+                        input(
+                            "Standard work hours per day (default 8): "
+                        ).strip() or "8"
+                    )
+                    break
+                except ValueError:
+                    print("  [ERROR] Please enter a valid number.")
+
+        existing_country = existing.get('schedule', {}).get('country_code', '')
+        existing_state = existing.get('schedule', {}).get('state', '')
+        if existing_country:
+            loc_display = existing_country
+            if existing_state:
+                loc_display += f"/{existing_state}"
+            print(f"Location: {loc_display} (reusing existing)")
+            country_code = existing_country
+            state_code = existing_state
+        else:
+            country_code, state_code = self._select_location()
 
         # Organization holidays URL
-        holidays_url = "https://ajay-sajwan-vectorsolutions.github.io/local-assets/org_holidays.json"
+        holidays_url = (
+            "https://ajay-sajwan-vectorsolutions.github.io"
+            "/local-assets/org_holidays.json"
+        )
         print(f"\nOrg holidays URL: {holidays_url} (organization default)")
 
-        # Teams webhook for notifications (disabled — pending Graph API)
-        # print("\n--- MS TEAMS NOTIFICATIONS (OPTIONAL) ---")
-        # print("Enter your MS Teams incoming webhook URL (or Enter to skip):")
-        # print("[INFO] To create a webhook: Teams channel -> ...")
-        # teams_webhook = input("Teams Webhook URL: ").strip()
-        teams_webhook = ""
+        # Teams webhook (disabled -- pending Graph API)
+        teams_webhook = existing.get(
+            'notifications', {}
+        ).get('teams_webhook_url', "")
 
-        # Email notifications (Office 365 SMTP)
-        print("\n--- EMAIL NOTIFICATIONS ---")
-        print("SMTP server: smtp.office365.com (auto-configured)")
-        enable_email = input(
-            "Enable email notifications? (yes/no, default: no): "
-        ).strip().lower()
-        enable_email = enable_email in ['yes', 'y']
+        # ------------------------------------------------------------------ #
+        # EMAIL NOTIFICATIONS                                                 #
+        # ------------------------------------------------------------------ #
+        existing_notif = existing.get('notifications', {})
+        if has_existing and 'email_enabled' in existing_notif:
+            enable_email = existing_notif.get('email_enabled', False)
+            smtp_server = existing_notif.get(
+                'smtp_server', "smtp.office365.com"
+            )
+            smtp_port = existing_notif.get('smtp_port', 587)
+            smtp_user = existing_notif.get('smtp_user', user_email)
+            smtp_password = existing_notif.get('smtp_password', "")
+            print(
+                f"\nEmail notifications: "
+                f"{'enabled' if enable_email else 'disabled'}"
+                f" (reusing existing)"
+            )
+        else:
+            print("\n--- EMAIL NOTIFICATIONS ---")
+            print("SMTP server: smtp.office365.com (auto-configured)")
+            enable_email = input(
+                "Enable email notifications? (yes/no, default: no): "
+            ).strip().lower()
+            enable_email = enable_email in ['yes', 'y']
 
-        smtp_server = "smtp.office365.com"
-        smtp_port = 587
-        smtp_user = user_email
-        smtp_password = ""
-        if enable_email:
+            smtp_server = "smtp.office365.com"
+            smtp_port = 587
+            smtp_user = user_email
+            smtp_password = ""
+            if enable_email:
+                print(f"\nSMTP login will use your email: {user_email}")
+                print(
+                    "[INFO] If MFA is enabled, create an App Password at"
+                )
+                print(
+                    "   https://mysignins.microsoft.com/security-info"
+                )
+                raw_password = input(
+                    "Enter your email/app password: "
+                ).strip()
+                smtp_password = CredentialManager.encrypt(
+                    raw_password, key='smtp_password'
+                )
+                print("[OK] Password encrypted and saved securely")
+
+        # ------------------------------------------------------------------ #
+        # MANUAL ACTIVITIES (non-developers)                                  #
+        # ------------------------------------------------------------------ #
+        existing_activities = existing.get('manual_activities', [])
+        if has_existing and existing_activities:
             print(
-                f"\nSMTP login will use your email: {user_email}"
+                f"\nManual activities: {len(existing_activities)} configured"
+                f" (reusing existing)"
             )
-            print(
-                "[INFO] If MFA is enabled, create an App Password at"
-            )
-            print(
-                "   https://mysignins.microsoft.com/security-info"
-            )
-            raw_password = input(
-                "Enter your email/app password: "
-            ).strip()
-            smtp_password = CredentialManager.encrypt(
-                raw_password, key='smtp_password'
-            )
-            print("[OK] Password encrypted and saved securely")
-        
-        # Manual activities (for non-developers)
-        manual_activities = []
-        if user_role in ["product_owner", "sales"]:
+            manual_activities = existing_activities
+        elif user_role in ["product_owner", "sales"]:
+            manual_activities = []
             print("\n--- DEFAULT ACTIVITIES ---")
             print("Set up your typical daily activities (optional)")
             while True:
-                add_activity = input("\nAdd a default activity? (yes/no): ").strip().lower()
+                add_activity = input(
+                    "\nAdd a default activity? (yes/no): "
+                ).strip().lower()
                 if add_activity not in ['yes', 'y']:
                     break
-                
-                activity = input("Activity name (e.g., 'Stakeholder Meetings'): ").strip()
+                activity = input(
+                    "Activity name (e.g., 'Stakeholder Meetings'): "
+                ).strip()
                 while True:
                     try:
-                        hours = float(input("Typical hours per day: ").strip())
+                        hours = float(
+                            input("Typical hours per day: ").strip()
+                        )
                         break
                     except ValueError:
                         print("  [ERROR] Please enter a valid number.")
@@ -666,8 +889,14 @@ class ConfigManager:
                     "activity": activity,
                     "hours": hours
                 })
-        
-        # Build configuration
+        else:
+            manual_activities = []
+
+        # ------------------------------------------------------------------ #
+        # BUILD CONFIGURATION                                                 #
+        # Preserve existing schedule overrides (PTO, holidays, etc.)         #
+        # ------------------------------------------------------------------ #
+        existing_schedule = existing.get('schedule', {})
         config = {
             "config_version": "4.0",
             "user": {
@@ -688,13 +917,20 @@ class ConfigManager:
             },
             "schedule": {
                 "daily_hours": daily_hours,
-                "daily_sync_time": "18:00",
-                "monthly_submit_day": "last",
+                "daily_sync_time": existing_schedule.get(
+                    'daily_sync_time', "18:00"
+                ),
+                "monthly_submit_day": existing_schedule.get(
+                    'monthly_submit_day', "last"
+                ),
                 "country_code": country_code,
                 "state": state_code,
-                "pto_days": [],
-                "extra_holidays": [],
-                "working_days": []
+                # Preserve user overrides from previous install
+                "pto_days": existing_schedule.get('pto_days', []),
+                "extra_holidays": existing_schedule.get(
+                    'extra_holidays', []
+                ),
+                "working_days": existing_schedule.get('working_days', []),
             },
             "notifications": {
                 "email_enabled": enable_email,
@@ -702,27 +938,41 @@ class ConfigManager:
                 "smtp_port": smtp_port,
                 "smtp_user": smtp_user,
                 "smtp_password": smtp_password,
-                "notification_email": user_email,
+                "notification_email": existing_notif.get(
+                    'notification_email', user_email
+                ),
                 "teams_webhook_url": teams_webhook,
-                "notify_on_shortfall": True
+                "notify_on_shortfall": existing_notif.get(
+                    'notify_on_shortfall', True
+                ),
             },
             "manual_activities": manual_activities,
-            "options": {
+            "options": existing.get('options', {
                 "auto_submit": True,
                 "require_confirmation": False,
                 "sync_on_startup": False
-            }
+            })
         }
-        
+
+        # Preserve overhead config if present
+        if 'overhead' in existing:
+            config['overhead'] = existing['overhead']
+
+        # Preserve distribution_weights if present
+        if 'distribution_weights' in existing.get('schedule', {}):
+            config['schedule']['distribution_weights'] = (
+                existing['schedule']['distribution_weights']
+            )
+
         # Save configuration
         self.save_config(config)
-        
+
         print("\n" + "="*60)
         print("[OK] SETUP COMPLETE!")
         print("="*60)
         print(f"\nConfiguration saved to: {self.config_path}")
         print("You can edit this file manually if needed.\n")
-        
+
         return config
     
     def _select_role(self) -> str:
@@ -774,7 +1024,7 @@ class ConfigManager:
                 print("Invalid choice. Please enter 1-5.")
 
     def save_config(self, config: Dict):
-        """Save configuration to file."""
+        """Save configuration to file and persistent backup location."""
         try:
             with open(self.config_path, 'w') as f:
                 json.dump(config, f, indent=2)
@@ -784,6 +1034,22 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Error saving configuration: {e}")
             raise
+
+        # Also write to persistent backup so re-installs can detect prior setup
+        if CONFIG_BACKUP_FILE:
+            try:
+                CONFIG_BACKUP_FILE.parent.mkdir(parents=True, exist_ok=True)
+                with open(CONFIG_BACKUP_FILE, 'w') as f:
+                    json.dump(config, f, indent=2)
+                if sys.platform != 'win32':
+                    os.chmod(CONFIG_BACKUP_FILE, 0o600)
+                logger.info(
+                    f"Config backup saved to {CONFIG_BACKUP_FILE}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Could not save config backup: {e}"
+                )
     
     def get_account_id(self) -> str:
         """Get Tempo account ID for current user."""
