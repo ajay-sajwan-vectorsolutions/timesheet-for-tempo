@@ -549,6 +549,125 @@ class TestSetupWizard:
         for section in required_sections:
             assert section in config, f"Missing section: {section}"
 
+    def _existing_developer_config(self):
+        """A complete config dict simulating a prior developer install."""
+        return {
+            "user": {"email": "dev@example.com", "name": "Test Dev", "role": "developer"},
+            "tempo": {"api_token": "old-tempo-token"},
+            "jira": {"api_token": "old-jira-token", "email": "dev@example.com"},
+            "schedule": {"daily_hours": 8.0, "country_code": "US", "state": ""},
+            "notifications": {"email_enabled": False},
+            "manual_activities": [],
+            "options": {},
+            "organization": {},
+            "overhead": {},
+        }
+
+    @responses_lib.activate
+    @patch("builtins.input")
+    def test_reinstall_valid_tokens_reused(self, mock_input, tmp_path):
+        """Re-install with valid existing tokens should reuse both without prompting."""
+        cfg_path = tmp_path / "config.json"
+        with open(cfg_path, "w") as f:
+            json.dump(self._existing_developer_config(), f)
+
+        responses_lib.add(
+            responses_lib.GET,
+            "https://api.tempo.io/4/work-attributes",
+            json={"results": []},
+            status=200,
+        )
+        responses_lib.add(
+            responses_lib.GET,
+            "https://lmsportal.atlassian.net/rest/api/3/myself",
+            json={"displayName": "Test Dev", "accountId": "test-id"},
+            status=200,
+        )
+
+        mock_input.side_effect = []  # no prompts expected
+        cm = ConfigManager.__new__(ConfigManager)
+        cm.config_path = cfg_path
+        config = cm.setup_wizard()
+
+        assert config["tempo"]["api_token"] == "old-tempo-token"
+        assert config["jira"]["api_token"] == "old-jira-token"
+        assert config["user"]["role"] == "developer"
+
+    @responses_lib.activate
+    @patch("builtins.input")
+    def test_reinstall_expired_tempo_token_prompts_new(self, mock_input, tmp_path):
+        """Re-install with expired Tempo token (401) should prompt for a new one."""
+        cfg_path = tmp_path / "config.json"
+        with open(cfg_path, "w") as f:
+            json.dump(self._existing_developer_config(), f)
+
+        # Old token fails verification
+        responses_lib.add(
+            responses_lib.GET,
+            "https://api.tempo.io/4/work-attributes",
+            json={"error": "Unauthorized"},
+            status=401,
+        )
+        # New token verification succeeds
+        responses_lib.add(
+            responses_lib.GET,
+            "https://api.tempo.io/4/work-attributes",
+            json={"results": []},
+            status=200,
+        )
+        responses_lib.add(
+            responses_lib.GET,
+            "https://lmsportal.atlassian.net/rest/api/3/myself",
+            json={"displayName": "Test Dev", "accountId": "test-id"},
+            status=200,
+        )
+
+        mock_input.side_effect = ["new-tempo-token"]
+        cm = ConfigManager.__new__(ConfigManager)
+        cm.config_path = cfg_path
+        config = cm.setup_wizard()
+
+        assert config["tempo"]["api_token"] == "new-tempo-token"
+        assert config["jira"]["api_token"] == "old-jira-token"
+
+    @responses_lib.activate
+    @patch("builtins.input")
+    def test_reinstall_expired_jira_token_prompts_new(self, mock_input, tmp_path):
+        """Re-install with expired Jira token (401) should prompt for a new one."""
+        cfg_path = tmp_path / "config.json"
+        with open(cfg_path, "w") as f:
+            json.dump(self._existing_developer_config(), f)
+
+        # Tempo token valid
+        responses_lib.add(
+            responses_lib.GET,
+            "https://api.tempo.io/4/work-attributes",
+            json={"results": []},
+            status=200,
+        )
+        # Old Jira token fails
+        responses_lib.add(
+            responses_lib.GET,
+            "https://lmsportal.atlassian.net/rest/api/3/myself",
+            json={"error": "Unauthorized"},
+            status=401,
+        )
+        # New Jira token verification succeeds
+        responses_lib.add(
+            responses_lib.GET,
+            "https://lmsportal.atlassian.net/rest/api/3/myself",
+            json={"displayName": "Test Dev", "accountId": "test-id"},
+            status=200,
+        )
+
+        mock_input.side_effect = ["new-jira-token"]
+        cm = ConfigManager.__new__(ConfigManager)
+        cm.config_path = cfg_path
+        config = cm.setup_wizard()
+
+        assert config["jira"]["api_token"] == "new-jira-token"
+        assert config["tempo"]["api_token"] == "old-tempo-token"
+
 
 # ===========================================================================
 # ConfigManager._select_role
