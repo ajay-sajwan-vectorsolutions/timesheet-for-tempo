@@ -51,8 +51,23 @@ except ImportError:
 
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE = SCRIPT_DIR / "config.json"
-LOG_FILE = SCRIPT_DIR / "daily-timesheet.log"
+LOG_FILE = SCRIPT_DIR / "daily-timesheet.log"  # legacy fallback
 INTERNAL_LOG = SCRIPT_DIR / "tempo_automation.log"
+
+
+def _monthly_log_file() -> Path:
+    """Return the daily log path for the current month (rotates on the 1st).
+
+    Format: daily-timesheet-YYYY-MM.log  (e.g. daily-timesheet-2026-03.log)
+    Old monthly files are never deleted -- they accumulate as an archive.
+    Falls back to the legacy daily-timesheet.log if date computation fails.
+    """
+    try:
+        from datetime import date
+        today = date.today()
+        return SCRIPT_DIR / f"daily-timesheet-{today.strftime('%Y-%m')}.log"
+    except Exception:
+        return LOG_FILE
 
 STOP_FILE = SCRIPT_DIR / '_tray_stop.signal'
 SHORTFALL_FILE = SCRIPT_DIR / 'monthly_shortfall.json'
@@ -491,11 +506,12 @@ class TrayApp:
             with self._automation_lock:
                 self._automation = TempoAutomation(CONFIG_FILE)
 
-            # Redirect stdout to daily-timesheet.log so sync output
-            # is captured (pythonw.exe has no console)
+            # Redirect stdout to this week's log so sync output
+            # is captured (pythonw.exe has no console).
+            # Rotates to a new file every Monday.
             import io
             from datetime import datetime as dt
-            log_path = SCRIPT_DIR / 'daily-timesheet.log'
+            log_path = _monthly_log_file()
             log_f = open(log_path, 'a', encoding='utf-8')
             log_f.write(f"\n{'='*44}\n")
             log_f.write(f"Run: {dt.now():%Y-%m-%d %H:%M:%S} (Tray App)\n")
@@ -735,15 +751,15 @@ class TrayApp:
         self._open_in_terminal('--select-overhead')
 
     def _on_view_log(self, icon=None, item=None):
-        """Open the daily log file in the default text editor."""
-        log_path = str(LOG_FILE)
-        if not LOG_FILE.exists():
+        """Open this week's daily log file in the default text editor."""
+        current_log = _monthly_log_file()
+        if not current_log.exists():
             self._show_toast('No Log', 'Log file not found yet.')
             return
         if sys.platform == 'win32':
-            subprocess.Popen(['notepad.exe', log_path])
+            subprocess.Popen(['notepad.exe', str(current_log)])
         else:
-            subprocess.Popen(['open', log_path])
+            subprocess.Popen(['open', str(current_log)])
 
     def _on_view_schedule(self, icon=None, item=None):
         """Open a terminal window showing the schedule calendar."""
@@ -790,8 +806,8 @@ class TrayApp:
             with self._automation_lock:
                 self._automation = TempoAutomation(CONFIG_FILE)
 
-            # Redirect stdout to daily-timesheet.log
-            log_path = SCRIPT_DIR / 'daily-timesheet.log'
+            # Redirect stdout to this month's log (rotates on the 1st)
+            log_path = _monthly_log_file()
             log_f = open(log_path, 'a', encoding='utf-8')
             log_f.write(f"\n{'='*44}\n")
             log_f.write(
@@ -866,7 +882,7 @@ class TrayApp:
                     self._show_toast(
                         'Submission Failed',
                         'Timesheet submission failed. '
-                        'Check daily-timesheet.log for '
+                        'Check this month\'s log file for '
                         'details.'
                     )
                     tray_logger.error(
@@ -915,8 +931,9 @@ class TrayApp:
     def _open_in_terminal(self, cli_arg: str):
         """
         Open tempo_automation.py with a CLI argument in a new terminal.
-        Windows: cmd /k with CREATE_NEW_CONSOLE.
-        Mac: osascript to open Terminal.app with command.
+        Windows: cmd /c with CREATE_NEW_CONSOLE, appends pause so the
+                 window shows 'Press any key to continue...' before closing.
+        Mac: osascript to open Terminal.app with command + read prompt.
 
         Waits for the process to finish in a daemon thread, then
         refreshes the tray menu (so dynamic items like Fix Shortfall
@@ -926,16 +943,21 @@ class TrayApp:
         if sys.platform == 'win32':
             python_dir = Path(sys.executable).parent
             python_exe = python_dir / "python.exe"
-            # Outer quotes required: cmd /k strips the first and last "
-            # on the command line.  Without outer quotes, inner quotes
-            # get mangled and paths with spaces/hyphens break.
+            # cmd /c runs the command and exits.  & pause appends a
+            # 'Press any key to continue...' prompt so the user can
+            # read the output before the window closes.
+            # Outer quotes required: cmd strips first and last " from
+            # the command line; without them inner quotes get mangled.
             proc = subprocess.Popen(
-                f'cmd /k ""{python_exe}" "{script}" {cli_arg}"',
+                f'cmd /c ""{python_exe}" "{script}" {cli_arg} & pause"',
                 cwd=str(SCRIPT_DIR),
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
         elif sys.platform == 'darwin':
-            cmd = f'cd "{SCRIPT_DIR}" && python3 "{script}" {cli_arg}'
+            cmd = (
+                f'cd "{SCRIPT_DIR}" && python3 "{script}" {cli_arg}'
+                '; echo ""; echo "Press Enter to close..."; read'
+            )
             proc = subprocess.Popen([
                 'osascript', '-e',
                 f'tell app "Terminal" to do script "{cmd}"'

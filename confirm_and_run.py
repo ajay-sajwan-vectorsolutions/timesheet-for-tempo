@@ -11,8 +11,17 @@ import sys
 import ctypes
 import subprocess
 from pathlib import Path
+from datetime import date
 
 SCRIPT_DIR = Path(__file__).parent
+
+
+def _monthly_log_file() -> Path:
+    """Return the daily log path for the current month (rotates on the 1st)."""
+    try:
+        return SCRIPT_DIR / f"daily-timesheet-{date.today().strftime('%Y-%m')}.log"
+    except Exception:
+        return SCRIPT_DIR / 'daily-timesheet.log'
 MB_OKCANCEL = 0x01
 MB_ICONQUESTION = 0x20
 IDOK = 1
@@ -107,7 +116,7 @@ def main():
         automation.sync_daily()
     except Exception as e:
         import logging
-        logging.basicConfig(filename=str(SCRIPT_DIR / 'daily-timesheet.log'))
+        logging.basicConfig(filename=str(_monthly_log_file()))
         logging.error(f"Daily sync failed: {e}", exc_info=True)
         print(f"[FAIL] Daily sync error: {e}")
 

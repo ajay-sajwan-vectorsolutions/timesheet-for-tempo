@@ -171,33 +171,46 @@ echo [5/7] Setting up scheduled tasks...
 echo.
 
 REM -- Generate run_daily.bat with detected Python path --
+REM    Log file rotates monthly: daily-timesheet-YYYY-MM.log
 echo Generating run_daily.bat...
 (
     echo @echo off
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo Run: %%date%% %%time%% ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
+    echo setlocal enabledelayedexpansion
+    echo for /f %%%%I in ^('powershell -Command "Get-Date -Format yyyy-MM"'^) do set MONTH=%%%%I
+    echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo echo Run: %%date%% %%time%% ^>^> "^!LOGFILE^!"
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
     echo "%PYTHONW_EXE%" "%SCRIPT_DIR%confirm_and_run.py"
+    echo endlocal
 ) > "%SCRIPT_DIR%run_daily.bat"
 
 REM -- Generate run_weekly.bat with detected Python path --
 echo Generating run_weekly.bat...
 (
     echo @echo off
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo Weekly Verify Run: %%date%% %%time%% ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --verify-week --logfile "%SCRIPT_DIR%daily-timesheet.log"
+    echo setlocal enabledelayedexpansion
+    echo for /f %%%%I in ^('powershell -Command "Get-Date -Format yyyy-MM"'^) do set MONTH=%%%%I
+    echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo echo Weekly Verify Run: %%date%% %%time%% ^>^> "^!LOGFILE^!"
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --verify-week --logfile "^!LOGFILE^!"
+    echo endlocal
 ) > "%SCRIPT_DIR%run_weekly.bat"
 
 REM -- Generate run_monthly.bat with detected Python path --
 echo Generating run_monthly.bat...
 (
     echo @echo off
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo Run: %%date%% %%time%% ^(Monthly Submit^) ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --submit --logfile "%SCRIPT_DIR%daily-timesheet.log"
+    echo setlocal enabledelayedexpansion
+    echo for /f %%%%I in ^('powershell -Command "Get-Date -Format yyyy-MM"'^) do set MONTH=%%%%I
+    echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo echo Run: %%date%% %%time%% ^(Monthly Submit^) ^>^> "^!LOGFILE^!"
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --submit --logfile "^!LOGFILE^!"
+    echo endlocal
 ) > "%SCRIPT_DIR%run_monthly.bat"
 
 echo [OK] Wrapper scripts generated with detected Python path
@@ -315,7 +328,7 @@ echo     - Monthly: Last day at 11:00 PM (verify + submit timesheet)
 echo.
 echo Files:
 echo   Config:  %SCRIPT_DIR%config.json
-echo   Log:     %SCRIPT_DIR%daily-timesheet.log
+echo   Log:     %SCRIPT_DIR%daily-timesheet-YYYY-MM.log  (rotates monthly)
 echo   Runtime: %SCRIPT_DIR%tempo_automation.log
 echo.
 echo Manual commands:

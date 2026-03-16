@@ -2888,10 +2888,10 @@ class TempoAutomation:
                 logger.error(f"Health check failed: {msg}")
                 return False
 
-        # Check Tempo API
+        # Check Tempo API using /work-attributes (lightweight, always available)
         if self.tempo_client.account_id or self.tempo_client.api_token:
             try:
-                url = f"{self.tempo_client.base_url}/user"
+                url = f"{self.tempo_client.base_url}/work-attributes"
                 response = self.tempo_client.session.get(
                     url, timeout=10
                 )
