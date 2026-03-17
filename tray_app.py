@@ -416,6 +416,8 @@ class TrayApp:
                 visible=self._submit_visible
             ),
             pystray.MenuItem('Settings', self._on_settings),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem('Uninstall', self._on_uninstall),
             pystray.MenuItem('Exit', self._on_exit),
         )
 
@@ -980,8 +982,8 @@ class TrayApp:
     def _open_in_terminal(self, cli_arg: str):
         """
         Open tempo_automation.py with a CLI argument in a new terminal.
-        Windows: cmd /c with CREATE_NEW_CONSOLE, appends pause so the
-                 window shows 'Press any key to continue...' before closing.
+        Windows: cmd /c with CREATE_NEW_CONSOLE, appends a custom echo
+                 so the window shows 'Press any key to exit...' before closing.
         Mac: osascript to open Terminal.app with command + read prompt.
 
         Waits for the process to finish in a daemon thread, then
@@ -992,20 +994,22 @@ class TrayApp:
         if sys.platform == 'win32':
             python_dir = Path(sys.executable).parent
             python_exe = python_dir / "python.exe"
-            # cmd /c runs the command and exits.  & pause appends a
-            # 'Press any key to continue...' prompt so the user can
-            # read the output before the window closes.
+            # cmd /c runs the command and exits.  The trailing echo+pause
+            # shows a custom 'Press any key to exit...' prompt so the
+            # user can read the output before the window closes.
+            # pause >nul suppresses the default "Press any key to
+            # continue..." text; our echo replaces it.
             # Outer quotes required: cmd strips first and last " from
             # the command line; without them inner quotes get mangled.
             proc = subprocess.Popen(
-                f'cmd /c ""{python_exe}" "{script}" {cli_arg} & pause"',
+                f'cmd /c ""{python_exe}" "{script}" {cli_arg} & echo. & echo Press any key to exit... & pause >nul"',
                 cwd=str(SCRIPT_DIR),
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
         elif sys.platform == 'darwin':
             cmd = (
                 f'cd "{SCRIPT_DIR}" && python3 "{script}" {cli_arg}'
-                '; echo ""; echo "Press Enter to close..."; read'
+                '; echo ""; echo "Press Enter to exit..."; read'
             )
             proc = subprocess.Popen([
                 'osascript', '-e',
@@ -1044,6 +1048,143 @@ class TrayApp:
             os.startfile(config_path)
         else:
             subprocess.Popen(['open', config_path])
+
+    def _on_uninstall(self, icon=None, item=None):
+        """Start uninstall flow in a daemon thread (pystray callback must return quickly)."""
+        thread = threading.Thread(target=self._uninstall_flow, daemon=True)
+        thread.start()
+
+    def _uninstall_confirm_dialog(self) -> bool:
+        """Show destructive-action confirmation. Returns True if user confirmed uninstall."""
+        msg = (
+            "This will permanently delete:\n"
+            f"  - {SCRIPT_DIR}\n"
+            "  - All scheduled tasks\n"
+            "  - Autostart registration\n\n"
+            "Your config and logs will be deleted.\n\n"
+            "Are you sure you want to uninstall?"
+        )
+        title = "Uninstall Tempo Automation"
+        if sys.platform == 'win32':
+            # MB_YESNO | MB_ICONEXCLAMATION | MB_TOPMOST | MB_DEFBUTTON2
+            flags = 0x04 | 0x30 | 0x40000 | 0x100  # default = No
+            result = ctypes.windll.user32.MessageBoxW(0, msg, title, flags)
+            return result == 6  # 6 = IDYES
+        elif sys.platform == 'darwin':
+            safe_msg = msg.replace('"', '\\"').replace('\n', '\\n')
+            script = (
+                f'display dialog "{safe_msg}" '
+                f'buttons {{"Cancel", "Uninstall"}} '
+                f'default button "Cancel" '
+                f'with title "{title}" with icon stop'
+            )
+            proc = subprocess.run(
+                ['osascript', '-e', script],
+                capture_output=True, text=True
+            )
+            return 'Uninstall' in proc.stdout
+        return False
+
+    def _uninstall_scheduled_tasks(self):
+        """Delete the 3 Task Scheduler tasks created by install.bat (Windows only)."""
+        tasks = [
+            'TempoAutomation-DailySync',
+            'TempoAutomation-WeeklyVerify',
+            'TempoAutomation-MonthlySubmit',
+        ]
+        for task in tasks:
+            try:
+                subprocess.run(
+                    ['schtasks', '/Delete', '/TN', task, '/F'],
+                    capture_output=True, timeout=10
+                )
+                tray_logger.info(f"Deleted task: {task}")
+            except Exception as e:
+                tray_logger.warning(f"Could not delete task {task}: {e}")
+
+    def _schedule_folder_delete(self):
+        """Launch a detached process to delete SCRIPT_DIR after Python exits."""
+        if sys.platform == 'win32':
+            import os
+            import tempfile
+            bat = (
+                '@echo off\n'
+                'ping -n 4 localhost >nul\n'
+                f'rmdir /s /q "{SCRIPT_DIR}"\n'
+            )
+            bat_path = (
+                Path(os.environ.get('TEMP', str(SCRIPT_DIR.parent)))
+                / '_tempo_uninstall.bat'
+            )
+            bat_path.write_text(bat)
+            subprocess.Popen(
+                ['cmd', '/c', str(bat_path)],
+                creationflags=subprocess.DETACHED_PROCESS
+                              | subprocess.CREATE_NO_WINDOW
+            )
+        elif sys.platform == 'darwin':
+            subprocess.Popen(
+                ['bash', '-c', f'sleep 3 && rm -rf "{SCRIPT_DIR}"']
+            )
+
+    def _uninstall_flow(self):
+        """Orchestrate full uninstall: confirm, clean up, delete folder, stop icon."""
+        if not self._uninstall_confirm_dialog():
+            return  # user cancelled
+
+        tray_logger.info("Uninstall initiated")
+
+        # Step 1: unregister autostart (removes registry key / LaunchAgent plist)
+        try:
+            unregister_autostart()
+        except Exception as e:
+            tray_logger.warning(f"Could not unregister autostart: {e}")
+
+        # Step 2: remove scheduled tasks (Windows) or cron entries (Mac)
+        if sys.platform == 'win32':
+            self._uninstall_scheduled_tasks()
+        elif sys.platform == 'darwin':
+            try:
+                result = subprocess.run(
+                    ['crontab', '-l'], capture_output=True, text=True
+                )
+                new_cron = '\n'.join(
+                    line for line in result.stdout.splitlines()
+                    if 'tempo_automation.py' not in line
+                )
+                subprocess.run(
+                    ['crontab', '-'], input=new_cron,
+                    text=True, capture_output=True
+                )
+                tray_logger.info("Cron entries removed")
+            except Exception as e:
+                tray_logger.warning(f"Could not remove cron entries: {e}")
+
+        # Step 3: remove AppData config backup so a fresh re-install doesn't inherit old credentials
+        try:
+            from tempo_automation import CONFIG_BACKUP_FILE
+            if CONFIG_BACKUP_FILE.exists():
+                CONFIG_BACKUP_FILE.unlink()
+                tray_logger.info(f"Removed AppData config backup: {CONFIG_BACKUP_FILE}")
+        except Exception as e:
+            tray_logger.warning(f"Could not remove AppData config backup: {e}")
+
+        # Step 4: stop animation and timer
+        self._stop_sync_animation()
+        if self._timer:
+            self._timer.cancel()
+
+        # Step 5: goodbye toast
+        self._show_toast(
+            "Uninstall Complete",
+            "Tempo Automation has been uninstalled. Goodbye!",
+            app_name="Tempo Automation"
+        )
+
+        # Step 6: schedule folder deletion then stop the icon
+        self._schedule_folder_delete()
+        if self._icon:
+            self._icon.stop()
 
     def _on_exit(self, icon=None, item=None):
         """Start smart exit in a separate thread (pystray callback must return quickly)."""
