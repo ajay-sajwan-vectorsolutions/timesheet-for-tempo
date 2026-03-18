@@ -20,15 +20,15 @@ Usage:
 Author: Vector Solutions Engineering Team
 """
 
-import sys
-import os
-import json
 import argparse
-import threading
-import subprocess
-import logging
 import calendar
-from datetime import datetime, timedelta, date
+import json
+import logging
+import os
+import subprocess
+import sys
+import threading
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 # Platform-specific imports
@@ -148,7 +148,7 @@ def _load_favicon(size: int = 48) -> 'Image':
             favicon = favicon.resize((size, size), Image.LANCZOS)
             _favicon_cache = favicon
             return favicon.copy()
-        except (OSError, IOError, Exception) as e:
+        except (OSError, Exception) as e:
             tray_logger.warning(f"Could not load favicon: {e}")
             return None
 
@@ -177,7 +177,7 @@ def _make_icon(color: str = 'green') -> 'Image':
         # Fallback: draw "T" in dark blue
         try:
             font = ImageFont.truetype("arial.ttf", 40)
-        except (OSError, IOError):
+        except OSError:
             font = ImageFont.load_default()
         bbox = draw.textbbox((0, 0), "T", font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -228,7 +228,7 @@ class TrayApp:
         """
         try:
             import json
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            with open(CONFIG_FILE, encoding='utf-8') as f:
                 self._config = json.load(f)
 
             # Import the main automation class
@@ -272,7 +272,7 @@ class TrayApp:
                     fcntl.LOCK_EX | fcntl.LOCK_NB
                 )
                 return True
-            except IOError:
+            except OSError:
                 tray_logger.info("Another instance is already running")
                 return False
 
@@ -318,7 +318,7 @@ class TrayApp:
         """Re-read config.json to pick up changes from CLI commands."""
         try:
             if CONFIG_FILE.exists():
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                with open(CONFIG_FILE, encoding='utf-8') as f:
                     self._config = json.load(f)
         except Exception:
             pass
@@ -467,13 +467,13 @@ class TrayApp:
         # Hide if already submitted this month
         if SUBMITTED_FILE.exists():
             try:
-                with open(SUBMITTED_FILE, 'r',
+                with open(SUBMITTED_FILE,
                           encoding='utf-8') as f:
                     data = json.load(f)
                 period = f"{today.year}-{today.month:02d}"
                 if data.get('period') == period:
                     return False
-            except (json.JSONDecodeError, IOError, OSError):
+            except (json.JSONDecodeError, OSError):
                 pass
 
         return True
@@ -512,7 +512,6 @@ class TrayApp:
             # Redirect stdout to this week's log so sync output
             # is captured (pythonw.exe has no console).
             # Rotates to a new file every Monday.
-            import io
             from datetime import datetime as dt
             log_path = _monthly_log_file()
             log_f = open(log_path, 'a', encoding='utf-8')
@@ -714,7 +713,7 @@ class TrayApp:
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
                 self._show_toast(
                     'Invalid Time',
-                    f'Hours must be 0-23, minutes 0-59.'
+                    'Hours must be 0-23, minutes 0-59.'
                 )
                 return
 
@@ -724,7 +723,7 @@ class TrayApp:
             # Read config, update, write back
             config_data = {}
             if CONFIG_FILE.exists():
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                with open(CONFIG_FILE, encoding='utf-8') as f:
                     config_data = json.load(f)
 
             if 'schedule' not in config_data:
@@ -883,7 +882,7 @@ class TrayApp:
 
             if SUBMITTED_FILE.exists():
                 try:
-                    with open(SUBMITTED_FILE, 'r',
+                    with open(SUBMITTED_FILE,
                               encoding='utf-8') as f:
                         sdata = json.load(f)
                     if sdata.get('period') == period:
@@ -902,7 +901,7 @@ class TrayApp:
                             "Submission successful from tray"
                         )
                         return
-                except (json.JSONDecodeError, IOError, OSError):
+                except (json.JSONDecodeError, OSError):
                     pass
 
             if SHORTFALL_FILE.exists():
@@ -1107,7 +1106,6 @@ class TrayApp:
         """Launch a detached process to delete SCRIPT_DIR after Python exits."""
         if sys.platform == 'win32':
             import os
-            import tempfile
             bat = (
                 '@echo off\n'
                 'ping -n 4 localhost >nul\n'
@@ -1529,7 +1527,7 @@ class TrayApp:
                 welcome_app = (
                     f'Welcome back, {user_name}! \U0001F44F'
                     if user_name
-                    else f'Welcome back! \U0001F44F'
+                    else 'Welcome back! \U0001F44F'
                 )
                 if upgraded:
                     self._show_toast(
@@ -1563,7 +1561,7 @@ class TrayApp:
                     welcome_app = (
                         f'Welcome, {user_name}! \U0001F44F'
                         if user_name
-                        else f'Welcome! \U0001F44F'
+                        else 'Welcome! \U0001F44F'
                     )
                     self._show_toast(
                         f'{time_greeting}! {emoji}',
