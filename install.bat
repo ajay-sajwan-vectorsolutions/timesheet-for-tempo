@@ -440,9 +440,7 @@ REM Start the tray app now (detached -- no console window, no terminal tab)
 echo Starting tray app...
 set TRAY_EXTRA=
 if "!IS_UPGRADE!"=="1" set TRAY_EXTRA= --upgraded
-echo CreateObject("WScript.Shell").Run """%PYTHONW_EXE%"" ""%SCRIPT_DIR%tray_app.py""!TRAY_EXTRA!", 0, False > "%TEMP%\_tempo_launch.vbs"
-wscript "%TEMP%\_tempo_launch.vbs"
-del "%TEMP%\_tempo_launch.vbs" >nul 2>&1
+powershell -Command "Start-Process -FilePath '!PYTHONW_EXE!' -ArgumentList ('\"!SCRIPT_DIR!tray_app.py\"!TRAY_EXTRA!') -WindowStyle Hidden"
 timeout /t 3 /nobreak >nul
 echo [OK] Tray app is running in the system tray
 echo.
