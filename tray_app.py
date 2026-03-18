@@ -289,6 +289,7 @@ class TrayApp:
         if self._timer:
             self._timer.cancel()
 
+        self._reload_config()
         sync_time_str = self._get_sync_time()
         try:
             hour, minute = map(int, sync_time_str.split(':'))
