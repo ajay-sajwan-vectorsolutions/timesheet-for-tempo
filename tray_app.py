@@ -325,27 +325,14 @@ class TrayApp:
 
     def _on_timer_fired(self):
         """Called by threading.Timer at the configured time."""
-        # Check overhead config and remind if needed
         self._reload_config()
-        oh = self._config.get('overhead', {}) if self._config else {}
-        current_pi = oh.get('current_pi', {})
-        if not current_pi.get('stories'):
-            self._show_toast(
-                'Overhead Not Configured',
-                'Right-click tray icon > Select Overhead '
-                'to set up overhead stories for this PI.'
-            )
+        tray_logger.info("Timer fired - starting automatic sync")
 
-        self._pending_confirmation = True
-        self._set_icon_state('orange', 'Tempo - Time to log hours!')
-        self._show_toast(
-            'Time to Log Hours',
-            'Click the Tempo tray icon to confirm and sync your timesheet.'
-        )
-        tray_logger.info("Timer fired - awaiting user confirmation")
-
-        # Re-arm for tomorrow
+        # Re-arm for tomorrow before running sync
         self._schedule_next_sync()
+
+        # Run sync automatically without any upfront notification
+        self._on_sync_now()
 
     def _get_user_label(self) -> str:
         """Build user identity label from config."""
@@ -502,6 +489,10 @@ class TrayApp:
         self._start_sync_animation('Tempo - Syncing...')
         tray_logger.info("Sync started")
 
+        log_f = None
+        old_stdout = sys.stdout  # capture before any potential failure
+        sync_succeeded = False
+
         try:
             # Re-create automation instance to pick up fresh config
             # (overhead, PTO, etc. may have changed since startup)
@@ -509,9 +500,8 @@ class TrayApp:
             with self._automation_lock:
                 self._automation = TempoAutomation(CONFIG_FILE)
 
-            # Redirect stdout to this week's log so sync output
+            # Redirect stdout to this month's log so sync output
             # is captured (pythonw.exe has no console).
-            # Rotates to a new file every Monday.
             from datetime import datetime as dt
             log_path = _monthly_log_file()
             log_f = open(log_path, 'a', encoding='utf-8')
@@ -519,46 +509,80 @@ class TrayApp:
             log_f.write(f"Run: {dt.now():%Y-%m-%d %H:%M:%S} (Tray App)\n")
             log_f.write(f"{'='*44}\n")
             with self._stdout_lock:
-                old_stdout = sys.stdout
                 sys.stdout = log_f
 
-            self._automation.sync_daily()
+            result = self._automation.sync_daily()
 
             with self._stdout_lock:
                 sys.stdout = old_stdout
             log_f.close()
+            log_f = None
 
-            self._set_icon_state('green', 'Tempo - Sync complete')
-            # Refresh menu in case shortfall state changed
             if self._icon:
                 self._icon.update_menu()
-            self._show_toast(
-                'Sync Complete',
-                'Daily timesheet has been synced successfully.'
-            )
-            tray_logger.info("Sync completed successfully")
+
+            if result is None:
+                # Non-working day / health check abort / early exit
+                self._set_icon_state('green', 'Tempo Automation')
+                tray_logger.info("Sync skipped (non-working day or early exit)")
+                sync_succeeded = True
+            elif result['hours_logged'] >= result['target_hours']:
+                self._set_icon_state('green', 'Tempo - Sync complete')
+                self._show_toast(
+                    'Sync Complete',
+                    f"Daily timesheet synced: {result['hours_logged']:.1f}h logged."
+                )
+                tray_logger.info("Sync completed successfully")
+                sync_succeeded = True
+            else:
+                hours = result['hours_logged']
+                target = result['target_hours']
+                reason = result.get('reason', 'partial')
+                if reason == 'no_overhead':
+                    tooltip = (
+                        f'Tempo - Incomplete: {hours:.1f}h of {target:.1f}h logged. '
+                        f'No overhead stories configured. '
+                        f'Right-click > Configure > Select Overhead.'
+                    )
+                    body = (
+                        f"0.0h logged - no overhead stories configured.\n"
+                        f"Right-click the tray icon > Configure > Select Overhead."
+                    )
+                elif reason == 'no_tickets':
+                    tooltip = (
+                        f'Tempo - Incomplete: {hours:.1f}h of {target:.1f}h logged. '
+                        f'No active Jira tickets found.'
+                    )
+                    body = (
+                        f"0.0h logged - no active Jira tickets found.\n"
+                        f"Ensure tickets are IN DEVELOPMENT or CODE REVIEW."
+                    )
+                else:
+                    tooltip = (
+                        f'Tempo - Incomplete: {hours:.1f}h of {target:.1f}h logged.'
+                    )
+                    body = f"Only {hours:.1f}h of {target:.1f}h logged."
+                self._set_icon_state('red', tooltip)
+                self._show_toast('Sync Incomplete', body)
+                tray_logger.warning(f"Sync incomplete: {hours:.1f}h/{target:.1f}h reason={reason}")
+                sync_succeeded = False
         except Exception as e:
-            # Restore stdout on error
             with self._stdout_lock:
                 sys.stdout = old_stdout
-            if 'log_f' in locals() and not log_f.closed:
+            if log_f and not log_f.closed:
                 log_f.close()
             error_msg = str(e)[:200]
             self._set_icon_state('red', f'Tempo - Error: {error_msg}')
             self._show_toast('Sync Failed', f'Error: {error_msg}')
             tray_logger.error(f"Sync failed: {e}", exc_info=True)
+            sync_succeeded = False
         finally:
             self._sync_running.clear()
 
-        # Revert icon to green after 5 seconds (if it was success)
+        # Revert icon to green after 5 seconds only on success
         def _revert():
-            if not self._sync_running.is_set() and not self._import_error:
-                if self._pending_confirmation:
-                    self._set_icon_state(
-                        'orange', 'Tempo - Time to log hours!'
-                    )
-                else:
-                    self._set_icon_state('green', 'Tempo Automation')
+            if not self._sync_running.is_set() and not self._import_error and sync_succeeded:
+                self._set_icon_state('green', 'Tempo Automation')
         timer = threading.Timer(5.0, _revert)
         timer.daemon = True
         timer.start()

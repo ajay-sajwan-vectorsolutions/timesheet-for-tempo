@@ -3005,8 +3005,26 @@ class TempoAutomation:
         else:
             print(f"Status: [!] Incomplete ({total_hours:.2f}h logged)")
         print()
-        
+
         logger.info(f"Daily sync completed: {len(worklogs_created)} entries, {total_hours:.2f}h")
+
+        # Determine reason for any shortfall (used by tray app for accurate notification)
+        oh_stories = self._get_overhead_config().get('current_pi', {}).get('stories', [])
+        fallback = self._get_overhead_config().get('fallback_issue_key', '')
+        if total_hours == 0 and not oh_stories and not fallback:
+            reason = 'no_overhead'
+        elif total_hours == 0:
+            reason = 'no_tickets'
+        elif total_hours < self.schedule_mgr.daily_hours:
+            reason = 'partial'
+        else:
+            reason = 'ok'
+
+        return {
+            'hours_logged': total_hours,
+            'target_hours': self.schedule_mgr.daily_hours,
+            'reason': reason,
+        }
     
     def _sync_jira_worklogs(self, target_date: str) -> List[Dict]:
         """Sync Jira worklogs to Tempo."""
