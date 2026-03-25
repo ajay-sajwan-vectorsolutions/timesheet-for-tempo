@@ -9,11 +9,20 @@ python tempo_automation.py
 # Sync specific date
 python tempo_automation.py --date 2026-02-15
 
+# Preview sync without making changes
+python tempo_automation.py --dry-run
+
 # Weekly verify & backfill
 python tempo_automation.py --verify-week
 
 # Submit monthly timesheet
 python tempo_automation.py --submit
+
+# Backfill a date range after vacation
+python tempo_automation.py --backfill --from-date 2026-03-01 --to-date 2026-03-10
+
+# Check timesheet approval status
+python tempo_automation.py --approval-status
 
 # View monthly hours per day
 python tempo_automation.py --view-monthly
@@ -23,6 +32,9 @@ python tempo_automation.py --fix-shortfall
 
 # Select overhead stories for PI
 python tempo_automation.py --select-overhead
+
+# Structured JSON log output
+python tempo_automation.py --log-format json
 
 # Run setup wizard again
 python tempo_automation.py --setup
@@ -38,8 +50,8 @@ python tempo_automation.py --help
 | `config.json` | Your personal configuration (gitignored) |
 | `daily-timesheet.log` | Execution output log |
 | `tempo_automation.log` | Internal runtime logs |
-| `tempo_automation.py` | Main script (4,253 lines) |
-| `tray_app.py` | System tray app (~1,458 lines) |
+| `tempo_automation.py` | Main script (5,446 lines) |
+| `tray_app.py` | System tray app (~1,533 lines) |
 
 ## Quick Fixes
 

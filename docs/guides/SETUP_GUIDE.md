@@ -17,6 +17,18 @@ Runs daily at a scheduled time and:
 
 ---
 
+## What's New in v4.0
+
+- **Data safety:** Create-before-delete pattern -- new worklogs are created first, old ones deleted only after success. Full rollback if anything fails.
+- **Pre-sync health check:** Validates Jira + Tempo API connectivity before every sync. Fails fast with a clear message instead of a partial sync.
+- **Dry-run mode:** Run `--dry-run` to preview what would be logged without making any changes. Useful when testing your setup.
+- **Date-range backfill:** Use `--backfill --from-date YYYY-MM-DD --to-date YYYY-MM-DD` to fill in multiple missed days at once.
+- **Approval status:** Use `--approval-status` to check whether your timesheet for the current (or a past) month is approved.
+- **Retry logic:** Automatic retry with backoff on 429/502/503/504 API errors.
+- **500 automated tests:** 71% code coverage with CI/CD via GitHub Actions.
+
+---
+
 ## Prerequisites
 
 - Windows 10/11 or macOS (full cross-platform support since v3.5)
@@ -415,8 +427,13 @@ Summary:
 :: --- Core Operations ---
 python tempo_automation.py                        :: Daily sync (today)
 python tempo_automation.py --date 2026-02-15      :: Sync specific date
+python tempo_automation.py --dry-run              :: Preview sync (no changes)
 python tempo_automation.py --verify-week           :: Verify & backfill this week
 python tempo_automation.py --submit               :: Monthly submit
+python tempo_automation.py --approval-status      :: Check approval status (current month)
+python tempo_automation.py --approval-status 2026-02 :: Check approval status (specific month)
+python tempo_automation.py --backfill --from-date 2026-03-01 --to-date 2026-03-10 :: Backfill range
+python tempo_automation.py --log-format json      :: JSON-formatted log output
 python tempo_automation.py --setup                :: Re-run setup wizard
 
 :: --- Overhead Stories ---
