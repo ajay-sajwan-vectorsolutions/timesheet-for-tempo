@@ -314,6 +314,40 @@ class TrayApp:
             f"({delay:.0f}s from now)"
         )
 
+    def _maybe_sync_on_start(self):
+        """Trigger an immediate sync if the configured time has already passed today.
+
+        Called on startup when the tray was restarted by confirm_and_run.py
+        as a fallback (tray was not running when Task Scheduler fired).
+        A 3-second delay lets the icon and pystray message pump settle first.
+        """
+        sync_time_str = self._get_sync_time()
+        try:
+            hour, minute = map(int, sync_time_str.split(':'))
+        except (ValueError, AttributeError):
+            return
+        now = datetime.now()
+        configured_today = now.replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        )
+        if now >= configured_today:
+            tray_logger.info(
+                "sync-on-start: configured time has passed, "
+                "triggering immediate sync"
+            )
+
+            def _delayed():
+                import time as _time
+                _time.sleep(3)
+                self._on_sync_now()
+
+            threading.Thread(target=_delayed, daemon=True).start()
+        else:
+            tray_logger.info(
+                "sync-on-start: configured time not yet reached, "
+                "timer will fire at scheduled time"
+            )
+
     def _reload_config(self):
         """Re-read config.json to pick up changes from CLI commands."""
         try:
@@ -759,6 +793,7 @@ class TrayApp:
 
             self._reload_config()
             self._schedule_next_sync()
+            self._update_task_scheduler_time(new_time)
 
             self._show_toast(
                 'Sync Time Updated',
@@ -771,6 +806,31 @@ class TrayApp:
             tray_logger.error(
                 f"Change sync time failed: {e}", exc_info=True
             )
+
+    def _update_task_scheduler_time(self, new_time: str):
+        """Update the Windows Task Scheduler daily sync task to the new time.
+
+        Keeps the Task Scheduler task in sync with the tray-configured time
+        so the fallback restart (confirm_and_run.py) fires at the right hour.
+        """
+        if sys.platform != 'win32':
+            return
+        try:
+            result = subprocess.run(
+                ['schtasks', '/Change', '/TN', 'TempoAutomation-DailySync',
+                 '/ST', new_time],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                tray_logger.info(
+                    f"Task Scheduler 'TempoAutomation-DailySync' updated to {new_time}"
+                )
+            else:
+                tray_logger.warning(
+                    f"Could not update Task Scheduler time: {result.stderr.strip()}"
+                )
+        except Exception as e:
+            tray_logger.warning(f"Could not update Task Scheduler time: {e}")
 
     def _on_select_overhead(self, icon=None, item=None):
         """Open a terminal window for overhead story selection."""
@@ -1450,7 +1510,8 @@ class TrayApp:
         tray_logger.info("Auto-start not found, registering...")
         register_autostart()
 
-    def run(self, quiet: bool = False, upgraded: bool = False):
+    def run(self, quiet: bool = False, upgraded: bool = False,
+            sync_on_start: bool = False):
         """Main entry point -- blocks on pystray message pump.
 
         Args:
@@ -1459,6 +1520,10 @@ class TrayApp:
                    by the daily scheduler).
             upgraded: If True, show an upgrade success toast instead
                       of the normal welcome greeting.
+            sync_on_start: If True and the configured sync time has
+                           already passed today, trigger an immediate
+                           sync.  Used when confirm_and_run.py restarts
+                           the tray as a fallback.
         """
         if not PYSTRAY_OK:
             print(
@@ -1490,6 +1555,8 @@ class TrayApp:
             initial_tooltip = 'Tempo Automation'
             # Schedule the notification timer
             self._schedule_next_sync()
+            if sync_on_start:
+                self._maybe_sync_on_start()
 
         self._icon = pystray.Icon(
             name='TempoAutomation',
@@ -1765,6 +1832,10 @@ def main():
         '--upgraded', action='store_true',
         help='Show upgrade success toast on startup'
     )
+    parser.add_argument(
+        '--sync-on-start', action='store_true',
+        help='Trigger an immediate sync if configured time has passed today'
+    )
     args = parser.parse_args()
 
     if args.register:
@@ -1775,7 +1846,11 @@ def main():
         stop_app()
     else:
         app = TrayApp()
-        app.run(quiet=args.quiet, upgraded=args.upgraded)
+        app.run(
+            quiet=args.quiet,
+            upgraded=args.upgraded,
+            sync_on_start=args.sync_on_start
+        )
 
 
 if __name__ == '__main__':
