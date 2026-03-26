@@ -384,7 +384,7 @@ class TestSetupWizard:
         """Input sequence for a product owner setup flow."""
         return [
             "po@example.com",        # email
-            "2",                     # role: product_owner
+            "3",                     # role: product_owner
             "tempo-po-token",        # tempo token
             "Test PO",               # name
             "8",                     # daily hours
@@ -495,7 +495,7 @@ class TestSetupWizard:
         self._register_tempo_user()
         inputs = [
             "sales@example.com",    # email
-            "3",                    # role: sales
+            "4",                    # role: sales
             "tempo-sales-token",    # tempo token
             "Test Sales",           # name
             "8",                    # daily hours
@@ -683,18 +683,24 @@ class TestSelectRole:
         assert cm._select_role() == "developer"
 
     @patch("builtins.input", return_value="2")
-    def test_returns_product_owner_for_choice_2(self, mock_input):
-        """Choice '2' should return 'product_owner'."""
+    def test_returns_qa_for_choice_2(self, mock_input):
+        """Choice '2' should return 'qa'."""
+        cm = ConfigManager.__new__(ConfigManager)
+        assert cm._select_role() == "qa"
+
+    @patch("builtins.input", return_value="3")
+    def test_returns_product_owner_for_choice_3(self, mock_input):
+        """Choice '3' should return 'product_owner'."""
         cm = ConfigManager.__new__(ConfigManager)
         assert cm._select_role() == "product_owner"
 
-    @patch("builtins.input", return_value="3")
-    def test_returns_sales_for_choice_3(self, mock_input):
-        """Choice '3' should return 'sales'."""
+    @patch("builtins.input", return_value="4")
+    def test_returns_sales_for_choice_4(self, mock_input):
+        """Choice '4' should return 'sales'."""
         cm = ConfigManager.__new__(ConfigManager)
         assert cm._select_role() == "sales"
 
-    @patch("builtins.input", side_effect=["x", "0", "4", "abc", "1"])
+    @patch("builtins.input", side_effect=["x", "0", "5", "abc", "1"])
     def test_retries_on_invalid_input(self, mock_input):
         """Invalid choices should be rejected; loop continues until valid."""
         cm = ConfigManager.__new__(ConfigManager)
@@ -703,7 +709,7 @@ class TestSelectRole:
         # Should have been called 5 times (4 invalid + 1 valid)
         assert mock_input.call_count == 5
 
-    @patch("builtins.input", side_effect=["", " ", "2"])
+    @patch("builtins.input", side_effect=["", " ", "3"])
     def test_retries_on_empty_input(self, mock_input):
         """Empty or whitespace input should be rejected."""
         cm = ConfigManager.__new__(ConfigManager)

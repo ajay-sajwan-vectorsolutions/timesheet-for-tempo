@@ -361,7 +361,7 @@ class ConfigManager:
 
         # user.role must be one of the allowed values
         user_role = config.get('user', {}).get('role', '')
-        allowed_roles = ('developer', 'product_owner', 'sales')
+        allowed_roles = ('developer', 'qa', 'product_owner', 'sales')
         if user_role not in allowed_roles:
             print(
                 f"[FAIL] Config validation: Invalid 'user.role' "
@@ -379,14 +379,14 @@ class ConfigManager:
             )
             valid = False
 
-        # jira.api_token required for developer role
-        if user_role == 'developer':
+        # jira.api_token required for developer and qa roles
+        if user_role in ('developer', 'qa'):
             jira_token = config.get('jira', {}).get('api_token', '')
             if not jira_token:
                 print(
                     "[FAIL] Config validation: Missing required "
-                    "field 'jira.api_token' (required for "
-                    "developer role)"
+                    f"field 'jira.api_token' (required for "
+                    f"{user_role} role)"
                 )
                 valid = False
 
@@ -483,7 +483,7 @@ class ConfigManager:
 
         # Role
         existing_role = existing.get('user', {}).get('role', '')
-        if existing_role in ('developer', 'product_owner', 'sales'):
+        if existing_role in ('developer', 'qa', 'product_owner', 'sales'):
             print(f"Role: {existing_role} (reusing existing)")
             user_role = existing_role
         else:
@@ -610,8 +610,8 @@ class ConfigManager:
                     )
                     break
 
-        # -- Jira token (developers only) ----------------------------------
-        if user_role == "developer":
+        # -- Jira token (developers and QA) --------------------------------
+        if user_role in ("developer", "qa"):
             existing_jira_token = existing.get('jira', {}).get('api_token', '')
             existing_jira_email = existing.get('jira', {}).get('email', user_email)
             jira_token = existing_jira_token
@@ -978,20 +978,23 @@ class ConfigManager:
     def _select_role(self) -> str:
         """Helper to select user role."""
         print("\nSelect your role:")
-        print("  1. Developer (works with Jira tickets)")
-        print("  2. Product Owner")
-        print("  3. Sales Team")
-        
+        print("  1. Developer (works with Jira tickets in development)")
+        print("  2. QA (works with Jira tickets in testing)")
+        print("  3. Product Owner")
+        print("  4. Sales Team")
+
         while True:
-            choice = input("Enter choice (1-3): ").strip()
+            choice = input("Enter choice (1-4): ").strip()
             if choice == "1":
                 return "developer"
             elif choice == "2":
-                return "product_owner"
+                return "qa"
             elif choice == "3":
+                return "product_owner"
+            elif choice == "4":
                 return "sales"
             else:
-                print("Invalid choice. Please enter 1, 2, or 3.")
+                print("Invalid choice. Please enter 1, 2, 3, or 4.")
     
     def _select_location(self) -> Tuple[str, str]:
         """Helper to select country and city/state for holiday detection."""
@@ -1830,6 +1833,11 @@ class ScheduleManager:
 # JIRA API CLIENT
 # ============================================================================
 
+# Status sets used for active-issue JQL queries, keyed by role
+DEVELOPER_STATUSES = ["IN DEVELOPMENT", "CODE REVIEW"]
+QA_STATUSES = ["Testing", "User Acceptance Testing"]
+
+
 class JiraClient:
     """Handles Jira API interactions."""
 
@@ -1968,15 +1976,22 @@ class JiraClient:
             logger.error(f"Error deleting worklog {worklog_id} from {issue_key}: {e}")
             return False
 
-    def get_my_active_issues(self) -> List[Dict]:
+    def get_my_active_issues(self, statuses: List[str] = None) -> List[Dict]:
         """
-        Fetch issues assigned to current user that are In Progress or Code Review.
+        Fetch issues assigned to current user that are actively being worked.
+
+        Args:
+            statuses: List of Jira status names to filter by.
+                      Defaults to DEVELOPER_STATUSES if not provided.
 
         Returns:
             List of dicts with issue_key and issue_summary
         """
+        if statuses is None:
+            statuses = DEVELOPER_STATUSES
         try:
-            jql = 'assignee = currentUser() AND status IN ("IN DEVELOPMENT", "CODE REVIEW")'
+            quoted = ', '.join(f'"{s}"' for s in statuses)
+            jql = f'assignee = currentUser() AND status IN ({quoted})'
 
             url = f"{self.base_url}/rest/api/3/search/jql"
             params = {
@@ -2004,26 +2019,30 @@ class JiraClient:
             logger.error(f"Error fetching active issues: {e}")
             return []
 
-    def get_issues_in_status_on_date(self, target_date: str) -> List[Dict]:
+    def get_issues_in_status_on_date(
+        self, target_date: str, statuses: List[str] = None
+    ) -> List[Dict]:
         """
-        Fetch issues that were IN DEVELOPMENT or CODE REVIEW on a past date.
+        Fetch issues that were in the given statuses on a past date.
 
         Uses historical JQL (status WAS ... ON ...) to find tickets that
         were active on a specific date, even if their status has since changed.
 
         Args:
             target_date: Date string (YYYY-MM-DD)
+            statuses: List of Jira status names to filter by.
+                      Defaults to DEVELOPER_STATUSES if not provided.
 
         Returns:
             List of dicts with issue_key and issue_summary
         """
+        if statuses is None:
+            statuses = DEVELOPER_STATUSES
         try:
-            jql = (
-                f'assignee = currentUser() AND ('
-                f'status WAS "IN DEVELOPMENT" ON "{target_date}" OR '
-                f'status WAS "CODE REVIEW" ON "{target_date}"'
-                f')'
+            was_clauses = ' OR '.join(
+                f'status WAS "{s}" ON "{target_date}"' for s in statuses
             )
+            jql = f'assignee = currentUser() AND ({was_clauses})'
 
             url = f"{self.base_url}/rest/api/3/search/jql"
             params = {
@@ -2734,7 +2753,7 @@ class TempoAutomation:
         self.schedule_mgr = ScheduleManager(self.config)
 
         self.jira_client = None
-        if self.config.get('user', {}).get('role') == 'developer':
+        if self.config.get('user', {}).get('role') in ('developer', 'qa'):
             self.jira_client = JiraClient(self.config)
 
         account_id = (
@@ -2747,7 +2766,7 @@ class TempoAutomation:
         self.schedule_mgr.check_year_end_warning()
 
         # Check overhead story configuration
-        if self.config.get('user', {}).get('role') == 'developer':
+        if self.config.get('user', {}).get('role') in ('developer', 'qa'):
             if not self._is_overhead_configured():
                 print(
                     "[INFO] Overhead stories not configured. "
@@ -2979,7 +2998,7 @@ class TempoAutomation:
 
         worklogs_created = []
         
-        if self.config.get('user', {}).get('role') == 'developer':
+        if self.config.get('user', {}).get('role') in ('developer', 'qa'):
             # Auto-log time across active Jira tickets
             worklogs_created = self._auto_log_jira_worklogs(target_date)
         else:
@@ -3250,13 +3269,16 @@ class TempoAutomation:
             )
             return overhead_result + created
 
-        # Get active issues
-        active_issues = self.jira_client.get_my_active_issues()
+        # Get active issues for the current role's statuses
+        active_issues = self.jira_client.get_my_active_issues(
+            statuses=self._get_active_statuses()
+        )
 
         # Case 1: No active tickets -> overhead fallback
         if not active_issues:
+            status_label = " / ".join(self._get_active_statuses())
             logger.warning(
-                "No active issues found (IN DEVELOPMENT / CODE REVIEW)"
+                f"No active issues found ({status_label})"
             )
             if self._is_overhead_configured():
                 print(
@@ -3577,6 +3599,13 @@ class TempoAutomation:
     # ------------------------------------------------------------------
     # OVERHEAD STORY SUPPORT
     # ------------------------------------------------------------------
+
+    def _get_active_statuses(self) -> List[str]:
+        """Return Jira statuses considered 'active' for the current role."""
+        role = self.config.get('user', {}).get('role', 'developer')
+        if role == 'qa':
+            return QA_STATUSES
+        return DEVELOPER_STATUSES
 
     def _get_overhead_config(self) -> Dict:
         """Get overhead configuration section from config."""
@@ -4364,8 +4393,8 @@ class TempoAutomation:
         is_last_day = (today.day == last_day_num)
         period = f"{today.year}-{today.month:02d}"
 
-        # Guard: already submitted this month
-        if self._is_already_submitted(period):
+        # Guard: already submitted this month (skipped in dry-run)
+        if not self.dry_run and self._is_already_submitted(period):
             print(
                 f"[OK] Timesheet for {period} was already submitted."
             )
@@ -4494,6 +4523,11 @@ class TempoAutomation:
             return
 
         # --- Last day (or early eligible), no shortfall: submit ---
+        if self.dry_run:
+            print(f"[DRY RUN] Would submit timesheet for {period}")
+            print("[DRY RUN] Gap detection ran above -- no API call made.")
+            return
+
         print(f"Submitting timesheet for {period}...")
         success = self.tempo_client.submit_timesheet(period)
 
@@ -5308,7 +5342,7 @@ class TempoAutomation:
 
         # Find stories that were active on that date
         issues = self.jira_client.get_issues_in_status_on_date(
-            target_date
+            target_date, statuses=self._get_active_statuses()
         )
 
         # Filter out already-logged issues
