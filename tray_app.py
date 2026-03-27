@@ -20,15 +20,15 @@ Usage:
 Author: Vector Solutions Engineering Team
 """
 
-import sys
-import os
-import json
 import argparse
-import threading
-import subprocess
-import logging
 import calendar
-from datetime import datetime, timedelta, date
+import json
+import logging
+import os
+import subprocess
+import sys
+import threading
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 # Platform-specific imports
@@ -51,8 +51,23 @@ except ImportError:
 
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE = SCRIPT_DIR / "config.json"
-LOG_FILE = SCRIPT_DIR / "daily-timesheet.log"
+LOG_FILE = SCRIPT_DIR / "daily-timesheet.log"  # legacy fallback
 INTERNAL_LOG = SCRIPT_DIR / "tempo_automation.log"
+
+
+def _monthly_log_file() -> Path:
+    """Return the daily log path for the current month (rotates on the 1st).
+
+    Format: daily-timesheet-YYYY-MM.log  (e.g. daily-timesheet-2026-03.log)
+    Old monthly files are never deleted -- they accumulate as an archive.
+    Falls back to the legacy daily-timesheet.log if date computation fails.
+    """
+    try:
+        from datetime import date
+        today = date.today()
+        return SCRIPT_DIR / f"daily-timesheet-{today.strftime('%Y-%m')}.log"
+    except Exception:
+        return LOG_FILE
 
 STOP_FILE = SCRIPT_DIR / '_tray_stop.signal'
 SHORTFALL_FILE = SCRIPT_DIR / 'monthly_shortfall.json'
@@ -133,7 +148,7 @@ def _load_favicon(size: int = 48) -> 'Image':
             favicon = favicon.resize((size, size), Image.LANCZOS)
             _favicon_cache = favicon
             return favicon.copy()
-        except (OSError, IOError, Exception) as e:
+        except (OSError, Exception) as e:
             tray_logger.warning(f"Could not load favicon: {e}")
             return None
 
@@ -162,7 +177,7 @@ def _make_icon(color: str = 'green') -> 'Image':
         # Fallback: draw "T" in dark blue
         try:
             font = ImageFont.truetype("arial.ttf", 40)
-        except (OSError, IOError):
+        except OSError:
             font = ImageFont.load_default()
         bbox = draw.textbbox((0, 0), "T", font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -213,7 +228,7 @@ class TrayApp:
         """
         try:
             import json
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            with open(CONFIG_FILE, encoding='utf-8') as f:
                 self._config = json.load(f)
 
             # Import the main automation class
@@ -257,7 +272,7 @@ class TrayApp:
                     fcntl.LOCK_EX | fcntl.LOCK_NB
                 )
                 return True
-            except IOError:
+            except OSError:
                 tray_logger.info("Another instance is already running")
                 return False
 
@@ -274,6 +289,7 @@ class TrayApp:
         if self._timer:
             self._timer.cancel()
 
+        self._reload_config()
         sync_time_str = self._get_sync_time()
         try:
             hour, minute = map(int, sync_time_str.split(':'))
@@ -298,38 +314,59 @@ class TrayApp:
             f"({delay:.0f}s from now)"
         )
 
+    def _maybe_sync_on_start(self):
+        """Trigger an immediate sync if the configured time has already passed today.
+
+        Called on startup when the tray was restarted by confirm_and_run.py
+        as a fallback (tray was not running when Task Scheduler fired).
+        A 3-second delay lets the icon and pystray message pump settle first.
+        """
+        sync_time_str = self._get_sync_time()
+        try:
+            hour, minute = map(int, sync_time_str.split(':'))
+        except (ValueError, AttributeError):
+            return
+        now = datetime.now()
+        configured_today = now.replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        )
+        if now >= configured_today:
+            tray_logger.info(
+                "sync-on-start: configured time has passed, "
+                "triggering immediate sync"
+            )
+
+            def _delayed():
+                import time as _time
+                _time.sleep(3)
+                self._on_sync_now()
+
+            threading.Thread(target=_delayed, daemon=True).start()
+        else:
+            tray_logger.info(
+                "sync-on-start: configured time not yet reached, "
+                "timer will fire at scheduled time"
+            )
+
     def _reload_config(self):
         """Re-read config.json to pick up changes from CLI commands."""
         try:
             if CONFIG_FILE.exists():
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                with open(CONFIG_FILE, encoding='utf-8') as f:
                     self._config = json.load(f)
         except Exception:
             pass
 
     def _on_timer_fired(self):
         """Called by threading.Timer at the configured time."""
-        # Check overhead config and remind if needed
         self._reload_config()
-        oh = self._config.get('overhead', {}) if self._config else {}
-        current_pi = oh.get('current_pi', {})
-        if not current_pi.get('stories'):
-            self._show_toast(
-                'Overhead Not Configured',
-                'Right-click tray icon > Select Overhead '
-                'to set up overhead stories for this PI.'
-            )
+        tray_logger.info("Timer fired - starting automatic sync")
 
-        self._pending_confirmation = True
-        self._set_icon_state('orange', 'Tempo - Time to log hours!')
-        self._show_toast(
-            'Time to Log Hours',
-            'Click the Tempo tray icon to confirm and sync your timesheet.'
-        )
-        tray_logger.info("Timer fired - awaiting user confirmation")
-
-        # Re-arm for tomorrow
+        # Re-arm for tomorrow before running sync
         self._schedule_next_sync()
+
+        # Run sync automatically without any upfront notification
+        self._on_sync_now()
 
     def _get_user_label(self) -> str:
         """Build user identity label from config."""
@@ -401,6 +438,8 @@ class TrayApp:
                 visible=self._submit_visible
             ),
             pystray.MenuItem('Settings', self._on_settings),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem('Uninstall', self._on_uninstall),
             pystray.MenuItem('Exit', self._on_exit),
         )
 
@@ -449,13 +488,13 @@ class TrayApp:
         # Hide if already submitted this month
         if SUBMITTED_FILE.exists():
             try:
-                with open(SUBMITTED_FILE, 'r',
+                with open(SUBMITTED_FILE,
                           encoding='utf-8') as f:
                     data = json.load(f)
                 period = f"{today.year}-{today.month:02d}"
                 if data.get('period') == period:
                     return False
-            except (json.JSONDecodeError, IOError, OSError):
+            except (json.JSONDecodeError, OSError):
                 pass
 
         return True
@@ -484,6 +523,10 @@ class TrayApp:
         self._start_sync_animation('Tempo - Syncing...')
         tray_logger.info("Sync started")
 
+        log_f = None
+        old_stdout = sys.stdout  # capture before any potential failure
+        sync_succeeded = False
+
         try:
             # Re-create automation instance to pick up fresh config
             # (overhead, PTO, etc. may have changed since startup)
@@ -491,56 +534,89 @@ class TrayApp:
             with self._automation_lock:
                 self._automation = TempoAutomation(CONFIG_FILE)
 
-            # Redirect stdout to daily-timesheet.log so sync output
-            # is captured (pythonw.exe has no console)
-            import io
+            # Redirect stdout to this month's log so sync output
+            # is captured (pythonw.exe has no console).
             from datetime import datetime as dt
-            log_path = SCRIPT_DIR / 'daily-timesheet.log'
+            log_path = _monthly_log_file()
             log_f = open(log_path, 'a', encoding='utf-8')
             log_f.write(f"\n{'='*44}\n")
             log_f.write(f"Run: {dt.now():%Y-%m-%d %H:%M:%S} (Tray App)\n")
             log_f.write(f"{'='*44}\n")
             with self._stdout_lock:
-                old_stdout = sys.stdout
                 sys.stdout = log_f
 
-            self._automation.sync_daily()
+            result = self._automation.sync_daily()
 
             with self._stdout_lock:
                 sys.stdout = old_stdout
             log_f.close()
+            log_f = None
 
-            self._set_icon_state('green', 'Tempo - Sync complete')
-            # Refresh menu in case shortfall state changed
             if self._icon:
                 self._icon.update_menu()
-            self._show_toast(
-                'Sync Complete',
-                'Daily timesheet has been synced successfully.'
-            )
-            tray_logger.info("Sync completed successfully")
+
+            if result is None:
+                # Non-working day / health check abort / early exit
+                self._set_icon_state('green', 'Tempo Automation')
+                tray_logger.info("Sync skipped (non-working day or early exit)")
+                sync_succeeded = True
+            elif result['hours_logged'] >= result['target_hours']:
+                self._set_icon_state('green', 'Tempo - Sync complete')
+                self._show_toast(
+                    'Sync Complete',
+                    f"Daily timesheet synced: {result['hours_logged']:.1f}h logged."
+                )
+                tray_logger.info("Sync completed successfully")
+                sync_succeeded = True
+            else:
+                hours = result['hours_logged']
+                target = result['target_hours']
+                reason = result.get('reason', 'partial')
+                if reason == 'no_overhead':
+                    tooltip = (
+                        f'Tempo - Incomplete: {hours:.1f}h of {target:.1f}h logged. '
+                        f'No overhead stories configured. '
+                        f'Right-click > Configure > Select Overhead.'
+                    )
+                    body = (
+                        f"0.0h logged - no overhead stories configured.\n"
+                        f"Right-click the tray icon > Configure > Select Overhead."
+                    )
+                elif reason == 'no_tickets':
+                    tooltip = (
+                        f'Tempo - Incomplete: {hours:.1f}h of {target:.1f}h logged. '
+                        f'No active Jira tickets found.'
+                    )
+                    body = (
+                        f"0.0h logged - no active Jira tickets found.\n"
+                        f"Ensure tickets are IN DEVELOPMENT or CODE REVIEW."
+                    )
+                else:
+                    tooltip = (
+                        f'Tempo - Incomplete: {hours:.1f}h of {target:.1f}h logged.'
+                    )
+                    body = f"Only {hours:.1f}h of {target:.1f}h logged."
+                self._set_icon_state('red', tooltip)
+                self._show_toast('Sync Incomplete', body)
+                tray_logger.warning(f"Sync incomplete: {hours:.1f}h/{target:.1f}h reason={reason}")
+                sync_succeeded = False
         except Exception as e:
-            # Restore stdout on error
             with self._stdout_lock:
                 sys.stdout = old_stdout
-            if 'log_f' in locals() and not log_f.closed:
+            if log_f and not log_f.closed:
                 log_f.close()
             error_msg = str(e)[:200]
             self._set_icon_state('red', f'Tempo - Error: {error_msg}')
             self._show_toast('Sync Failed', f'Error: {error_msg}')
             tray_logger.error(f"Sync failed: {e}", exc_info=True)
+            sync_succeeded = False
         finally:
             self._sync_running.clear()
 
-        # Revert icon to green after 5 seconds (if it was success)
+        # Revert icon to green after 5 seconds only on success
         def _revert():
-            if not self._sync_running.is_set() and not self._import_error:
-                if self._pending_confirmation:
-                    self._set_icon_state(
-                        'orange', 'Tempo - Time to log hours!'
-                    )
-                else:
-                    self._set_icon_state('green', 'Tempo Automation')
+            if not self._sync_running.is_set() and not self._import_error and sync_succeeded:
+                self._set_icon_state('green', 'Tempo Automation')
         timer = threading.Timer(5.0, _revert)
         timer.daemon = True
         timer.start()
@@ -695,7 +771,7 @@ class TrayApp:
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
                 self._show_toast(
                     'Invalid Time',
-                    f'Hours must be 0-23, minutes 0-59.'
+                    'Hours must be 0-23, minutes 0-59.'
                 )
                 return
 
@@ -705,7 +781,7 @@ class TrayApp:
             # Read config, update, write back
             config_data = {}
             if CONFIG_FILE.exists():
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                with open(CONFIG_FILE, encoding='utf-8') as f:
                     config_data = json.load(f)
 
             if 'schedule' not in config_data:
@@ -717,6 +793,7 @@ class TrayApp:
 
             self._reload_config()
             self._schedule_next_sync()
+            self._update_task_scheduler_time(new_time)
 
             self._show_toast(
                 'Sync Time Updated',
@@ -730,27 +807,101 @@ class TrayApp:
                 f"Change sync time failed: {e}", exc_info=True
             )
 
+    def _update_task_scheduler_time(self, new_time: str):
+        """Update the Windows Task Scheduler daily sync task to the new time.
+
+        Keeps the Task Scheduler task in sync with the tray-configured time
+        so the fallback restart (confirm_and_run.py) fires at the right hour.
+        """
+        if sys.platform != 'win32':
+            return
+        try:
+            result = subprocess.run(
+                ['schtasks', '/Change', '/TN', 'TempoAutomation-DailySync',
+                 '/ST', new_time],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                tray_logger.info(
+                    f"Task Scheduler 'TempoAutomation-DailySync' updated to {new_time}"
+                )
+            else:
+                tray_logger.warning(
+                    f"Could not update Task Scheduler time: {result.stderr.strip()}"
+                )
+        except Exception as e:
+            tray_logger.warning(f"Could not update Task Scheduler time: {e}")
+
     def _on_select_overhead(self, icon=None, item=None):
         """Open a terminal window for overhead story selection."""
         self._open_in_terminal('--select-overhead')
 
     def _on_view_log(self, icon=None, item=None):
-        """Open the daily log file in the default text editor."""
-        log_path = str(LOG_FILE)
-        if not LOG_FILE.exists():
+        """Open this week's daily log file in the default text editor."""
+        current_log = _monthly_log_file()
+        if not current_log.exists():
             self._show_toast('No Log', 'Log file not found yet.')
             return
         if sys.platform == 'win32':
-            subprocess.Popen(['notepad.exe', log_path])
+            subprocess.Popen(['notepad.exe', str(current_log)])
         else:
-            subprocess.Popen(['open', log_path])
+            subprocess.Popen(['open', str(current_log)])
+
+    def _run_and_show_dialog(self, cli_arg: str, title: str):
+        """Run a read-only CLI command and show captured output in a popup dialog.
+
+        Same pattern as Add PTO: no terminal window, native popup, closes on OK.
+        """
+        script = SCRIPT_DIR / 'tempo_automation.py'
+        python_exe = Path(sys.executable).parent / 'python.exe'
+        try:
+            result = subprocess.run(
+                [str(python_exe), str(script), cli_arg],
+                capture_output=True, text=True,
+                cwd=str(SCRIPT_DIR), timeout=60
+            )
+            output = (result.stdout or '').strip() or (result.stderr or '').strip() or '(no output)'
+        except subprocess.TimeoutExpired:
+            output = 'Timed out.'
+        except Exception as e:
+            output = f'Error: {e}'
+
+        if sys.platform == 'win32':
+            self._show_text_dialog_win(output, title)
+        elif sys.platform == 'darwin':
+            self._show_text_dialog_mac(output, title)
+
+    def _show_text_dialog_win(self, text: str, title: str):
+        """Display multi-line text in a VBScript MsgBox (same mechanism as Add PTO)."""
+        vbs_text = text.replace('"', '""').replace('\n', '" & vbCrLf & "')
+        vbs_title = title.replace('"', '""')
+        vbs_content = f'MsgBox "{vbs_text}", 0, "{vbs_title}"\n'
+        vbs_file = SCRIPT_DIR / '_tempo_output.vbs'
+        try:
+            vbs_file.write_text(vbs_content)
+            subprocess.run(['wscript.exe', str(vbs_file)], timeout=300)
+        except subprocess.TimeoutExpired:
+            pass
+        finally:
+            if vbs_file.exists():
+                vbs_file.unlink()
+
+    def _show_text_dialog_mac(self, text: str, title: str):
+        """Display text in an AppleScript dialog (same mechanism as Add PTO)."""
+        safe_text = text.replace('"', '\\"').replace('\n', '\\n')
+        safe_title = title.replace('"', '\\"')
+        script = f'display dialog "{safe_text}" buttons {{"OK"}} with title "{safe_title}"'
+        try:
+            subprocess.run(['osascript', '-e', script], timeout=300)
+        except subprocess.TimeoutExpired:
+            pass
 
     def _on_view_schedule(self, icon=None, item=None):
-        """Open a terminal window showing the schedule calendar."""
+        """Show schedule calendar in a terminal window."""
         self._open_in_terminal('--show-schedule')
 
     def _on_view_monthly(self, icon=None, item=None):
-        """Open a terminal window showing monthly hours report."""
+        """Show monthly hours report in a terminal window."""
         self._open_in_terminal('--view-monthly')
 
     def _on_fix_shortfall(self, icon=None, item=None):
@@ -790,8 +941,8 @@ class TrayApp:
             with self._automation_lock:
                 self._automation = TempoAutomation(CONFIG_FILE)
 
-            # Redirect stdout to daily-timesheet.log
-            log_path = SCRIPT_DIR / 'daily-timesheet.log'
+            # Redirect stdout to this month's log (rotates on the 1st)
+            log_path = _monthly_log_file()
             log_f = open(log_path, 'a', encoding='utf-8')
             log_f.write(f"\n{'='*44}\n")
             log_f.write(
@@ -815,7 +966,7 @@ class TrayApp:
 
             if SUBMITTED_FILE.exists():
                 try:
-                    with open(SUBMITTED_FILE, 'r',
+                    with open(SUBMITTED_FILE,
                               encoding='utf-8') as f:
                         sdata = json.load(f)
                     if sdata.get('period') == period:
@@ -834,7 +985,7 @@ class TrayApp:
                             "Submission successful from tray"
                         )
                         return
-                except (json.JSONDecodeError, IOError, OSError):
+                except (json.JSONDecodeError, OSError):
                     pass
 
             if SHORTFALL_FILE.exists():
@@ -866,7 +1017,7 @@ class TrayApp:
                     self._show_toast(
                         'Submission Failed',
                         'Timesheet submission failed. '
-                        'Check daily-timesheet.log for '
+                        'Check this month\'s log file for '
                         'details.'
                     )
                     tray_logger.error(
@@ -915,8 +1066,9 @@ class TrayApp:
     def _open_in_terminal(self, cli_arg: str):
         """
         Open tempo_automation.py with a CLI argument in a new terminal.
-        Windows: cmd /k with CREATE_NEW_CONSOLE.
-        Mac: osascript to open Terminal.app with command.
+        Windows: cmd /c with CREATE_NEW_CONSOLE, appends a custom echo
+                 so the window shows 'Press any key to exit...' before closing.
+        Mac: osascript to open Terminal.app with command + read prompt.
 
         Waits for the process to finish in a daemon thread, then
         refreshes the tray menu (so dynamic items like Fix Shortfall
@@ -926,16 +1078,23 @@ class TrayApp:
         if sys.platform == 'win32':
             python_dir = Path(sys.executable).parent
             python_exe = python_dir / "python.exe"
-            # Outer quotes required: cmd /k strips the first and last "
-            # on the command line.  Without outer quotes, inner quotes
-            # get mangled and paths with spaces/hyphens break.
+            # cmd /c runs the command and exits.  The trailing echo+pause
+            # shows a custom 'Press any key to exit...' prompt so the
+            # user can read the output before the window closes.
+            # pause >nul suppresses the default "Press any key to
+            # continue..." text; our echo replaces it.
+            # Outer quotes required: cmd strips first and last " from
+            # the command line; without them inner quotes get mangled.
             proc = subprocess.Popen(
-                f'cmd /k ""{python_exe}" "{script}" {cli_arg}"',
+                f'cmd /c ""{python_exe}" "{script}" {cli_arg} & echo. & echo Press any key to exit... & pause >nul"',
                 cwd=str(SCRIPT_DIR),
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
         elif sys.platform == 'darwin':
-            cmd = f'cd "{SCRIPT_DIR}" && python3 "{script}" {cli_arg}'
+            cmd = (
+                f'cd "{SCRIPT_DIR}" && python3 "{script}" {cli_arg}'
+                '; echo ""; echo "Press Enter to exit..."; read'
+            )
             proc = subprocess.Popen([
                 'osascript', '-e',
                 f'tell app "Terminal" to do script "{cmd}"'
@@ -973,6 +1132,142 @@ class TrayApp:
             os.startfile(config_path)
         else:
             subprocess.Popen(['open', config_path])
+
+    def _on_uninstall(self, icon=None, item=None):
+        """Start uninstall flow in a daemon thread (pystray callback must return quickly)."""
+        thread = threading.Thread(target=self._uninstall_flow, daemon=True)
+        thread.start()
+
+    def _uninstall_confirm_dialog(self) -> bool:
+        """Show destructive-action confirmation. Returns True if user confirmed uninstall."""
+        msg = (
+            "This will permanently delete:\n"
+            f"  - {SCRIPT_DIR}\n"
+            "  - All scheduled tasks\n"
+            "  - Autostart registration\n\n"
+            "Your config and logs will be deleted.\n\n"
+            "Are you sure you want to uninstall?"
+        )
+        title = "Uninstall Tempo Automation"
+        if sys.platform == 'win32':
+            # MB_YESNO | MB_ICONEXCLAMATION | MB_TOPMOST | MB_DEFBUTTON2
+            flags = 0x04 | 0x30 | 0x40000 | 0x100  # default = No
+            result = ctypes.windll.user32.MessageBoxW(0, msg, title, flags)
+            return result == 6  # 6 = IDYES
+        elif sys.platform == 'darwin':
+            safe_msg = msg.replace('"', '\\"').replace('\n', '\\n')
+            script = (
+                f'display dialog "{safe_msg}" '
+                f'buttons {{"Cancel", "Uninstall"}} '
+                f'default button "Cancel" '
+                f'with title "{title}" with icon stop'
+            )
+            proc = subprocess.run(
+                ['osascript', '-e', script],
+                capture_output=True, text=True
+            )
+            return 'Uninstall' in proc.stdout
+        return False
+
+    def _uninstall_scheduled_tasks(self):
+        """Delete the 3 Task Scheduler tasks created by install.bat (Windows only)."""
+        tasks = [
+            'TempoAutomation-DailySync',
+            'TempoAutomation-WeeklyVerify',
+            'TempoAutomation-MonthlySubmit',
+        ]
+        for task in tasks:
+            try:
+                subprocess.run(
+                    ['schtasks', '/Delete', '/TN', task, '/F'],
+                    capture_output=True, timeout=10
+                )
+                tray_logger.info(f"Deleted task: {task}")
+            except Exception as e:
+                tray_logger.warning(f"Could not delete task {task}: {e}")
+
+    def _schedule_folder_delete(self):
+        """Launch a detached process to delete SCRIPT_DIR after Python exits."""
+        if sys.platform == 'win32':
+            import os
+            bat = (
+                '@echo off\n'
+                'ping -n 4 localhost >nul\n'
+                f'rmdir /s /q "{SCRIPT_DIR}"\n'
+            )
+            bat_path = (
+                Path(os.environ.get('TEMP', str(SCRIPT_DIR.parent)))
+                / '_tempo_uninstall.bat'
+            )
+            bat_path.write_text(bat)
+            subprocess.Popen(
+                ['cmd', '/c', str(bat_path)],
+                creationflags=subprocess.DETACHED_PROCESS
+                              | subprocess.CREATE_NO_WINDOW
+            )
+        elif sys.platform == 'darwin':
+            subprocess.Popen(
+                ['bash', '-c', f'sleep 3 && rm -rf "{SCRIPT_DIR}"']
+            )
+
+    def _uninstall_flow(self):
+        """Orchestrate full uninstall: confirm, clean up, delete folder, stop icon."""
+        if not self._uninstall_confirm_dialog():
+            return  # user cancelled
+
+        tray_logger.info("Uninstall initiated")
+
+        # Step 1: unregister autostart (removes registry key / LaunchAgent plist)
+        try:
+            unregister_autostart()
+        except Exception as e:
+            tray_logger.warning(f"Could not unregister autostart: {e}")
+
+        # Step 2: remove scheduled tasks (Windows) or cron entries (Mac)
+        if sys.platform == 'win32':
+            self._uninstall_scheduled_tasks()
+        elif sys.platform == 'darwin':
+            try:
+                result = subprocess.run(
+                    ['crontab', '-l'], capture_output=True, text=True
+                )
+                new_cron = '\n'.join(
+                    line for line in result.stdout.splitlines()
+                    if 'tempo_automation.py' not in line
+                )
+                subprocess.run(
+                    ['crontab', '-'], input=new_cron,
+                    text=True, capture_output=True
+                )
+                tray_logger.info("Cron entries removed")
+            except Exception as e:
+                tray_logger.warning(f"Could not remove cron entries: {e}")
+
+        # Step 3: remove AppData config backup so a fresh re-install doesn't inherit old credentials
+        try:
+            from tempo_automation import CONFIG_BACKUP_FILE
+            if CONFIG_BACKUP_FILE.exists():
+                CONFIG_BACKUP_FILE.unlink()
+                tray_logger.info(f"Removed AppData config backup: {CONFIG_BACKUP_FILE}")
+        except Exception as e:
+            tray_logger.warning(f"Could not remove AppData config backup: {e}")
+
+        # Step 4: stop animation and timer
+        self._stop_sync_animation()
+        if self._timer:
+            self._timer.cancel()
+
+        # Step 5: goodbye toast
+        self._show_toast(
+            "Uninstall Complete",
+            "Tempo Automation has been uninstalled. Goodbye!",
+            app_name="Tempo Automation"
+        )
+
+        # Step 6: schedule folder deletion then stop the icon
+        self._schedule_folder_delete()
+        if self._icon:
+            self._icon.stop()
 
     def _on_exit(self, icon=None, item=None):
         """Start smart exit in a separate thread (pystray callback must return quickly)."""
@@ -1215,13 +1510,20 @@ class TrayApp:
         tray_logger.info("Auto-start not found, registering...")
         register_autostart()
 
-    def run(self, quiet: bool = False):
+    def run(self, quiet: bool = False, upgraded: bool = False,
+            sync_on_start: bool = False):
         """Main entry point -- blocks on pystray message pump.
 
         Args:
             quiet: If True, show a 'back online' toast instead of
                    the full welcome greeting (used when restarted
                    by the daily scheduler).
+            upgraded: If True, show an upgrade success toast instead
+                      of the normal welcome greeting.
+            sync_on_start: If True and the configured sync time has
+                           already passed today, trigger an immediate
+                           sync.  Used when confirm_and_run.py restarts
+                           the tray as a fallback.
         """
         if not PYSTRAY_OK:
             print(
@@ -1253,6 +1555,8 @@ class TrayApp:
             initial_tooltip = 'Tempo Automation'
             # Schedule the notification timer
             self._schedule_next_sync()
+            if sync_on_start:
+                self._maybe_sync_on_start()
 
         self._icon = pystray.Icon(
             name='TempoAutomation',
@@ -1314,9 +1618,17 @@ class TrayApp:
                 welcome_app = (
                     f'Welcome back, {user_name}! \U0001F44F'
                     if user_name
-                    else f'Welcome back! \U0001F44F'
+                    else 'Welcome back! \U0001F44F'
                 )
-                if quiet:
+                if upgraded:
+                    self._show_toast(
+                        'The app has been upgraded and is now '
+                        'running from C:\\tempo-timesheet\\\n'
+                        'Right-click the tray icon to get started.',
+                        '',
+                        app_name='Upgrade Complete! \U0001F389'
+                    )
+                elif quiet:
                     # Restarted by daily scheduler
                     self._show_toast(
                         'The Tempo app was previously '
@@ -1340,7 +1652,7 @@ class TrayApp:
                     welcome_app = (
                         f'Welcome, {user_name}! \U0001F44F'
                         if user_name
-                        else f'Welcome! \U0001F44F'
+                        else 'Welcome! \U0001F44F'
                     )
                     self._show_toast(
                         f'{time_greeting}! {emoji}',
@@ -1516,6 +1828,14 @@ def main():
         '--quiet', action='store_true',
         help='Start with a restart toast instead of welcome greeting'
     )
+    parser.add_argument(
+        '--upgraded', action='store_true',
+        help='Show upgrade success toast on startup'
+    )
+    parser.add_argument(
+        '--sync-on-start', action='store_true',
+        help='Trigger an immediate sync if configured time has passed today'
+    )
     args = parser.parse_args()
 
     if args.register:
@@ -1526,7 +1846,11 @@ def main():
         stop_app()
     else:
         app = TrayApp()
-        app.run(quiet=args.quiet)
+        app.run(
+            quiet=args.quiet,
+            upgraded=args.upgraded,
+            sync_on_start=args.sync_on_start
+        )
 
 
 if __name__ == '__main__':

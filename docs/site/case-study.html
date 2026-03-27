@@ -36,7 +36,7 @@
      Cover
      ============================================================ -->
 <section class="cover" id="cover">
-  <div class="cover-meta">Vector Solutions Engineering &bull; February 2026 &bull; v3.9</div>
+  <div class="cover-meta">Vector Solutions Engineering &bull; March 2026 &bull; v4.0</div>
   <h1 class="cover-title">
     tempo timesheet<br>
     automation <span>&mdash;</span>
@@ -85,7 +85,7 @@
   <div class="section-bar"></div>
 
   <h2 class="section-title">200 engineers filling timesheets by hand, every single day.</h2>
-  <p class="section-subtitle">At Vector Solutions, every employee must log 8 hours daily in Tempo via Jira. For 200+ engineers, product owners, and sales staff, this means 15-20 minutes of manual entry, every working day, across the entire organization.</p>
+  <p class="section-subtitle">At Vector Solutions, every employee must log 8 hours daily in Tempo via Jira. For 200+ engineers, QA engineers, product owners, and sales staff, this means 15-20 minutes of manual entry, every working day, across the entire organization.</p>
 
   <div class="stats-grid">
     <div class="stat-card">
@@ -116,11 +116,15 @@
       <p class="text-muted">Developers open Jira, try to remember which tickets they worked on, estimate hours for each, navigate to Tempo, fill in worklogs with descriptions, and repeat for each ticket. At month-end, they scramble to fix shortfalls before the submission deadline.</p>
     </div>
     <div>
-      <h3 style="font-size: 1.1rem; font-weight: 500; margin-bottom: 1rem;">Three roles, same pain</h3>
+      <h3 style="font-size: 1.1rem; font-weight: 500; margin-bottom: 1rem;">Four roles, same pain</h3>
       <table class="data-table">
         <tr>
           <td>Developers</td>
-          <td class="text-muted">150 people, Jira-based</td>
+          <td class="text-muted">130 people, Jira-based</td>
+        </tr>
+        <tr>
+          <td>QA Engineers</td>
+          <td class="text-muted">20 people, Jira-based</td>
         </tr>
         <tr>
           <td>Product Owners</td>
@@ -266,7 +270,7 @@
     <div class="flow-step">
       <div class="flow-step-number">01</div>
       <h3>Read Jira Tickets</h3>
-      <p>Script queries your active tickets via Jira REST API. Filters by status: IN DEVELOPMENT or CODE REVIEW.</p>
+      <p>Script queries your active tickets via Jira REST API. Filters by status based on role: IN DEVELOPMENT / CODE REVIEW for developers, Testing / UAT for QA.</p>
     </div>
     <div class="flow-step">
       <div class="flow-step-number">02</div>
@@ -363,6 +367,18 @@
           <h3>Early Submission</h3>
           <p>Submit mid-month when remaining days are non-working</p>
         </div>
+        <div class="timeline-item">
+          <div class="version-tag">v4.0</div>
+          <div class="date">March 13, 2026</div>
+          <h3>Enhancement &amp; QA</h3>
+          <p>Data safety (create-before-delete, rollback), retry logic, health check, --dry-run, --backfill, config validation, 504 tests, CI/CD, ruff</p>
+        </div>
+        <div class="timeline-item">
+          <div class="version-tag">v4.0+</div>
+          <div class="date">March 24-26, 2026</div>
+          <h3>Accurate Sync &amp; QA Role</h3>
+          <p>Auto-sync with accurate toast outcomes, Task Scheduler fix, QA role (Testing/UAT), --dry-run on --submit</p>
+        </div>
       </div>
     </div>
   </div>
@@ -371,8 +387,8 @@
     <span class="tag dark">Python 3.7+</span>
     <span class="tag">Jira REST v3</span>
     <span class="tag">Tempo API v4</span>
-    <span class="tag">385 Tests</span>
-    <span class="tag">4,253 Lines</span>
+    <span class="tag">504 Tests</span>
+    <span class="tag">5,764 Lines</span>
     <span class="tag">8 Classes</span>
   </div>
 </section>
@@ -466,20 +482,24 @@
       <p>Guided first-run: role selection, token entry, location picker (100+ countries), overhead config.</p>
     </div>
     <div class="feature-item">
-      <h4>18 CLI Commands</h4>
-      <p>Full command suite: sync, verify, submit, PTO, schedule, overhead, monthly reports, and more.</p>
+      <h4>22 CLI Commands</h4>
+      <p>Full command suite: sync, verify, submit, PTO, schedule, overhead, monthly reports, backfill, approval status, and more.</p>
     </div>
   </div>
 
   <!-- Who Benefits -->
   <div class="divider" style="margin: 4rem 0;"></div>
 
-  <h3 style="font-size: 1.5rem; font-weight: 400; margin-bottom: 2rem;">Three roles, one tool</h3>
+  <h3 style="font-size: 1.5rem; font-weight: 400; margin-bottom: 2rem;">Four roles, one tool</h3>
 
   <div class="flow-steps">
     <div class="flow-step" style="padding: 2rem; border: 1px solid var(--color-light-gray); border-radius: 4px;">
       <h3 style="margin-bottom: 0.75rem;">Developer</h3>
-      <p>Hours auto-distributed across active Jira tickets. Needs Jira + Tempo tokens. Saves 15-20 min/day. Includes 2h default daily overhead.</p>
+      <p>Hours auto-distributed across active Jira tickets (IN DEVELOPMENT / CODE REVIEW). Needs Jira + Tempo tokens. Saves 15-20 min/day. Includes 2h default daily overhead.</p>
+    </div>
+    <div class="flow-step" style="padding: 2rem; border: 1px solid var(--color-light-gray); border-radius: 4px;">
+      <h3 style="margin-bottom: 0.75rem;">QA</h3>
+      <p>Hours auto-distributed across active Jira tickets (Testing / UAT). Same workflow as Developer. Needs Jira + Tempo tokens. Saves 15-20 min/day.</p>
     </div>
     <div class="flow-step" style="padding: 2rem; border: 1px solid var(--color-light-gray); border-radius: 4px;">
       <h3 style="margin-bottom: 0.75rem;">Product Owner</h3>
@@ -530,36 +550,27 @@
   <div class="two-col">
     <div>
       <h4 style="font-weight: 500; margin-bottom: 0.5rem;">Schedule Calendar</h4>
-      <div class="code-block" style="font-size: 0.8rem;">
-February 2026<br>
-================================================<br>
-Mon&nbsp;&nbsp;Tue&nbsp;&nbsp;Wed&nbsp;&nbsp;Thu&nbsp;&nbsp;Fri&nbsp;&nbsp;| Sat&nbsp;&nbsp;Sun<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.<br>
-&nbsp;2&nbsp;&nbsp;&nbsp;&nbsp;3&nbsp;&nbsp;&nbsp;&nbsp;4&nbsp;&nbsp;&nbsp;&nbsp;5&nbsp;&nbsp;&nbsp;&nbsp;6&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;7&nbsp;&nbsp;&nbsp;&nbsp;8<br>
-&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;.&nbsp;&nbsp;&nbsp;&nbsp;.<br>
-16&nbsp;&nbsp;&nbsp;17&nbsp;&nbsp;&nbsp;18&nbsp;&nbsp;&nbsp;19&nbsp;&nbsp;&nbsp;20&nbsp;&nbsp;&nbsp;| 21&nbsp;&nbsp;&nbsp;22<br>
-&nbsp;H&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;.&nbsp;&nbsp;&nbsp;&nbsp;.<br>
-<br>
-W=Working&nbsp;&nbsp;H=Holiday&nbsp;&nbsp;.=Weekend<br>
-Working days: 19 | Expected hours: 152.0h
+      <div class="code-block" style="font-size: 0.8rem;" id="schedule-cal-cs">
       </div>
     </div>
     <div>
       <h4 style="font-weight: 500; margin-bottom: 0.5rem;">Monthly Hours Report</h4>
       <div class="code-block" style="font-size: 0.8rem;">
+============================================================<br>
 MONTHLY HOURS REPORT - February 2026<br>
-============================================<br>
+============================================================<br>
 <br>
-&nbsp;&nbsp;Date&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Logged&nbsp;&nbsp;Expected&nbsp;&nbsp;Status<br>
-&nbsp;&nbsp;--------------------------------------<br>
-&nbsp;&nbsp;2026-02-02&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
-&nbsp;&nbsp;2026-02-03&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
-&nbsp;&nbsp;2026-02-04&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
-&nbsp;&nbsp;2026-02-05&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
+&nbsp;&nbsp;Date&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Day&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Logged Expected&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Status<br>
+&nbsp;&nbsp;--------------------------------------------------<br>
+&nbsp;&nbsp;2026-02-02&nbsp;&nbsp;&nbsp;Monday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
+&nbsp;&nbsp;2026-02-03&nbsp;&nbsp;&nbsp;Tuesday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
+&nbsp;&nbsp;2026-02-04&nbsp;&nbsp;&nbsp;Wednesday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
+&nbsp;&nbsp;2026-02-05&nbsp;&nbsp;&nbsp;Thursday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
+&nbsp;&nbsp;2026-02-06&nbsp;&nbsp;&nbsp;Friday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
+&nbsp;&nbsp;2026-02-09&nbsp;&nbsp;&nbsp;Monday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
 &nbsp;&nbsp;...<br>
-&nbsp;&nbsp;--------------------------------------<br>
-&nbsp;&nbsp;TOTAL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;120.0h&nbsp;&nbsp;&nbsp;120.0h<br>
+&nbsp;&nbsp;--------------------------------------------------<br>
+&nbsp;&nbsp;TOTAL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;120.0h&nbsp;&nbsp;&nbsp;120.0h<br>
 <br>
 &nbsp;&nbsp;<span class="success">[OK]</span> All hours accounted for
       </div>
@@ -576,7 +587,7 @@ MONTHLY HOURS REPORT - February 2026<br>
     <div class="arch-row">
       <div class="arch-box">
         <div class="class-name">CLI</div>
-        <div class="class-info">argparse, 18 commands</div>
+        <div class="class-info">argparse, 22 commands</div>
       </div>
     </div>
     <div class="arch-arrow">&darr;</div>
@@ -622,7 +633,7 @@ MONTHLY HOURS REPORT - February 2026<br>
     </div>
   </div>
 
-  <p class="text-muted text-center mt-2" style="font-size: 0.9rem;">Developers write to Jira; Tempo auto-syncs. PO/Sales write directly to Tempo.</p>
+  <p class="text-muted text-center mt-2" style="font-size: 0.9rem;">Developers and QA write to Jira; Tempo auto-syncs. PO/Sales write directly to Tempo.</p>
 </section>
 
 <!-- ============================================================
@@ -720,14 +731,34 @@ MONTHLY HOURS REPORT - February 2026<br>
 
   <div class="roadmap-grid">
     <div class="roadmap-item">
-      <h4>PyInstaller .exe</h4>
-      <p>Single executable, no Python install needed. Double-click to run.</p>
-      <span class="tag">Planned</span>
+      <h4>Retry Logic</h4>
+      <p>Exponential backoff for 429/502/503/504 API errors. Max 3 retries. TempoClient + JiraClient.</p>
+      <span class="tag dark">v4.0</span>
     </div>
     <div class="roadmap-item">
-      <h4>Retry Logic</h4>
-      <p>Exponential backoff for failed API calls. Max 3 retries.</p>
-      <span class="tag">Planned</span>
+      <h4>--dry-run Mode</h4>
+      <p>Preview what would be logged without creating worklogs. Also works with --submit.</p>
+      <span class="tag dark">v4.0</span>
+    </div>
+    <div class="roadmap-item">
+      <h4>Weighted Distribution</h4>
+      <p>Allocate more hours to higher-priority tickets via distribution_weights config.</p>
+      <span class="tag dark">v4.0</span>
+    </div>
+    <div class="roadmap-item">
+      <h4>Pre-Sync Health Check</h4>
+      <p>Validates Jira + Tempo API connectivity before every sync. Fail fast with clear error.</p>
+      <span class="tag dark">v4.0</span>
+    </div>
+    <div class="roadmap-item">
+      <h4>QA Role</h4>
+      <p>Distributes hours across Testing / UAT tickets. Full Jira-based workflow like Developer.</p>
+      <span class="tag dark">v4.0+</span>
+    </div>
+    <div class="roadmap-item">
+      <h4>Accurate Sync Toasts</h4>
+      <p>Toast shows exact hours logged or reason (no overhead, no tickets, partial). Red icon on error.</p>
+      <span class="tag dark">v4.0+</span>
     </div>
     <div class="roadmap-item">
       <h4>Teams Webhook</h4>
@@ -735,33 +766,18 @@ MONTHLY HOURS REPORT - February 2026<br>
       <span class="tag dark">Ready</span>
     </div>
     <div class="roadmap-item">
-      <h4>--dry-run Mode</h4>
-      <p>Preview what would be logged without creating worklogs.</p>
-      <span class="tag">Planned</span>
-    </div>
-    <div class="roadmap-item">
-      <h4>Weighted Distribution</h4>
-      <p>Allocate more hours to higher-priority tickets.</p>
-      <span class="tag">Planned</span>
-    </div>
-    <div class="roadmap-item">
-      <h4>Date Range Backfill</h4>
-      <p>--from / --to flags to backfill multiple days at once.</p>
-      <span class="tag">Planned</span>
-    </div>
-    <div class="roadmap-item">
       <h4>Auto-Fill on Submit</h4>
       <p>Auto-fill gap hours on last working day before submitting. No manual fix needed.</p>
-      <span class="tag dark">Next</span>
+      <span class="tag">Next</span>
+    </div>
+    <div class="roadmap-item">
+      <h4>PyInstaller .exe</h4>
+      <p>Single executable, no Python install needed. Double-click to run.</p>
+      <span class="tag">Planned</span>
     </div>
     <div class="roadmap-item">
       <h4>Slack Notifications</h4>
       <p>Webhook-based Slack alerts for sync status and shortfall warnings.</p>
-      <span class="tag">Planned</span>
-    </div>
-    <div class="roadmap-item">
-      <h4>Token Validation</h4>
-      <p>Verify Jira and Tempo tokens on startup. Fail fast with clear error message.</p>
       <span class="tag">Planned</span>
     </div>
   </div>
@@ -778,7 +794,7 @@ MONTHLY HOURS REPORT - February 2026<br>
     <span id="visitor-count" class="view-count">--</span> unique
   </div>
   <div class="footer-brand">Tempo Timesheet Automation</div>
-  <p style="margin: 0.75rem 0;">Built by Vector Solutions Engineering &bull; v3.9 &bull; February 2026</p>
+  <p style="margin: 0.75rem 0;">Built by Vector Solutions Engineering &bull; v4.0 &bull; March 2026</p>
   <p>
     <a href="https://github.com/ajay-sajwan-vectorsolutions/timesheet-for-tempo">GitHub Repository</a>
     &nbsp;&bull;&nbsp;
@@ -827,6 +843,68 @@ MONTHLY HOURS REPORT - February 2026<br>
       localStorage.getItem('tempo_visitor_counted')
     ).toLocaleString();
   }
+})();
+
+// Dynamic schedule calendar for current month
+function buildScheduleCalendar() {
+  var now = new Date();
+  var year = now.getFullYear();
+  var month = now.getMonth();
+  var monthNames = ['January','February','March','April','May','June','July',
+                    'August','September','October','November','December'];
+  var daysInMonth = new Date(year, month + 1, 0).getDate();
+  // firstDow: 0=Sun..6=Sat; convert to Mon-based index: Mon=0..Sun=6
+  var firstColIdx = (new Date(year, month, 1).getDay() + 6) % 7;
+
+  var workingDays = 0;
+  for (var d = 1; d <= daysInMonth; d++) {
+    var dow = new Date(year, month, d).getDay();
+    if (dow !== 0 && dow !== 6) workingDays++;
+  }
+
+  // Right-align n in 2 chars; '  ' if out of range
+  function pad2(n) {
+    if (n < 1 || n > daysInMonth) return '  ';
+    return n < 10 ? ' ' + n : '' + n;
+  }
+  // Status char: ' W' weekday, ' .' weekend, '  ' out of range
+  function sc(n, isWknd) {
+    if (n < 1 || n > daysInMonth) return '  ';
+    return isWknd ? ' .' : ' W';
+  }
+
+  var lines = [];
+  lines.push(monthNames[month] + ' ' + year);
+  lines.push('================================================');
+  lines.push('Mon  Tue  Wed  Thu  Fri  | Sat  Sun');
+
+  var startDay = 1 - firstColIdx;
+  while (startDay <= daysInMonth) {
+    var dRow = '', sRow = '';
+    for (var c = 0; c < 7; c++) {
+      if (c === 5) { dRow += '| '; sRow += '| '; }
+      var day = startDay + c;
+      var isSun = c === 6, isWknd = c >= 5;
+      dRow += pad2(day) + (isSun ? '' : '   ');
+      sRow += sc(day, isWknd) + (isSun ? '' : '   ');
+    }
+    lines.push(dRow);
+    lines.push(sRow);
+    startDay += 7;
+  }
+
+  lines.push('');
+  lines.push('Legend: W=Working  H=Holiday  PTO=PTO  CW=Comp. Working  .=Weekend');
+  lines.push('');
+  lines.push('Summary:');
+  lines.push('  Working days: ' + workingDays + '  |  Expected hours: ' + (workingDays * 8) + '.0h');
+
+  return lines.map(function(l) { return l.replace(/ /g, '&nbsp;'); }).join('<br>\n');
+}
+
+(function() {
+  var el = document.getElementById('schedule-cal-cs');
+  if (el) el.innerHTML = buildScheduleCalendar();
 })();
 </script>
 

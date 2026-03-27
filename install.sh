@@ -20,9 +20,48 @@ echo "TEMPO TIMESHEET AUTOMATION - MAC/LINUX INSTALLER"
 echo "============================================================"
 echo ""
 
-# Get script directory
+# Get script directory (source location of this installer)
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
+
+INSTALL_DIR="$HOME/tempo-timesheet"
+IS_UPGRADE=false
+
+# ============================================================================
+# Upgrade detection: find old tray location from LaunchAgent plist, stop it
+# ============================================================================
+PLIST="$HOME/Library/LaunchAgents/com.tempo.trayapp.plist"
+if [ -f "$PLIST" ]; then
+    OLD_TRAY_PATH=$(grep -o '"/.*/tray_app\.py"' "$PLIST" 2>/dev/null | tr -d '"')
+    if [ -n "$OLD_TRAY_PATH" ]; then
+        OLD_SCRIPT_DIR="$(dirname "$OLD_TRAY_PATH")/"
+        if [ "$OLD_SCRIPT_DIR" != "$INSTALL_DIR/" ]; then
+            echo "[INFO] Upgrading from previous install at $OLD_SCRIPT_DIR"
+            echo "stop" > "${OLD_SCRIPT_DIR}_tray_stop.signal"
+            sleep 3
+            IS_UPGRADE=true
+            echo "[OK] Old tray instance stopped"
+            echo ""
+        fi
+    fi
+fi
+
+# Copy files to fixed install location
+echo "Copying files to $INSTALL_DIR..."
+mkdir -p "$INSTALL_DIR/assets"
+cp -f "$SCRIPT_DIR/tempo_automation.py"  "$INSTALL_DIR/"
+cp -f "$SCRIPT_DIR/tray_app.py"          "$INSTALL_DIR/"
+cp -f "$SCRIPT_DIR/confirm_and_run.py"   "$INSTALL_DIR/"
+cp -f "$SCRIPT_DIR/config_template.json" "$INSTALL_DIR/"
+cp -f "$SCRIPT_DIR/requirements.txt"     "$INSTALL_DIR/"
+[ -f "$SCRIPT_DIR/assets/favicon.ico" ] && cp -f "$SCRIPT_DIR/assets/favicon.ico" "$INSTALL_DIR/assets/"
+[ -d "$SCRIPT_DIR/lib" ] && cp -rf "$SCRIPT_DIR/lib" "$INSTALL_DIR/"
+
+# Redefine SCRIPT_DIR to install location; all subsequent steps use this
+SCRIPT_DIR="$INSTALL_DIR"
+cd "$INSTALL_DIR"
+echo "[OK] Files installed to $INSTALL_DIR"
+echo ""
 
 # ============================================================================
 # [1/7] Check Python installation
@@ -192,7 +231,11 @@ python3 "$SCRIPT_DIR/tray_app.py" --register
 
 # Start the tray app now (background, no console)
 echo "Starting tray app..."
-nohup python3 "$SCRIPT_DIR/tray_app.py" > /dev/null 2>&1 &
+if [ "$IS_UPGRADE" = true ]; then
+    nohup python3 "$SCRIPT_DIR/tray_app.py" --upgraded > /dev/null 2>&1 &
+else
+    nohup python3 "$SCRIPT_DIR/tray_app.py" > /dev/null 2>&1 &
+fi
 sleep 3
 echo "[OK] Tray app is running in the menu bar"
 echo ""

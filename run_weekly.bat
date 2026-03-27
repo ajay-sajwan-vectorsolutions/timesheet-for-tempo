@@ -1,5 +1,9 @@
 @echo off
-echo ============================================ >> "D:\working\AI-Tempo-automation\v2\daily-timesheet.log"
-echo Weekly Verify Run: %date% %time% >> "D:\working\AI-Tempo-automation\v2\daily-timesheet.log"
-echo ============================================ >> "D:\working\AI-Tempo-automation\v2\daily-timesheet.log"
-"C:\Users\asajwan.DESKTOP-TN8HNF1\AppData\Local\Programs\Python\Python314\python.exe" "D:\working\AI-Tempo-automation\v2\tempo_automation.py" --verify-week --logfile "D:\working\AI-Tempo-automation\v2\daily-timesheet.log"
+setlocal enabledelayedexpansion
+for /f %%I in ('powershell -Command "Get-Date -Format yyyy-MM"') do set MONTH=%%I
+set LOGFILE=D:\working\AI-Tempo-automation\v2\daily-timesheet-!MONTH!.log
+echo ============================================ >> "!LOGFILE!"
+echo Weekly Verify Run: %date% %time% >> "!LOGFILE!"
+echo ============================================ >> "!LOGFILE!"
+"C:\Users\asajwan.DESKTOP-TN8HNF1\AppData\Local\Programs\Python\Python314\python.exe" "D:\working\AI-Tempo-automation\v2\tempo_automation.py" --verify-week --logfile "!LOGFILE!"
+endlocal

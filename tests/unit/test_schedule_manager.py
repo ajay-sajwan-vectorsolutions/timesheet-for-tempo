@@ -662,24 +662,29 @@ class TestRemoteFetch:
         local_data = {"version": "old", "holidays": {}}
         hol_path = tmp_path / "org_holidays.json"
         hol_path.write_text(json.dumps(local_data), encoding="utf-8")
+        cache_path = tmp_path / "org_holidays_cache.json"
         cfg_path = tmp_path / "config.json"
 
         remote_data = {"version": "new", "holidays": {"US": {}}}
         mock_resp = MagicMock()
+        mock_resp.status_code = 200
         mock_resp.json.return_value = remote_data
         mock_resp.raise_for_status.return_value = None
+        mock_resp.headers = {"ETag": "", "Last-Modified": ""}
 
         base_config["organization"]["holidays_url"] = "https://example.com/holidays.json"
 
         with (
             patch("tempo_automation.ORG_HOLIDAYS_FILE", hol_path),
+            patch("tempo_automation.ORG_HOLIDAYS_CACHE_FILE", cache_path),
             patch("tempo_automation.CONFIG_FILE", cfg_path),
             patch("tempo_automation.requests.get", return_value=mock_resp) as mock_get,
         ):
             sm = ScheduleManager(base_config)
 
         mock_get.assert_called_once_with(
-            "https://example.com/holidays.json", timeout=10
+            "https://example.com/holidays.json",
+            headers={}, timeout=10
         )
         written = json.loads(hol_path.read_text(encoding="utf-8"))
         assert written["version"] == "new"
@@ -689,10 +694,12 @@ class TestRemoteFetch:
         base_config["organization"]["holidays_url"] = ""
         hol_path = tmp_path / "org_holidays.json"
         hol_path.write_text(json.dumps(ORG_HOLIDAYS_DATA), encoding="utf-8")
+        cache_path = tmp_path / "org_holidays_cache.json"
         cfg_path = tmp_path / "config.json"
 
         with (
             patch("tempo_automation.ORG_HOLIDAYS_FILE", hol_path),
+            patch("tempo_automation.ORG_HOLIDAYS_CACHE_FILE", cache_path),
             patch("tempo_automation.CONFIG_FILE", cfg_path),
             patch("tempo_automation.requests.get") as mock_get,
         ):
@@ -707,10 +714,12 @@ class TestRemoteFetch:
         base_config["organization"]["holidays_url"] = "https://example.com/h.json"
         hol_path = tmp_path / "org_holidays.json"
         hol_path.write_text(json.dumps(ORG_HOLIDAYS_DATA), encoding="utf-8")
+        cache_path = tmp_path / "org_holidays_cache.json"
         cfg_path = tmp_path / "config.json"
 
         with (
             patch("tempo_automation.ORG_HOLIDAYS_FILE", hol_path),
+            patch("tempo_automation.ORG_HOLIDAYS_CACHE_FILE", cache_path),
             patch("tempo_automation.CONFIG_FILE", cfg_path),
             patch(
                 "tempo_automation.requests.get",
@@ -727,16 +736,20 @@ class TestRemoteFetch:
         same_data = dict(ORG_HOLIDAYS_DATA)
         hol_path = tmp_path / "org_holidays.json"
         hol_path.write_text(json.dumps({"version": "old"}), encoding="utf-8")
+        cache_path = tmp_path / "org_holidays_cache.json"
         cfg_path = tmp_path / "config.json"
 
         mock_resp = MagicMock()
+        mock_resp.status_code = 200
         mock_resp.json.return_value = same_data
         mock_resp.raise_for_status.return_value = None
+        mock_resp.headers = {"ETag": "", "Last-Modified": ""}
 
         base_config["organization"]["holidays_url"] = "https://example.com/h.json"
 
         with (
             patch("tempo_automation.ORG_HOLIDAYS_FILE", hol_path),
+            patch("tempo_automation.ORG_HOLIDAYS_CACHE_FILE", cache_path),
             patch("tempo_automation.CONFIG_FILE", cfg_path),
             patch("tempo_automation.requests.get", return_value=mock_resp),
         ):

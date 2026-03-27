@@ -533,14 +533,15 @@ class TestScheduleNextSync:
 
         # Mock datetime.now to return 10:00 (past the 06:00 sync time)
         fake_now = datetime(2026, 2, 22, 10, 0, 0)
-        with patch("tray_app.datetime") as mock_dt:
-            mock_dt.now.return_value = fake_now
-            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        with patch.object(app, '_reload_config'):  # prevent overwriting injected config
+            with patch("tray_app.datetime") as mock_dt:
+                mock_dt.now.return_value = fake_now
+                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
-            with patch("tray_app.threading.Timer") as MockTimer:
-                mock_timer = MagicMock()
-                MockTimer.return_value = mock_timer
-                app._schedule_next_sync()
+                with patch("tray_app.threading.Timer") as MockTimer:
+                    mock_timer = MagicMock()
+                    MockTimer.return_value = mock_timer
+                    app._schedule_next_sync()
 
             # Delay should be roughly 20 hours (tomorrow 06:00 - today 10:00)
             delay_seconds = MockTimer.call_args[0][0]

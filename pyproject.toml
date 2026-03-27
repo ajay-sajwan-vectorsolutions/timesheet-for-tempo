@@ -10,3 +10,33 @@ markers = [
     "darwin: macOS-only tests",
     "integration: integration tests requiring full mock setup",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [
+    "archive/",
+    "build_tmp/",
+    "dist/",
+    ".git/",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "E741",   # ambiguous variable name
+    "B007",   # unused loop variable
+    "B904",   # raise from
+    "UP031",  # printf-style formatting
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tempo_automation", "tray_app"]

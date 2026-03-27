@@ -29,9 +29,170 @@ echo TEMPO TIMESHEET AUTOMATION - WINDOWS INSTALLER
 echo ============================================================
 echo.
 
-REM Get script directory
-set SCRIPT_DIR=%~dp0
-cd /d "%SCRIPT_DIR%"
+REM Get script directory (source location of this installer)
+set SOURCE_DIR=%~dp0
+
+REM ============================================================================
+REM Detect previous installation (any folder name) and clean up all traces
+REM ============================================================================
+REM Detection order:
+REM   Method 1 - Registry TempoTrayApp run key  (covers standard --register flow)
+REM   Method 2 - Scheduled task XML             (covers installs without tray running)
+REM   Method 3 - Running pythonw.exe process    (covers active tray in any folder)
+REM   Method 5 - Named-folder fallback scan     (last resort for well-known paths)
+REM   (Method 4 = AppData backup, config-only, handled in Phase D below)
+REM ============================================================================
+set IS_UPGRADE=0
+set OLD_INSTALL_DIR=
+
+REM --- Method 1: Registry (pure PowerShell -- no Python dependency) ---
+REM Note: detection runs in an elevated admin context where user-level Python is not in PATH.
+REM       All detection methods use PowerShell (always available) instead of python.
+powershell -Command "try { $v=(Get-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -ErrorAction Stop).TempoTrayApp; $m=[regex]::Match($v,'[A-Za-z]:[^\x22]+tray_app\.py','IgnoreCase'); if ($m.Success) { Write-Output (Split-Path $m.Value) } } catch {}" > "%TEMP%\_tempo_det1.txt" 2>nul
+for /f "delims=" %%i in ('type "%TEMP%\_tempo_det1.txt" 2^>nul') do (
+    if exist "%%i\tray_app.py" set "OLD_INSTALL_DIR=%%i"
+)
+del "%TEMP%\_tempo_det1.txt" >nul 2>&1
+
+REM --- Method 2: Scheduled task XML (pure PowerShell) ---
+if "!OLD_INSTALL_DIR!"=="" (
+    schtasks /Query /TN "TempoAutomation-DailySync" /XML ONE > "%TEMP%\_tempo_det2.xml" 2>nul
+    powershell -Command "try { [xml]$x=Get-Content '%TEMP%\_tempo_det2.xml' -ErrorAction Stop; $c=$x.GetElementsByTagName('Command') | Select-Object -First 1; if ($c -and $c.InnerText) { $d=Split-Path ($c.InnerText.Trim([char]34)); if ($d -and (Test-Path $d)) { Write-Output $d } } } catch {}" > "%TEMP%\_tempo_det2.txt" 2>nul
+    for /f "delims=" %%i in ('type "%TEMP%\_tempo_det2.txt" 2^>nul') do (
+        if exist "%%i\tray_app.py" set "OLD_INSTALL_DIR=%%i"
+    )
+    del "%TEMP%\_tempo_det2.xml" >nul 2>&1
+    del "%TEMP%\_tempo_det2.txt" >nul 2>&1
+)
+
+REM --- Method 3: Running pythonw.exe process (pure PowerShell) ---
+if "!OLD_INSTALL_DIR!"=="" (
+    powershell -Command "try { $procs=(Get-CimInstance Win32_Process -Filter 'name=''pythonw.exe''').CommandLine; foreach ($cl in $procs) { if ($cl) { $m=[regex]::Match($cl,'[A-Za-z]:[^\x22]+tray_app\.py','IgnoreCase'); if ($m.Success) { $d=Split-Path $m.Value; if ($d -and (Test-Path $d)) { Write-Output $d; break } } } } } catch {}" > "%TEMP%\_tempo_det3_dir.txt" 2>nul
+    for /f "delims=" %%i in ('type "%TEMP%\_tempo_det3_dir.txt" 2^>nul') do (
+        if exist "%%i\tray_app.py" set "OLD_INSTALL_DIR=%%i"
+    )
+    del "%TEMP%\_tempo_det3_dir.txt" >nul 2>&1
+)
+
+REM --- Method 5: Named-folder fallback scan ---
+if "!OLD_INSTALL_DIR!"=="" (
+    for %%D in (
+        "C:\tempo-timesheet"
+        "%USERPROFILE%\tempo-timesheet"
+        "%USERPROFILE%\Desktop\tempo-timesheet"
+        "%USERPROFILE%\Documents\tempo-timesheet"
+        "%USERPROFILE%\Downloads\tempo-timesheet"
+    ) do (
+        if "!OLD_INSTALL_DIR!"=="" (
+            if exist "%%~D\tray_app.py" if exist "%%~D\tempo_automation.py" (
+                if /i not "%%~D"=="C:\tempo-timesheet" set "OLD_INSTALL_DIR=%%~D"
+            )
+        )
+    )
+)
+
+REM ============================================================================
+REM Phase A: Save config to temp before touching anything
+REM ============================================================================
+if not "!OLD_INSTALL_DIR!"=="" (
+    echo [INFO] Found previous installation at: !OLD_INSTALL_DIR!
+    if exist "!OLD_INSTALL_DIR!\config.json" (
+        copy /Y "!OLD_INSTALL_DIR!\config.json" "%TEMP%\_tempo_migrated_config.json" >nul
+        echo [OK] Previous config saved - credentials will be carried over
+    )
+    set IS_UPGRADE=1
+    echo.
+)
+
+REM ============================================================================
+REM Phase B: Stop old tray (signal + wait + hard-kill fallback)
+REM ============================================================================
+if "!IS_UPGRADE!"=="1" (
+    echo Stopping previous tray app instance...
+    echo stop > "!OLD_INSTALL_DIR!\_tray_stop.signal"
+    timeout /t 5 /nobreak >nul
+    REM Hard-kill fallback: kill pythonw.exe still running tray_app.py from old dir (pure PowerShell)
+    powershell -Command "$old='!OLD_INSTALL_DIR!'; $procs=Get-CimInstance Win32_Process -Filter 'name=''pythonw.exe'''; $tgt=$procs | Where-Object { $_.CommandLine -and ($_.CommandLine -like ('*' + $old + '*')) -and ($_.CommandLine -match 'tray_app\.py') }; if ($tgt) { $tgt | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Write-Output 'force-stopped' } else { Write-Output 'graceful' }" > "%TEMP%\_tempo_chk_result.txt" 2>nul
+    findstr /i "force-stopped" "%TEMP%\_tempo_chk_result.txt" >nul 2>&1
+    if !errorlevel! equ 0 (
+        echo [OK] Old tray process force-stopped
+    ) else (
+        echo [OK] Old tray instance stopped gracefully
+    )
+    del "%TEMP%\_tempo_chk_result.txt" >nul 2>&1
+    echo.
+)
+
+REM ============================================================================
+REM Phase C: Remove all traces of previous installation
+REM ============================================================================
+if "!IS_UPGRADE!"=="1" (
+    echo Removing previous installation traces...
+
+    REM C1: Remove registry autostart entry
+    powershell -Command "try { Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name 'TempoTrayApp' -ErrorAction Stop } catch {}" >nul 2>&1
+    echo   [OK] Registry autostart entry removed
+
+    REM C2: Delete scheduled tasks
+    schtasks /Delete /TN "TempoAutomation-DailySync"     /F >nul 2>&1
+    schtasks /Delete /TN "TempoAutomation-WeeklyVerify"  /F >nul 2>&1
+    schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F >nul 2>&1
+    echo   [OK] Scheduled tasks removed
+
+    REM C3: Remove artefact files from old dir
+    del /f /q "!OLD_INSTALL_DIR!\_tray_stop.signal" >nul 2>&1
+    del /f /q "!OLD_INSTALL_DIR!\.tray_app.lock"    >nul 2>&1
+
+    REM C4: Remove AppData backup (prevent stale config bleeding into future installs)
+    del /f /q "%APPDATA%\TempoAutomation\config.json" >nul 2>&1
+    echo   [OK] AppData backup cleared
+
+    REM C5: Delete old folder -- only if it is NOT the new install destination
+    if /i not "!OLD_INSTALL_DIR!"=="C:\tempo-timesheet" (
+        rmdir /s /q "!OLD_INSTALL_DIR!" >nul 2>&1
+        if !errorlevel! equ 0 (
+            echo   [OK] Old installation folder removed: !OLD_INSTALL_DIR!
+        ) else (
+            echo   [!] Could not fully remove old folder ^(files still in use^)
+            echo       Please delete manually: !OLD_INSTALL_DIR!
+        )
+    )
+    echo.
+)
+
+REM Cleanup temp Python helper scripts
+del "%TEMP%\_tempo_det2.py" >nul 2>&1
+del "%TEMP%\_tempo_det3.py" >nul 2>&1
+del "%TEMP%\_tempo_chk.py"  >nul 2>&1
+
+REM ============================================================================
+REM Step 0: Copy files to fixed install location
+REM ============================================================================
+set INSTALL_DIR=C:\tempo-timesheet
+if "!IS_UPGRADE!"=="1" (
+    echo Updating files at %INSTALL_DIR%...
+) else (
+    echo Installing files to %INSTALL_DIR%...
+)
+if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
+
+copy /Y "%SOURCE_DIR%tempo_automation.py"  "%INSTALL_DIR%\" >nul
+copy /Y "%SOURCE_DIR%tray_app.py"          "%INSTALL_DIR%\" >nul
+copy /Y "%SOURCE_DIR%confirm_and_run.py"   "%INSTALL_DIR%\" >nul
+copy /Y "%SOURCE_DIR%config_template.json" "%INSTALL_DIR%\" >nul
+copy /Y "%SOURCE_DIR%requirements.txt"     "%INSTALL_DIR%\" >nul
+
+if not exist "%INSTALL_DIR%\assets" mkdir "%INSTALL_DIR%\assets"
+if exist "%SOURCE_DIR%assets\favicon.ico" copy /Y "%SOURCE_DIR%assets\favicon.ico" "%INSTALL_DIR%\assets\" >nul 2>&1
+
+if exist "%SOURCE_DIR%python" xcopy /E /I /Y "%SOURCE_DIR%python" "%INSTALL_DIR%\python\" >nul
+if exist "%SOURCE_DIR%lib"    xcopy /E /I /Y "%SOURCE_DIR%lib"    "%INSTALL_DIR%\lib\"    >nul
+
+REM Redefine SCRIPT_DIR to install location; all subsequent steps use this
+set SCRIPT_DIR=%INSTALL_DIR%\
+cd /d "%INSTALL_DIR%"
+echo [OK] Files installed to %INSTALL_DIR%
+echo.
 
 REM ============================================================================
 REM Detect Python: embedded first, then system PATH
@@ -110,6 +271,26 @@ if exist "%SCRIPT_DIR%lib" (
 echo.
 
 REM ============================================================================
+REM Phase D: Restore previous config into new install location
+REM Priority: 1) migrated from old folder  2) AppData backup
+REM ============================================================================
+
+if not exist "%SCRIPT_DIR%config.json" (
+    if exist "%TEMP%\_tempo_migrated_config.json" (
+        copy /Y "%TEMP%\_tempo_migrated_config.json" "%SCRIPT_DIR%config.json" >nul
+        del "%TEMP%\_tempo_migrated_config.json" >nul 2>&1
+        echo [OK] Previous config restored from old installation - wizard will skip credential prompts
+        echo.
+    ) else if "!IS_UPGRADE!"=="1" (
+        if exist "%APPDATA%\TempoAutomation\config.json" (
+            copy /Y "%APPDATA%\TempoAutomation\config.json" "%SCRIPT_DIR%config.json" >nul
+            echo [OK] Previous config restored from AppData backup - wizard will skip credential prompts
+            echo.
+        )
+    )
+)
+
+REM ============================================================================
 REM Run setup wizard
 REM ============================================================================
 
@@ -158,33 +339,46 @@ echo [5/7] Setting up scheduled tasks...
 echo.
 
 REM -- Generate run_daily.bat with detected Python path --
+REM    Log file rotates monthly: daily-timesheet-YYYY-MM.log
 echo Generating run_daily.bat...
 (
     echo @echo off
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo Run: %%date%% %%time%% ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
+    echo setlocal enabledelayedexpansion
+    echo for /f %%%%I in ^('powershell -Command "Get-Date -Format yyyy-MM"'^) do set MONTH=%%%%I
+    echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo echo Run: %%date%% %%time%% ^>^> "^!LOGFILE^!"
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
     echo "%PYTHONW_EXE%" "%SCRIPT_DIR%confirm_and_run.py"
+    echo endlocal
 ) > "%SCRIPT_DIR%run_daily.bat"
 
 REM -- Generate run_weekly.bat with detected Python path --
 echo Generating run_weekly.bat...
 (
     echo @echo off
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo Weekly Verify Run: %%date%% %%time%% ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --verify-week --logfile "%SCRIPT_DIR%daily-timesheet.log"
+    echo setlocal enabledelayedexpansion
+    echo for /f %%%%I in ^('powershell -Command "Get-Date -Format yyyy-MM"'^) do set MONTH=%%%%I
+    echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo echo Weekly Verify Run: %%date%% %%time%% ^>^> "^!LOGFILE^!"
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --verify-week --logfile "^!LOGFILE^!"
+    echo endlocal
 ) > "%SCRIPT_DIR%run_weekly.bat"
 
 REM -- Generate run_monthly.bat with detected Python path --
 echo Generating run_monthly.bat...
 (
     echo @echo off
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo Run: %%date%% %%time%% ^(Monthly Submit^) ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo echo ============================================ ^>^> "%SCRIPT_DIR%daily-timesheet.log"
-    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --submit --logfile "%SCRIPT_DIR%daily-timesheet.log"
+    echo setlocal enabledelayedexpansion
+    echo for /f %%%%I in ^('powershell -Command "Get-Date -Format yyyy-MM"'^) do set MONTH=%%%%I
+    echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo echo Run: %%date%% %%time%% ^(Monthly Submit^) ^>^> "^!LOGFILE^!"
+    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --submit --logfile "^!LOGFILE^!"
+    echo endlocal
 ) > "%SCRIPT_DIR%run_monthly.bat"
 
 echo [OK] Wrapper scripts generated with detected Python path
@@ -236,19 +430,17 @@ echo configured sync time, and lets you sync with one click.
 echo It will start automatically every time you log in to Windows.
 echo.
 
-REM Stop any existing tray app instance before starting fresh
-echo Stopping any existing tray app...
+REM Silent safety-net stop (Phase B already handled upgrades; this catches edge cases)
 "%PYTHON_EXE%" "%SCRIPT_DIR%tray_app.py" --stop >nul 2>&1
-timeout /t 2 /nobreak >nul
 
 REM Register auto-start on login
 "%PYTHON_EXE%" "%SCRIPT_DIR%tray_app.py" --register
 
 REM Start the tray app now (detached -- no console window, no terminal tab)
 echo Starting tray app...
-echo CreateObject("WScript.Shell").Run """%PYTHONW_EXE%"" ""%SCRIPT_DIR%tray_app.py""", 0, False > "%TEMP%\_tempo_launch.vbs"
-wscript "%TEMP%\_tempo_launch.vbs"
-del "%TEMP%\_tempo_launch.vbs" >nul 2>&1
+set TRAY_EXTRA=
+if "!IS_UPGRADE!"=="1" set TRAY_EXTRA= --upgraded
+powershell -Command "Start-Process -FilePath '!PYTHONW_EXE!' -ArgumentList ('\"!SCRIPT_DIR!tray_app.py\"!TRAY_EXTRA!') -WindowStyle Hidden"
 timeout /t 3 /nobreak >nul
 echo [OK] Tray app is running in the system tray
 echo.
@@ -301,9 +493,9 @@ echo     - Weekly:  Fridays at 4:00 PM (verify hours, backfill gaps)
 echo     - Monthly: Last day at 11:00 PM (verify + submit timesheet)
 echo.
 echo Files:
-echo   Config:  %SCRIPT_DIR%config.json
-echo   Log:     %SCRIPT_DIR%daily-timesheet.log
-echo   Runtime: %SCRIPT_DIR%tempo_automation.log
+echo   Config:  %INSTALL_DIR%\config.json
+echo   Log:     %INSTALL_DIR%\daily-timesheet-YYYY-MM.log  (rotates monthly)
+echo   Runtime: %INSTALL_DIR%\tempo_automation.log
 echo.
 echo Manual commands:
 echo   python tempo_automation.py              (sync today)

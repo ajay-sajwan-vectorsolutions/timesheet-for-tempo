@@ -57,12 +57,16 @@ class TestCredentialManager:
         assert result is None
 
     @patch("sys.platform", "linux")
+    @patch.object(CredentialManager, "_use_dpapi", False)
+    @patch.object(CredentialManager, "_use_keyring", False)
     def test_encrypt_non_windows_returns_plaintext(self):
         """On non-Windows platforms, encrypt returns the plain text as-is."""
         result = CredentialManager.encrypt("my-secret-token")
         assert result == "my-secret-token"
 
     @patch("sys.platform", "darwin")
+    @patch.object(CredentialManager, "_use_dpapi", False)
+    @patch.object(CredentialManager, "_use_keyring", False)
     def test_encrypt_macos_returns_plaintext(self):
         """On macOS, encrypt returns the plain text as-is (no DPAPI)."""
         result = CredentialManager.encrypt("another-secret")
@@ -82,6 +86,8 @@ class TestCredentialManager:
         assert result is None
 
     @patch("sys.platform", "linux")
+    @patch.object(CredentialManager, "_use_dpapi", False)
+    @patch.object(CredentialManager, "_use_keyring", False)
     def test_decrypt_non_windows_returns_unchanged(self):
         """ENC: prefix on non-Windows returns the value unchanged (cannot decrypt)."""
         encrypted = "ENC:c29tZWJhc2U2NA=="
@@ -89,6 +95,8 @@ class TestCredentialManager:
         assert result == encrypted
 
     @patch("sys.platform", "darwin")
+    @patch.object(CredentialManager, "_use_dpapi", False)
+    @patch.object(CredentialManager, "_use_keyring", False)
     def test_decrypt_macos_enc_prefix_returns_unchanged(self):
         """ENC: prefix on macOS returns the value unchanged."""
         encrypted = "ENC:dGVzdGRhdGE="
@@ -156,7 +164,7 @@ class TestConfigManagerInit:
         bad_file = tmp_path / "config.json"
         bad_file.write_text("{invalid json content!!!", encoding="utf-8")
 
-        with pytest.raises(Exception):
+        with pytest.raises(SystemExit):
             ConfigManager(config_path=bad_file)
 
     def test_custom_config_path(self, tmp_path, developer_config):
@@ -174,7 +182,7 @@ class TestConfigManagerInit:
         empty_file = tmp_path / "config.json"
         empty_file.write_text("", encoding="utf-8")
 
-        with pytest.raises(Exception):
+        with pytest.raises(SystemExit):
             ConfigManager(config_path=empty_file)
 
 
@@ -336,6 +344,11 @@ class TestGetAccountId:
 class TestSetupWizard:
     """Tests for the interactive setup wizard."""
 
+    @pytest.fixture(autouse=True)
+    def no_backup_config(self, monkeypatch):
+        """Prevent wizard from loading the real AppData backup config."""
+        monkeypatch.setattr("tempo_automation.CONFIG_BACKUP_FILE", None)
+
     def _developer_inputs(self):
         """Input sequence for a developer setup flow."""
         return [
@@ -371,7 +384,7 @@ class TestSetupWizard:
         """Input sequence for a product owner setup flow."""
         return [
             "po@example.com",        # email
-            "2",                     # role: product_owner
+            "3",                     # role: product_owner
             "tempo-po-token",        # tempo token
             "Test PO",               # name
             "8",                     # daily hours
@@ -482,7 +495,7 @@ class TestSetupWizard:
         self._register_tempo_user()
         inputs = [
             "sales@example.com",    # email
-            "3",                    # role: sales
+            "4",                    # role: sales
             "tempo-sales-token",    # tempo token
             "Test Sales",           # name
             "8",                    # daily hours
@@ -536,6 +549,125 @@ class TestSetupWizard:
         for section in required_sections:
             assert section in config, f"Missing section: {section}"
 
+    def _existing_developer_config(self):
+        """A complete config dict simulating a prior developer install."""
+        return {
+            "user": {"email": "dev@example.com", "name": "Test Dev", "role": "developer"},
+            "tempo": {"api_token": "old-tempo-token"},
+            "jira": {"api_token": "old-jira-token", "email": "dev@example.com"},
+            "schedule": {"daily_hours": 8.0, "country_code": "US", "state": ""},
+            "notifications": {"email_enabled": False},
+            "manual_activities": [],
+            "options": {},
+            "organization": {},
+            "overhead": {},
+        }
+
+    @responses_lib.activate
+    @patch("builtins.input")
+    def test_reinstall_valid_tokens_reused(self, mock_input, tmp_path):
+        """Re-install with valid existing tokens should reuse both without prompting."""
+        cfg_path = tmp_path / "config.json"
+        with open(cfg_path, "w") as f:
+            json.dump(self._existing_developer_config(), f)
+
+        responses_lib.add(
+            responses_lib.GET,
+            "https://api.tempo.io/4/work-attributes",
+            json={"results": []},
+            status=200,
+        )
+        responses_lib.add(
+            responses_lib.GET,
+            "https://lmsportal.atlassian.net/rest/api/3/myself",
+            json={"displayName": "Test Dev", "accountId": "test-id"},
+            status=200,
+        )
+
+        mock_input.side_effect = []  # no prompts expected
+        cm = ConfigManager.__new__(ConfigManager)
+        cm.config_path = cfg_path
+        config = cm.setup_wizard()
+
+        assert config["tempo"]["api_token"] == "old-tempo-token"
+        assert config["jira"]["api_token"] == "old-jira-token"
+        assert config["user"]["role"] == "developer"
+
+    @responses_lib.activate
+    @patch("builtins.input")
+    def test_reinstall_expired_tempo_token_prompts_new(self, mock_input, tmp_path):
+        """Re-install with expired Tempo token (401) should prompt for a new one."""
+        cfg_path = tmp_path / "config.json"
+        with open(cfg_path, "w") as f:
+            json.dump(self._existing_developer_config(), f)
+
+        # Old token fails verification
+        responses_lib.add(
+            responses_lib.GET,
+            "https://api.tempo.io/4/work-attributes",
+            json={"error": "Unauthorized"},
+            status=401,
+        )
+        # New token verification succeeds
+        responses_lib.add(
+            responses_lib.GET,
+            "https://api.tempo.io/4/work-attributes",
+            json={"results": []},
+            status=200,
+        )
+        responses_lib.add(
+            responses_lib.GET,
+            "https://lmsportal.atlassian.net/rest/api/3/myself",
+            json={"displayName": "Test Dev", "accountId": "test-id"},
+            status=200,
+        )
+
+        mock_input.side_effect = ["new-tempo-token"]
+        cm = ConfigManager.__new__(ConfigManager)
+        cm.config_path = cfg_path
+        config = cm.setup_wizard()
+
+        assert config["tempo"]["api_token"] == "new-tempo-token"
+        assert config["jira"]["api_token"] == "old-jira-token"
+
+    @responses_lib.activate
+    @patch("builtins.input")
+    def test_reinstall_expired_jira_token_prompts_new(self, mock_input, tmp_path):
+        """Re-install with expired Jira token (401) should prompt for a new one."""
+        cfg_path = tmp_path / "config.json"
+        with open(cfg_path, "w") as f:
+            json.dump(self._existing_developer_config(), f)
+
+        # Tempo token valid
+        responses_lib.add(
+            responses_lib.GET,
+            "https://api.tempo.io/4/work-attributes",
+            json={"results": []},
+            status=200,
+        )
+        # Old Jira token fails
+        responses_lib.add(
+            responses_lib.GET,
+            "https://lmsportal.atlassian.net/rest/api/3/myself",
+            json={"error": "Unauthorized"},
+            status=401,
+        )
+        # New Jira token verification succeeds
+        responses_lib.add(
+            responses_lib.GET,
+            "https://lmsportal.atlassian.net/rest/api/3/myself",
+            json={"displayName": "Test Dev", "accountId": "test-id"},
+            status=200,
+        )
+
+        mock_input.side_effect = ["new-jira-token"]
+        cm = ConfigManager.__new__(ConfigManager)
+        cm.config_path = cfg_path
+        config = cm.setup_wizard()
+
+        assert config["jira"]["api_token"] == "new-jira-token"
+        assert config["tempo"]["api_token"] == "old-tempo-token"
+
 
 # ===========================================================================
 # ConfigManager._select_role
@@ -551,18 +683,24 @@ class TestSelectRole:
         assert cm._select_role() == "developer"
 
     @patch("builtins.input", return_value="2")
-    def test_returns_product_owner_for_choice_2(self, mock_input):
-        """Choice '2' should return 'product_owner'."""
+    def test_returns_qa_for_choice_2(self, mock_input):
+        """Choice '2' should return 'qa'."""
+        cm = ConfigManager.__new__(ConfigManager)
+        assert cm._select_role() == "qa"
+
+    @patch("builtins.input", return_value="3")
+    def test_returns_product_owner_for_choice_3(self, mock_input):
+        """Choice '3' should return 'product_owner'."""
         cm = ConfigManager.__new__(ConfigManager)
         assert cm._select_role() == "product_owner"
 
-    @patch("builtins.input", return_value="3")
-    def test_returns_sales_for_choice_3(self, mock_input):
-        """Choice '3' should return 'sales'."""
+    @patch("builtins.input", return_value="4")
+    def test_returns_sales_for_choice_4(self, mock_input):
+        """Choice '4' should return 'sales'."""
         cm = ConfigManager.__new__(ConfigManager)
         assert cm._select_role() == "sales"
 
-    @patch("builtins.input", side_effect=["x", "0", "4", "abc", "1"])
+    @patch("builtins.input", side_effect=["x", "0", "5", "abc", "1"])
     def test_retries_on_invalid_input(self, mock_input):
         """Invalid choices should be rejected; loop continues until valid."""
         cm = ConfigManager.__new__(ConfigManager)
@@ -571,7 +709,7 @@ class TestSelectRole:
         # Should have been called 5 times (4 invalid + 1 valid)
         assert mock_input.call_count == 5
 
-    @patch("builtins.input", side_effect=["", " ", "2"])
+    @patch("builtins.input", side_effect=["", " ", "3"])
     def test_retries_on_empty_input(self, mock_input):
         """Empty or whitespace input should be rejected."""
         cm = ConfigManager.__new__(ConfigManager)
@@ -654,3 +792,129 @@ class TestSelectLocation:
         country, state = cm._select_location()
         assert country == "DE"
         assert state == "BY"
+
+
+# ===========================================================================
+# ConfigManager.validate_config
+# ===========================================================================
+
+class TestConfigValidation:
+    """Tests for _validate_config() called during config loading.
+
+    The validation is integrated into load_config() and raises SystemExit(1)
+    when validation fails.  These tests verify the validation logic by either:
+    - Calling _validate_config() directly on a bare ConfigManager instance
+    - Checking that ConfigManager() raises SystemExit for invalid configs
+    """
+
+    def _make_bare_cm(self):
+        """Create a ConfigManager without calling __init__ (bypasses load)."""
+        return ConfigManager.__new__(ConfigManager)
+
+    def test_missing_user_email(self, developer_config, capsys):
+        """Config with empty user.email -> _validate_config returns False, prints error."""
+        developer_config["user"]["email"] = ""
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(developer_config)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "user.email" in captured.out
+
+    def test_missing_tempo_token(self, developer_config, capsys):
+        """Empty tempo.api_token -> _validate_config returns False."""
+        developer_config["tempo"]["api_token"] = ""
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(developer_config)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "tempo.api_token" in captured.out
+
+    def test_missing_daily_hours(self, developer_config, capsys):
+        """Missing schedule.daily_hours -> _validate_config returns False.
+
+        The current implementation requires daily_hours to be explicitly set
+        (no implicit default during validation).
+        """
+        del developer_config["schedule"]["daily_hours"]
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(developer_config)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "daily_hours" in captured.out
+
+    def test_valid_config_passes(self, developer_config):
+        """A fully valid developer config -> _validate_config returns True."""
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(developer_config)
+
+        assert result is True
+
+    def test_missing_jira_token_developer(self, developer_config, capsys):
+        """Developer role with empty jira.api_token -> validation fails."""
+        developer_config["jira"]["api_token"] = ""
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(developer_config)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "jira.api_token" in captured.out
+
+    def test_missing_jira_token_po_ok(self, po_config):
+        """PO role without jira.api_token -> validation passes."""
+        po_config["jira"]["api_token"] = ""
+        cm = self._make_bare_cm()
+
+        result = cm._validate_config(po_config)
+
+        assert result is True
+
+    def test_corrupted_json(self, tmp_path, capsys):
+        """Invalid JSON in config file -> load_config raises SystemExit."""
+        bad_file = tmp_path / "config.json"
+        bad_file.write_text("{not valid json!!!", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            ConfigManager(config_path=bad_file)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "corrupted" in captured.out.lower() or "json" in captured.out.lower()
+
+    def test_empty_config_file(self, tmp_path, capsys):
+        """Empty file -> raises SystemExit with appropriate error message."""
+        empty_file = tmp_path / "config.json"
+        empty_file.write_text("", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            ConfigManager(config_path=empty_file)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "empty" in captured.out.lower() or "setup" in captured.out.lower()
+
+    def test_config_version_present(self):
+        """config_template.json should have a config_version field.
+
+        This documents the expectation that the template includes versioning
+        support for future config migrations.
+        """
+        import os
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "config_template.json"
+        )
+        with open(template_path, "r", encoding="utf-8") as f:
+            template = json.load(f)
+
+        # config_version should be present in the template
+        assert "config_version" in template, (
+            "config_template.json should contain a 'config_version' field"
+        )

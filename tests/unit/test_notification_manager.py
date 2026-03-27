@@ -325,7 +325,8 @@ class TestSendEmail:
         nm._send_email("Subject", "<html>body</html>")
 
         mock_decrypt.assert_called_once_with(
-            cfg["notifications"]["smtp_password"]
+            cfg["notifications"]["smtp_password"],
+            key='smtp_password'
         )
         mock_server.login.assert_called_once_with(
             cfg["notifications"]["smtp_user"],

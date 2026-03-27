@@ -1,9 +1,14 @@
 # HANDOFF DOCUMENT FOR VS CODE CLAUDE
 
-**Project:** Tempo Timesheet Automation  
-**Status:** Core development complete, ready for customization and testing  
-**Date:** February 3, 2026  
-**Context Source:** Claude.ai conversation  
+> **HISTORICAL DOCUMENT** -- Written at v1.0 inception (February 3, 2026). Preserved for context only.
+> The project is now at **v4.0** (March 13, 2026) with 5,446 lines, 8 classes, 500 tests, and full
+> cross-platform support. See [README.md](../../README.md) and [SETUP_GUIDE.md](SETUP_GUIDE.md) for
+> current documentation.
+
+**Project:** Tempo Timesheet Automation
+**Status:** Core development complete, ready for customization and testing
+**Date:** February 3, 2026
+**Context Source:** Claude.ai conversation
 
 ---
 

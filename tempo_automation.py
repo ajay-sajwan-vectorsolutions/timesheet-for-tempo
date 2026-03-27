@@ -28,11 +28,18 @@ from datetime import datetime, timedelta, date
 from pathlib import Path
 import re
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import html
+
+# Optional keyring for cross-platform credential storage (Mac/Linux)
+try:
+    import keyring as _keyring_mod
+except ImportError:
+    _keyring_mod = None
 
 # Force UTF-8 output to avoid UnicodeEncodeError on Windows when redirecting to file.
 # Under pythonw.exe (no console), sys.stdout/stderr are None -- redirect to devnull.
@@ -65,6 +72,25 @@ class DualWriter:
     def close(self):
         self.logfile.close()
 
+
+class JsonLogFormatter(logging.Formatter):
+    """JSON log formatter for structured logging."""
+
+    def format(self, record):
+        log_entry = {
+            'timestamp': self.formatTime(record),
+            'level': record.levelname,
+            'message': record.getMessage(),
+            'module': record.module,
+            'line': record.lineno,
+        }
+        if record.exc_info and record.exc_info[0]:
+            log_entry['exception'] = self.formatException(
+                record.exc_info
+            )
+        return json.dumps(log_entry)
+
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -75,6 +101,23 @@ CONFIG_FILE = SCRIPT_DIR / "config.json"
 LOG_FILE = SCRIPT_DIR / "tempo_automation.log"
 SHORTFALL_FILE = SCRIPT_DIR / "monthly_shortfall.json"
 SUBMITTED_FILE = SCRIPT_DIR / "monthly_submitted.json"
+
+# Persistent backup location for config -- survives re-installation to a new folder
+# Windows: %APPDATA%\TempoAutomation\config.json
+# Mac/Linux: ~/.config/TempoAutomation/config.json
+def _get_config_backup_path() -> Optional[Path]:
+    try:
+        if sys.platform == 'win32':
+            appdata = os.environ.get('APPDATA', '')
+            if appdata:
+                return Path(appdata) / "TempoAutomation" / "config.json"
+        else:
+            return Path.home() / ".config" / "TempoAutomation" / "config.json"
+    except Exception:
+        pass
+    return None
+
+CONFIG_BACKUP_FILE: Optional[Path] = _get_config_backup_path()
 
 # Configure logging
 logging.basicConfig(
@@ -89,31 +132,58 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# CREDENTIAL MANAGER (DPAPI encryption for Windows)
+# CREDENTIAL MANAGER (DPAPI on Windows, keyring on Mac/Linux)
 # ============================================================================
 
 class CredentialManager:
-    """Encrypt/decrypt sensitive config values using Windows DPAPI.
+    """Encrypt/decrypt sensitive config values.
 
-    Encrypted values are stored as 'ENC:<base64>' in config.json.
-    Plain-text values are accepted for backward compatibility and
-    will be returned as-is by decrypt().
-    DPAPI ties encryption to the current Windows user account —
-    the encrypted value can only be decrypted by the same user
-    on the same machine.
+    On Windows: uses DPAPI (ties encryption to current user account).
+    On Mac/Linux: uses keyring library (system credential store).
+    Encrypted values are stored as 'ENC:<base64>' in config.json (DPAPI).
+    Keyring values are stored in the OS credential store, and the
+    original plain-text value is kept in config.json unchanged.
+    Plain-text values are accepted for backward compatibility on
+    all platforms and will be returned as-is by decrypt().
     """
 
     PREFIX = "ENC:"
+    KEYRING_SERVICE = "tempo-automation"
+
+    _use_dpapi = sys.platform == 'win32'
+    _use_keyring = not _use_dpapi and _keyring_mod is not None
 
     @staticmethod
-    def encrypt(plain_text: str) -> str:
-        """Encrypt a string using Windows DPAPI.
+    def encrypt(plain_text: str, key: str = "") -> str:
+        """Encrypt a string using the platform credential store.
 
-        Returns 'ENC:<base64>' on Windows, plain text otherwise.
+        Args:
+            plain_text: The value to encrypt/store.
+            key: Identifier for keyring storage (e.g. 'jira_token').
+                 Ignored on Windows (DPAPI encrypts inline).
+
+        Returns 'ENC:<base64>' on Windows, plain text on other
+        platforms (keyring stores the secret separately).
         """
         if not plain_text:
             return plain_text
-        if sys.platform != 'win32':
+
+        # Mac/Linux: store in keyring if available
+        if CredentialManager._use_keyring and key:
+            try:
+                _keyring_mod.set_password(
+                    CredentialManager.KEYRING_SERVICE, key, plain_text
+                )
+                logger.info(
+                    f"Credential stored in keyring for key: {key}"
+                )
+                return plain_text
+            except Exception as e:
+                logger.warning(f"Keyring store failed: {e}")
+                return plain_text
+
+        # Windows: DPAPI encryption
+        if not CredentialManager._use_dpapi:
             return plain_text
 
         try:
@@ -154,15 +224,38 @@ class CredentialManager:
             return plain_text
 
     @staticmethod
-    def decrypt(value: str) -> str:
-        """Decrypt an 'ENC:<base64>' string using Windows DPAPI.
+    def decrypt(value: str, key: str = "") -> str:
+        """Decrypt a credential using the platform credential store.
+
+        Args:
+            value: The stored value (may be 'ENC:<base64>' on Windows,
+                   or plain text on other platforms).
+            key: Identifier for keyring lookup (e.g. 'jira_token').
+                 Ignored on Windows (DPAPI decrypts inline).
 
         Returns plain text. If value is not encrypted (no ENC:
-        prefix), returns it unchanged.
+        prefix and no keyring entry), returns it unchanged.
         """
-        if not value or not value.startswith(CredentialManager.PREFIX):
+        if not value:
             return value
-        if sys.platform != 'win32':
+
+        # Mac/Linux: try keyring first
+        if CredentialManager._use_keyring and key:
+            try:
+                stored = _keyring_mod.get_password(
+                    CredentialManager.KEYRING_SERVICE, key
+                )
+                if stored is not None:
+                    return stored
+            except Exception as e:
+                logger.warning(f"Keyring retrieve failed: {e}")
+
+        # Not an encrypted value -- return as-is (plain-text fallback)
+        if not value.startswith(CredentialManager.PREFIX):
+            return value
+
+        # DPAPI decryption (Windows only)
+        if not CredentialManager._use_dpapi:
             logger.warning("Cannot decrypt DPAPI value on non-Windows")
             return value
 
@@ -225,163 +318,273 @@ class ConfigManager:
         
         try:
             with open(self.config_path, 'r') as f:
-                config = json.load(f)
+                content = f.read()
+            if not content.strip():
+                print(
+                    "[FAIL] Config file is empty. "
+                    "Run --setup to configure."
+                )
+                raise SystemExit(1)
+            config = json.loads(content)
             logger.info("Configuration loaded successfully")
+            if not self._validate_config(config):
+                raise SystemExit(1)
             return config
+        except json.JSONDecodeError as e:
+            print(
+                f"[FAIL] Config file is corrupted: {e}. "
+                f"Run --setup to reconfigure."
+            )
+            raise SystemExit(1)
+        except SystemExit:
+            raise
         except Exception as e:
             logger.error(f"Error loading configuration: {e}")
             raise
-    
+
+    def _validate_config(self, config: Dict) -> bool:
+        """Validate config has required keys with valid values.
+
+        Returns:
+            True if valid, False if any validation fails.
+        """
+        valid = True
+
+        # user.email must exist and not be empty
+        user_email = config.get('user', {}).get('email', '')
+        if not user_email:
+            print(
+                "[FAIL] Config validation: Missing required "
+                "field 'user.email'"
+            )
+            valid = False
+
+        # user.role must be one of the allowed values
+        user_role = config.get('user', {}).get('role', '')
+        allowed_roles = ('developer', 'qa', 'product_owner', 'sales')
+        if user_role not in allowed_roles:
+            print(
+                f"[FAIL] Config validation: Invalid 'user.role' "
+                f"'{user_role}'. Must be one of: "
+                f"{', '.join(allowed_roles)}"
+            )
+            valid = False
+
+        # tempo.api_token must exist and not be empty
+        tempo_token = config.get('tempo', {}).get('api_token', '')
+        if not tempo_token:
+            print(
+                "[FAIL] Config validation: Missing required "
+                "field 'tempo.api_token'"
+            )
+            valid = False
+
+        # jira.api_token required for developer and qa roles
+        if user_role in ('developer', 'qa'):
+            jira_token = config.get('jira', {}).get('api_token', '')
+            if not jira_token:
+                print(
+                    "[FAIL] Config validation: Missing required "
+                    f"field 'jira.api_token' (required for "
+                    f"{user_role} role)"
+                )
+                valid = False
+
+        # schedule.daily_hours must be between 0.5 and 24
+        daily_hours = config.get('schedule', {}).get(
+            'daily_hours', None
+        )
+        if daily_hours is None:
+            print(
+                "[FAIL] Config validation: Missing required "
+                "field 'schedule.daily_hours'"
+            )
+            valid = False
+        elif not isinstance(daily_hours, (int, float)):
+            print(
+                "[FAIL] Config validation: "
+                "'schedule.daily_hours' must be a number"
+            )
+            valid = False
+        elif daily_hours < 0.5 or daily_hours > 24:
+            print(
+                f"[FAIL] Config validation: "
+                f"'schedule.daily_hours' must be between "
+                f"0.5 and 24 (got {daily_hours})"
+            )
+            valid = False
+
+        if not valid:
+            print("\n[INFO] Run --setup to reconfigure.")
+
+        return valid
+
     def setup_wizard(self) -> Dict:
-        """Interactive setup wizard for first-time configuration."""
-        print("\n" + "="*60)
-        print("TEMPO AUTOMATION - FIRST TIME SETUP")
-        print("="*60)
-        print("\nThis wizard will help you set up the automation.")
-        print("Your credentials will be stored locally and encrypted.\n")
-        
-        # User information
-        print("--- USER INFORMATION ---")
+        """Interactive setup wizard for first-time or re-installation setup.
+
+        On re-installation, existing credentials are revalidated automatically.
+        Questions are only asked for credentials that are missing or invalid.
+        """
         import re
         import base64
         max_retries = 3
-        while True:
-            user_email = input("Enter your email address: ").strip()
-            if re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', user_email):
-                break
-            print("Invalid email format. Please try again.")
-        user_name = ''  # auto-populated from Jira profile after token entry
-        user_role = self._select_role()
-        
-        # Jira/Tempo configuration
+
+        # Load existing config for reuse on re-installation.
+        # Check local script dir first; fall back to persistent AppData backup
+        # so re-installs to a new folder still detect prior credentials.
+        existing: Dict = {}
+        existing_source = ''
+        for candidate in [self.config_path, CONFIG_BACKUP_FILE]:
+            if candidate and candidate.exists():
+                try:
+                    with open(candidate, 'r') as f:
+                        existing = json.loads(f.read())
+                    existing_source = str(candidate)
+                    break
+                except Exception:
+                    existing = {}
+
+        has_existing = bool(existing)
+
+        print("\n" + "="*60)
+        if has_existing:
+            print("TEMPO AUTOMATION - SETUP (RE-INSTALLATION DETECTED)")
+            print("="*60)
+            print(f"\nExisting configuration found: {existing_source}")
+            print(
+                "Valid credentials will be reused automatically."
+                " Only invalid or missing credentials will be asked.\n"
+            )
+        else:
+            print("TEMPO AUTOMATION - FIRST TIME SETUP")
+            print("="*60)
+            print("\nThis wizard will help you set up the automation.")
+            print("Your credentials will be stored locally and encrypted.\n")
+
+        # ------------------------------------------------------------------ #
+        # USER INFORMATION                                                     #
+        # ------------------------------------------------------------------ #
+        print("--- USER INFORMATION ---")
+
+        # Email
+        existing_email = existing.get('user', {}).get('email', '')
+        if existing_email:
+            print(f"Email address: {existing_email} (reusing existing)")
+            user_email = existing_email
+        else:
+            while True:
+                user_email = input("Enter your email address: ").strip()
+                if re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', user_email):
+                    break
+                print("Invalid email format. Please try again.")
+
+        # Name (populated later from Jira profile if possible)
+        user_name = existing.get('user', {}).get('name', '')
+
+        # Role
+        existing_role = existing.get('user', {}).get('role', '')
+        if existing_role in ('developer', 'qa', 'product_owner', 'sales'):
+            print(f"Role: {existing_role} (reusing existing)")
+            user_role = existing_role
+        else:
+            user_role = self._select_role()
+
+        # ------------------------------------------------------------------ #
+        # JIRA/TEMPO CONFIGURATION                                            #
+        # ------------------------------------------------------------------ #
         print("\n--- JIRA/TEMPO CONFIGURATION ---")
         jira_url = "lmsportal.atlassian.net"
         print(f"Jira URL: {jira_url} (organization default)")
-        
-        print("\n[INFO] To get your Tempo API token:")
-        print("   1. Go to https://lmsportal.atlassian.net/plugins/servlet/ac/io.tempo.jira/tempo-app#!/configuration/api-integration")
-        print("   2. Click 'New Token'")
-        print("   3. Give it a name (e.g., 'Tempo Automation')")
-        print("   4. Copy the generated token")
-        tempo_token = input("\nEnter your Tempo API token: ").strip()
 
-        # Verify Tempo token (retry on failure)
-        print("\nVerifying Tempo API token...")
-        tempo_verified = False
-        for attempt in range(max_retries):
+        # -- Tempo token ---------------------------------------------------
+        existing_tempo_token = existing.get('tempo', {}).get('api_token', '')
+        tempo_token = existing_tempo_token
+        tempo_needs_input = True
+
+        if existing_tempo_token:
+            print("\nTempo API token: [found existing] - verifying...")
             try:
                 resp = requests.get(
                     "https://api.tempo.io/4/work-attributes",
                     headers={
-                        'Authorization': f'Bearer {tempo_token}'
+                        'Authorization': f'Bearer {existing_tempo_token}'
                     },
                     timeout=30
                 )
                 resp.raise_for_status()
-                tempo_verified = True
-                print("[OK] Tempo API token verified")
-                break
+                print("[OK] Existing Tempo token is still valid - reusing")
+                tempo_needs_input = False
             except requests.exceptions.HTTPError as e:
                 if (e.response is not None
-                        and e.response.status_code in (401, 403, 404)):
+                        and e.response.status_code in (401, 403)):
                     print(
-                        "\n[FAIL] Authentication failed. "
-                        "The Tempo API token is invalid or expired."
+                        "[FAIL] Existing Tempo token is invalid or "
+                        "expired. A new token is required."
                     )
-                    if attempt < max_retries - 1:
-                        print(
-                            "Please re-enter your Tempo API "
-                            "token (or press Ctrl+C to cancel)."
-                        )
-                        tempo_token = input(
-                            "Tempo API token: "
-                        ).strip()
-                    else:
-                        print(
-                            "\n[FAIL] Could not verify Tempo "
-                            "token after 3 attempts."
-                        )
-                        print()
-                        print(
-                            "***********   Setup cannot "
-                            "continue without valid "
-                            "credentials.   *************"
-                        )
-                        print(
-                            "***********   Please start a "
-                            "fresh setup with correct "
-                            "credentials.   ***********"
-                        )
-                        print("\nSetup aborted.")
-                        return None
+                    tempo_token = ''
                 else:
+                    # Non-auth HTTP error (e.g. 500) -- reuse token
                     logger.warning(
-                        f"Could not verify Tempo token: {e}"
+                        f"Could not fully verify Tempo token: {e}"
                     )
-                    break
+                    print(
+                        "[!] Could not verify Tempo token "
+                        "(network/server issue) - reusing existing"
+                    )
+                    tempo_needs_input = False
             except Exception as e:
                 logger.warning(
                     f"Could not verify Tempo token: {e}"
                 )
-                break
+                print(
+                    "[!] Could not verify Tempo token "
+                    "(network issue) - reusing existing"
+                )
+                tempo_needs_input = False
 
-        if user_role == "developer":
-            print("\n[INFO] To get your Jira API token:")
-            print("   1. Go to https://id.atlassian.com/manage-profile/security/api-tokens")
-            print("   2. Click 'Create API token'")
-            jira_token = input("\nEnter your Jira API token: ").strip()
-            jira_email = user_email
+        if tempo_needs_input:
+            print("\n[INFO] To get your Tempo API token:")
+            print(
+                "   1. Go to https://lmsportal.atlassian.net/plugins/"
+                "servlet/ac/io.tempo.jira/tempo-app#!/configuration/"
+                "api-integration"
+            )
+            print("   2. Click 'New Token'")
+            print("   3. Give it a name (e.g., 'Tempo Automation')")
+            print("   4. Copy the generated token")
+            tempo_token = input("\nEnter your Tempo API token: ").strip()
 
-            # Fetch display name from Jira profile (retry on failure)
             for attempt in range(max_retries):
                 try:
-                    creds = base64.b64encode(
-                        f"{jira_email}:{jira_token}".encode()
-                    ).decode()
                     resp = requests.get(
-                        f"https://{jira_url}/rest/api/3/myself",
-                        headers={'Authorization': f'Basic {creds}'},
+                        "https://api.tempo.io/4/work-attributes",
+                        headers={
+                            'Authorization': f'Bearer {tempo_token}'
+                        },
                         timeout=30
                     )
                     resp.raise_for_status()
-                    jira_name = resp.json().get('displayName', '')
-                    if jira_name:
-                        user_name = jira_name
-                        print(f"[OK] Welcome, {user_name}!")
+                    print("[OK] Tempo API token verified")
                     break
                 except requests.exceptions.HTTPError as e:
-                    if e.response is not None and e.response.status_code == 401:
+                    if (e.response is not None
+                            and e.response.status_code in (401, 403, 404)):
                         print(
                             "\n[FAIL] Authentication failed. "
-                            "Either the email or Jira API token "
-                            "is incorrect."
+                            "The Tempo API token is invalid or expired."
                         )
                         if attempt < max_retries - 1:
                             print(
-                                "Please re-enter your credentials "
-                                "(or press Ctrl+C to cancel)."
+                                "Please re-enter your Tempo API "
+                                "token (or press Ctrl+C to cancel)."
                             )
-                            while True:
-                                jira_email = input(
-                                    "Email address: "
-                                ).strip()
-                                if re.match(
-                                    r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-                                    jira_email
-                                ):
-                                    break
-                                print(
-                                    "Invalid email format. "
-                                    "Please try again."
-                                )
-                            user_email = jira_email
-                            jira_token = input(
-                                "Jira API token: "
+                            tempo_token = input(
+                                "Tempo API token: "
                             ).strip()
                         else:
                             print(
-                                "\n[FAIL] Could not verify Jira "
-                                "credentials after 3 attempts."
+                                "\n[FAIL] Could not verify Tempo "
+                                "token after 3 attempts."
                             )
                             print()
                             print(
@@ -394,99 +597,291 @@ class ConfigManager:
                                 "fresh setup with correct "
                                 "credentials.   ***********"
                             )
-                            print(
-                                "\nSetup aborted."
-                            )
+                            print("\nSetup aborted.")
                             return None
                     else:
                         logger.warning(
-                            f"Could not fetch Jira profile: {e}"
+                            f"Could not verify Tempo token: {e}"
                         )
                         break
                 except Exception as e:
                     logger.warning(
-                        f"Could not fetch Jira profile: {e}"
+                        f"Could not verify Tempo token: {e}"
                     )
                     break
 
+        # -- Jira token (developers and QA) --------------------------------
+        if user_role in ("developer", "qa"):
+            existing_jira_token = existing.get('jira', {}).get('api_token', '')
+            existing_jira_email = existing.get('jira', {}).get('email', user_email)
+            jira_token = existing_jira_token
+            jira_email = existing_jira_email
+            jira_needs_input = True
+
+            if existing_jira_token:
+                print("\nJira API token: [found existing] - verifying...")
+                try:
+                    creds = base64.b64encode(
+                        f"{jira_email}:{existing_jira_token}".encode()
+                    ).decode()
+                    resp = requests.get(
+                        f"https://{jira_url}/rest/api/3/myself",
+                        headers={'Authorization': f'Basic {creds}'},
+                        timeout=30
+                    )
+                    resp.raise_for_status()
+                    jira_name = resp.json().get('displayName', '')
+                    if jira_name:
+                        user_name = jira_name
+                        print(
+                            f"[OK] Existing Jira token is still valid"
+                            f" - Welcome, {user_name}!"
+                        )
+                    else:
+                        print(
+                            "[OK] Existing Jira token is still valid"
+                            " - reusing"
+                        )
+                    jira_needs_input = False
+                except requests.exceptions.HTTPError as e:
+                    if e.response is not None and e.response.status_code == 401:
+                        print(
+                            "[FAIL] Existing Jira token is invalid or "
+                            "expired. A new token is required."
+                        )
+                        jira_token = ''
+                    else:
+                        logger.warning(
+                            f"Could not fully verify Jira token: {e}"
+                        )
+                        print(
+                            "[!] Could not verify Jira token "
+                            "(network/server issue) - reusing existing"
+                        )
+                        jira_needs_input = False
+                except Exception as e:
+                    logger.warning(
+                        f"Could not verify Jira token: {e}"
+                    )
+                    print(
+                        "[!] Could not verify Jira token "
+                        "(network issue) - reusing existing"
+                    )
+                    jira_needs_input = False
+
+            if jira_needs_input:
+                print("\n[INFO] To get your Jira API token:")
+                print(
+                    "   1. Go to https://id.atlassian.com/manage-profile/"
+                    "security/api-tokens"
+                )
+                print("   2. Click 'Create API token'")
+                jira_token = input("\nEnter your Jira API token: ").strip()
+                jira_email = user_email
+
+                for attempt in range(max_retries):
+                    try:
+                        creds = base64.b64encode(
+                            f"{jira_email}:{jira_token}".encode()
+                        ).decode()
+                        resp = requests.get(
+                            f"https://{jira_url}/rest/api/3/myself",
+                            headers={'Authorization': f'Basic {creds}'},
+                            timeout=30
+                        )
+                        resp.raise_for_status()
+                        jira_name = resp.json().get('displayName', '')
+                        if jira_name:
+                            user_name = jira_name
+                            print(f"[OK] Welcome, {user_name}!")
+                        break
+                    except requests.exceptions.HTTPError as e:
+                        if (e.response is not None
+                                and e.response.status_code == 401):
+                            print(
+                                "\n[FAIL] Authentication failed. "
+                                "Either the email or Jira API token "
+                                "is incorrect."
+                            )
+                            if attempt < max_retries - 1:
+                                print(
+                                    "Please re-enter your credentials "
+                                    "(or press Ctrl+C to cancel)."
+                                )
+                                while True:
+                                    jira_email = input(
+                                        "Email address: "
+                                    ).strip()
+                                    if re.match(
+                                        r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                                        jira_email
+                                    ):
+                                        break
+                                    print(
+                                        "Invalid email format. "
+                                        "Please try again."
+                                    )
+                                user_email = jira_email
+                                jira_token = input(
+                                    "Jira API token: "
+                                ).strip()
+                            else:
+                                print(
+                                    "\n[FAIL] Could not verify Jira "
+                                    "credentials after 3 attempts."
+                                )
+                                print()
+                                print(
+                                    "***********   Setup cannot "
+                                    "continue without valid "
+                                    "credentials.   *************"
+                                )
+                                print(
+                                    "***********   Please start a "
+                                    "fresh setup with correct "
+                                    "credentials.   ***********"
+                                )
+                                print("\nSetup aborted.")
+                                return None
+                        else:
+                            logger.warning(
+                                f"Could not fetch Jira profile: {e}"
+                            )
+                            break
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not fetch Jira profile: {e}"
+                        )
+                        break
+
             if not user_name:
-                user_name = input(
-                    "Enter your full name: "
-                ).strip()
+                user_name = input("Enter your full name: ").strip()
         else:
             jira_token = ""
             jira_email = user_email
-            user_name = input(
-                "Enter your full name: "
-            ).strip()
-        
-        # Work schedule & location
-        print("\n--- WORK SCHEDULE & LOCATION ---")
-        while True:
-            try:
-                daily_hours = float(
-                    input("Standard work hours per day (default 8): ").strip()
-                    or "8"
-                )
-                break
-            except ValueError:
-                print("  [ERROR] Please enter a valid number.")
+            if not user_name:
+                user_name = input("Enter your full name: ").strip()
 
-        country_code, state_code = self._select_location()
+        # ------------------------------------------------------------------ #
+        # WORK SCHEDULE & LOCATION                                            #
+        # ------------------------------------------------------------------ #
+        print("\n--- WORK SCHEDULE & LOCATION ---")
+
+        existing_daily_hours = existing.get('schedule', {}).get(
+            'daily_hours', None
+        )
+        if existing_daily_hours is not None:
+            print(f"Daily hours: {existing_daily_hours} (reusing existing)")
+            daily_hours = existing_daily_hours
+        else:
+            while True:
+                try:
+                    daily_hours = float(
+                        input(
+                            "Standard work hours per day (default 8): "
+                        ).strip() or "8"
+                    )
+                    break
+                except ValueError:
+                    print("  [ERROR] Please enter a valid number.")
+
+        existing_country = existing.get('schedule', {}).get('country_code', '')
+        existing_state = existing.get('schedule', {}).get('state', '')
+        if existing_country:
+            loc_display = existing_country
+            if existing_state:
+                loc_display += f"/{existing_state}"
+            print(f"Location: {loc_display} (reusing existing)")
+            country_code = existing_country
+            state_code = existing_state
+        else:
+            country_code, state_code = self._select_location()
 
         # Organization holidays URL
-        holidays_url = "https://ajay-sajwan-vectorsolutions.github.io/local-assets/org_holidays.json"
+        holidays_url = (
+            "https://ajay-sajwan-vectorsolutions.github.io"
+            "/local-assets/org_holidays.json"
+        )
         print(f"\nOrg holidays URL: {holidays_url} (organization default)")
 
-        # Teams webhook for notifications (disabled — pending Graph API)
-        # print("\n--- MS TEAMS NOTIFICATIONS (OPTIONAL) ---")
-        # print("Enter your MS Teams incoming webhook URL (or Enter to skip):")
-        # print("[INFO] To create a webhook: Teams channel -> ...")
-        # teams_webhook = input("Teams Webhook URL: ").strip()
-        teams_webhook = ""
+        # Teams webhook (disabled -- pending Graph API)
+        teams_webhook = existing.get(
+            'notifications', {}
+        ).get('teams_webhook_url', "")
 
-        # Email notifications (Office 365 SMTP)
-        print("\n--- EMAIL NOTIFICATIONS ---")
-        print("SMTP server: smtp.office365.com (auto-configured)")
-        enable_email = input(
-            "Enable email notifications? (yes/no, default: no): "
-        ).strip().lower()
-        enable_email = enable_email in ['yes', 'y']
+        # ------------------------------------------------------------------ #
+        # EMAIL NOTIFICATIONS                                                 #
+        # ------------------------------------------------------------------ #
+        existing_notif = existing.get('notifications', {})
+        if has_existing and 'email_enabled' in existing_notif:
+            enable_email = existing_notif.get('email_enabled', False)
+            smtp_server = existing_notif.get(
+                'smtp_server', "smtp.office365.com"
+            )
+            smtp_port = existing_notif.get('smtp_port', 587)
+            smtp_user = existing_notif.get('smtp_user', user_email)
+            smtp_password = existing_notif.get('smtp_password', "")
+            print(
+                f"\nEmail notifications: "
+                f"{'enabled' if enable_email else 'disabled'}"
+                f" (reusing existing)"
+            )
+        else:
+            print("\n--- EMAIL NOTIFICATIONS ---")
+            print("SMTP server: smtp.office365.com (auto-configured)")
+            enable_email = input(
+                "Enable email notifications? (yes/no, default: no): "
+            ).strip().lower()
+            enable_email = enable_email in ['yes', 'y']
 
-        smtp_server = "smtp.office365.com"
-        smtp_port = 587
-        smtp_user = user_email
-        smtp_password = ""
-        if enable_email:
+            smtp_server = "smtp.office365.com"
+            smtp_port = 587
+            smtp_user = user_email
+            smtp_password = ""
+            if enable_email:
+                print(f"\nSMTP login will use your email: {user_email}")
+                print(
+                    "[INFO] If MFA is enabled, create an App Password at"
+                )
+                print(
+                    "   https://mysignins.microsoft.com/security-info"
+                )
+                raw_password = input(
+                    "Enter your email/app password: "
+                ).strip()
+                smtp_password = CredentialManager.encrypt(
+                    raw_password, key='smtp_password'
+                )
+                print("[OK] Password encrypted and saved securely")
+
+        # ------------------------------------------------------------------ #
+        # MANUAL ACTIVITIES (non-developers)                                  #
+        # ------------------------------------------------------------------ #
+        existing_activities = existing.get('manual_activities', [])
+        if has_existing and existing_activities:
             print(
-                f"\nSMTP login will use your email: {user_email}"
+                f"\nManual activities: {len(existing_activities)} configured"
+                f" (reusing existing)"
             )
-            print(
-                "[INFO] If MFA is enabled, create an App Password at"
-            )
-            print(
-                "   https://mysignins.microsoft.com/security-info"
-            )
-            raw_password = input(
-                "Enter your email/app password: "
-            ).strip()
-            smtp_password = CredentialManager.encrypt(raw_password)
-            print("[OK] Password encrypted and saved securely")
-        
-        # Manual activities (for non-developers)
-        manual_activities = []
-        if user_role in ["product_owner", "sales"]:
+            manual_activities = existing_activities
+        elif user_role in ["product_owner", "sales"]:
+            manual_activities = []
             print("\n--- DEFAULT ACTIVITIES ---")
             print("Set up your typical daily activities (optional)")
             while True:
-                add_activity = input("\nAdd a default activity? (yes/no): ").strip().lower()
+                add_activity = input(
+                    "\nAdd a default activity? (yes/no): "
+                ).strip().lower()
                 if add_activity not in ['yes', 'y']:
                     break
-                
-                activity = input("Activity name (e.g., 'Stakeholder Meetings'): ").strip()
+                activity = input(
+                    "Activity name (e.g., 'Stakeholder Meetings'): "
+                ).strip()
                 while True:
                     try:
-                        hours = float(input("Typical hours per day: ").strip())
+                        hours = float(
+                            input("Typical hours per day: ").strip()
+                        )
                         break
                     except ValueError:
                         print("  [ERROR] Please enter a valid number.")
@@ -494,9 +889,16 @@ class ConfigManager:
                     "activity": activity,
                     "hours": hours
                 })
-        
-        # Build configuration
+        else:
+            manual_activities = []
+
+        # ------------------------------------------------------------------ #
+        # BUILD CONFIGURATION                                                 #
+        # Preserve existing schedule overrides (PTO, holidays, etc.)         #
+        # ------------------------------------------------------------------ #
+        existing_schedule = existing.get('schedule', {})
         config = {
+            "config_version": "4.0",
             "user": {
                 "email": user_email,
                 "name": user_name,
@@ -515,13 +917,20 @@ class ConfigManager:
             },
             "schedule": {
                 "daily_hours": daily_hours,
-                "daily_sync_time": "18:00",
-                "monthly_submit_day": "last",
+                "daily_sync_time": existing_schedule.get(
+                    'daily_sync_time', "18:00"
+                ),
+                "monthly_submit_day": existing_schedule.get(
+                    'monthly_submit_day', "last"
+                ),
                 "country_code": country_code,
                 "state": state_code,
-                "pto_days": [],
-                "extra_holidays": [],
-                "working_days": []
+                # Preserve user overrides from previous install
+                "pto_days": existing_schedule.get('pto_days', []),
+                "extra_holidays": existing_schedule.get(
+                    'extra_holidays', []
+                ),
+                "working_days": existing_schedule.get('working_days', []),
             },
             "notifications": {
                 "email_enabled": enable_email,
@@ -529,46 +938,63 @@ class ConfigManager:
                 "smtp_port": smtp_port,
                 "smtp_user": smtp_user,
                 "smtp_password": smtp_password,
-                "notification_email": user_email,
+                "notification_email": existing_notif.get(
+                    'notification_email', user_email
+                ),
                 "teams_webhook_url": teams_webhook,
-                "notify_on_shortfall": True
+                "notify_on_shortfall": existing_notif.get(
+                    'notify_on_shortfall', True
+                ),
             },
             "manual_activities": manual_activities,
-            "options": {
+            "options": existing.get('options', {
                 "auto_submit": True,
                 "require_confirmation": False,
                 "sync_on_startup": False
-            }
+            })
         }
-        
+
+        # Preserve overhead config if present
+        if 'overhead' in existing:
+            config['overhead'] = existing['overhead']
+
+        # Preserve distribution_weights if present
+        if 'distribution_weights' in existing.get('schedule', {}):
+            config['schedule']['distribution_weights'] = (
+                existing['schedule']['distribution_weights']
+            )
+
         # Save configuration
         self.save_config(config)
-        
+
         print("\n" + "="*60)
         print("[OK] SETUP COMPLETE!")
         print("="*60)
         print(f"\nConfiguration saved to: {self.config_path}")
         print("You can edit this file manually if needed.\n")
-        
+
         return config
     
     def _select_role(self) -> str:
         """Helper to select user role."""
         print("\nSelect your role:")
-        print("  1. Developer (works with Jira tickets)")
-        print("  2. Product Owner")
-        print("  3. Sales Team")
-        
+        print("  1. Developer (works with Jira tickets in development)")
+        print("  2. QA (works with Jira tickets in testing)")
+        print("  3. Product Owner")
+        print("  4. Sales Team")
+
         while True:
-            choice = input("Enter choice (1-3): ").strip()
+            choice = input("Enter choice (1-4): ").strip()
             if choice == "1":
                 return "developer"
             elif choice == "2":
-                return "product_owner"
+                return "qa"
             elif choice == "3":
+                return "product_owner"
+            elif choice == "4":
                 return "sales"
             else:
-                print("Invalid choice. Please enter 1, 2, or 3.")
+                print("Invalid choice. Please enter 1, 2, 3, or 4.")
     
     def _select_location(self) -> Tuple[str, str]:
         """Helper to select country and city/state for holiday detection."""
@@ -601,14 +1027,32 @@ class ConfigManager:
                 print("Invalid choice. Please enter 1-5.")
 
     def save_config(self, config: Dict):
-        """Save configuration to file."""
+        """Save configuration to file and persistent backup location."""
         try:
             with open(self.config_path, 'w') as f:
                 json.dump(config, f, indent=2)
+            if sys.platform != 'win32':
+                os.chmod(self.config_path, 0o600)
             logger.info("Configuration saved successfully")
         except Exception as e:
             logger.error(f"Error saving configuration: {e}")
             raise
+
+        # Also write to persistent backup so re-installs can detect prior setup
+        if CONFIG_BACKUP_FILE:
+            try:
+                CONFIG_BACKUP_FILE.parent.mkdir(parents=True, exist_ok=True)
+                with open(CONFIG_BACKUP_FILE, 'w') as f:
+                    json.dump(config, f, indent=2)
+                if sys.platform != 'win32':
+                    os.chmod(CONFIG_BACKUP_FILE, 0o600)
+                logger.info(
+                    f"Config backup saved to {CONFIG_BACKUP_FILE}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Could not save config backup: {e}"
+                )
     
     def get_account_id(self) -> str:
         """Get Tempo account ID for current user."""
@@ -642,6 +1086,7 @@ class ConfigManager:
 # ============================================================================
 
 ORG_HOLIDAYS_FILE = SCRIPT_DIR / "org_holidays.json"
+ORG_HOLIDAYS_CACHE_FILE = SCRIPT_DIR / "org_holidays_cache.json"
 
 
 class ScheduleManager:
@@ -720,8 +1165,9 @@ class ScheduleManager:
     def _fetch_remote_org_holidays(self) -> Optional[Dict]:
         """Fetch org_holidays.json from central URL (source of truth).
 
-        Always uses remote data when available and saves a local
-        copy as backup for offline use.
+        Uses ETag/Last-Modified caching with a 24-hour TTL to avoid
+        unnecessary network requests. On 304 Not Modified, reuses
+        cached data. Always saves a local copy as offline backup.
 
         Returns:
             Remote data dict if fetch succeeded, None otherwise.
@@ -732,15 +1178,73 @@ class ScheduleManager:
         if not holidays_url:
             return None
 
+        # Load cache metadata (ETag, Last-Modified, timestamp)
+        cache_meta = self._load_holiday_cache_meta()
+        cache_ttl_hours = 24
+
+        # Skip fetch if cache is less than TTL hours old
+        import time as _time_mod
+        last_fetch = cache_meta.get('last_fetch_ts', 0)
+        now_ts = _time_mod.time()
+        if last_fetch and (now_ts - last_fetch) < cache_ttl_hours * 3600:
+            # Cache is fresh -- use local file if it exists
+            if ORG_HOLIDAYS_FILE.exists():
+                try:
+                    with open(ORG_HOLIDAYS_FILE, 'r') as f:
+                        cached_data = json.load(f)
+                    logger.info(
+                        "Org holidays loaded from cache "
+                        "(TTL not expired)"
+                    )
+                    return cached_data
+                except Exception:
+                    pass  # Fall through to network fetch
+
         try:
-            response = requests.get(holidays_url, timeout=10)
+            # Build conditional request headers
+            headers = {}
+            etag = cache_meta.get('etag', '')
+            last_modified = cache_meta.get('last_modified', '')
+            if etag:
+                headers['If-None-Match'] = etag
+            if last_modified:
+                headers['If-Modified-Since'] = last_modified
+
+            response = requests.get(
+                holidays_url, headers=headers, timeout=10
+            )
+
+            if response.status_code == 304:
+                # Not Modified -- use cached data
+                self._save_holiday_cache_meta(
+                    etag, last_modified, now_ts
+                )
+                if ORG_HOLIDAYS_FILE.exists():
+                    with open(ORG_HOLIDAYS_FILE, 'r') as f:
+                        cached_data = json.load(f)
+                    logger.info(
+                        "Org holidays unchanged (304 Not Modified)"
+                    )
+                    return cached_data
+                return None
+
             response.raise_for_status()
             remote_data = response.json()
             remote_version = remote_data.get('version', '')
 
-            # Always save remote data to local file as backup
+            # Save remote data to local file as backup
             with open(ORG_HOLIDAYS_FILE, 'w') as f:
                 json.dump(remote_data, f, indent=2)
+
+            # Update cache metadata
+            new_etag = response.headers.get('ETag', '')
+            new_last_modified = response.headers.get(
+                'Last-Modified', ''
+            )
+            self._save_holiday_cache_meta(
+                new_etag, new_last_modified, now_ts
+            )
+
             logger.info(
                 f"Org holidays fetched from URL (version: "
                 f"{remote_version})"
@@ -749,6 +1253,43 @@ class ScheduleManager:
         except Exception as e:
             logger.warning(f"Could not fetch remote org holidays: {e}")
             return None
+
+    def _load_holiday_cache_meta(self) -> Dict:
+        """Load holiday cache metadata (ETag, Last-Modified, timestamp).
+
+        Returns:
+            Dict with etag, last_modified, and last_fetch_ts keys.
+        """
+        if not ORG_HOLIDAYS_CACHE_FILE.exists():
+            return {}
+        try:
+            with open(ORG_HOLIDAYS_CACHE_FILE, 'r') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_holiday_cache_meta(
+        self, etag: str, last_modified: str, fetch_ts: float
+    ):
+        """Save holiday cache metadata for conditional requests.
+
+        Args:
+            etag: ETag header value from server response.
+            last_modified: Last-Modified header value from server.
+            fetch_ts: Unix timestamp of the fetch.
+        """
+        meta = {
+            'etag': etag,
+            'last_modified': last_modified,
+            'last_fetch_ts': fetch_ts
+        }
+        try:
+            with open(ORG_HOLIDAYS_CACHE_FILE, 'w') as f:
+                json.dump(meta, f, indent=2)
+        except Exception as e:
+            logger.warning(
+                f"Could not save holiday cache metadata: {e}"
+            )
 
     def _load_country_holidays(self):
         """Load country holidays from holidays library."""
@@ -1162,6 +1703,8 @@ class ScheduleManager:
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2)
+            if sys.platform != 'win32':
+                os.chmod(self.config_path, 0o600)
             logger.info("Schedule config saved")
         except Exception as e:
             logger.error(f"Error saving schedule config: {e}")
@@ -1290,6 +1833,11 @@ class ScheduleManager:
 # JIRA API CLIENT
 # ============================================================================
 
+# Status sets used for active-issue JQL queries, keyed by role
+DEVELOPER_STATUSES = ["IN DEVELOPMENT", "CODE REVIEW"]
+QA_STATUSES = ["Testing", "User Acceptance Testing"]
+
+
 class JiraClient:
     """Handles Jira API interactions."""
 
@@ -1302,13 +1850,13 @@ class JiraClient:
         self.session = requests.Session()
         self.session.auth = (self.email, self.api_token)
         self.session.headers.update({'Content-Type': 'application/json'})
-        # Retry on 429 (rate limit) with exponential backoff
+        # Retry on 429 (rate limit) and 5xx errors with exponential backoff
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
         retry = Retry(
             total=3,
             backoff_factor=1,
-            status_forcelist=[429],
+            status_forcelist=[429, 502, 503, 504],
             respect_retry_after_header=True
         )
         self.session.mount('https://', HTTPAdapter(max_retries=retry))
@@ -1428,15 +1976,22 @@ class JiraClient:
             logger.error(f"Error deleting worklog {worklog_id} from {issue_key}: {e}")
             return False
 
-    def get_my_active_issues(self) -> List[Dict]:
+    def get_my_active_issues(self, statuses: List[str] = None) -> List[Dict]:
         """
-        Fetch issues assigned to current user that are In Progress or Code Review.
+        Fetch issues assigned to current user that are actively being worked.
+
+        Args:
+            statuses: List of Jira status names to filter by.
+                      Defaults to DEVELOPER_STATUSES if not provided.
 
         Returns:
             List of dicts with issue_key and issue_summary
         """
+        if statuses is None:
+            statuses = DEVELOPER_STATUSES
         try:
-            jql = 'assignee = currentUser() AND status IN ("IN DEVELOPMENT", "CODE REVIEW")'
+            quoted = ', '.join(f'"{s}"' for s in statuses)
+            jql = f'assignee = currentUser() AND status IN ({quoted})'
 
             url = f"{self.base_url}/rest/api/3/search/jql"
             params = {
@@ -1464,26 +2019,30 @@ class JiraClient:
             logger.error(f"Error fetching active issues: {e}")
             return []
 
-    def get_issues_in_status_on_date(self, target_date: str) -> List[Dict]:
+    def get_issues_in_status_on_date(
+        self, target_date: str, statuses: List[str] = None
+    ) -> List[Dict]:
         """
-        Fetch issues that were IN DEVELOPMENT or CODE REVIEW on a past date.
+        Fetch issues that were in the given statuses on a past date.
 
         Uses historical JQL (status WAS ... ON ...) to find tickets that
         were active on a specific date, even if their status has since changed.
 
         Args:
             target_date: Date string (YYYY-MM-DD)
+            statuses: List of Jira status names to filter by.
+                      Defaults to DEVELOPER_STATUSES if not provided.
 
         Returns:
             List of dicts with issue_key and issue_summary
         """
+        if statuses is None:
+            statuses = DEVELOPER_STATUSES
         try:
-            jql = (
-                f'assignee = currentUser() AND ('
-                f'status WAS "IN DEVELOPMENT" ON "{target_date}" OR '
-                f'status WAS "CODE REVIEW" ON "{target_date}"'
-                f')'
+            was_clauses = ' OR '.join(
+                f'status WAS "{s}" ON "{target_date}"' for s in statuses
             )
+            jql = f'assignee = currentUser() AND ({was_clauses})'
 
             url = f"{self.base_url}/rest/api/3/search/jql"
             params = {
@@ -1645,7 +2204,7 @@ class JiraClient:
         return ' '.join(parts).strip()
 
     def create_worklog(self, issue_key: str, time_spent_seconds: int,
-                       started: str, comment: str = "") -> bool:
+                       started: str, comment: str = ""):
         """
         Create a worklog on a Jira issue.
 
@@ -1656,7 +2215,7 @@ class JiraClient:
             comment: Optional comment text
 
         Returns:
-            True if successful, False otherwise
+            Worklog ID (str) if successful, None otherwise
         """
         try:
             url = f"{self.base_url}/rest/api/3/issue/{issue_key}/worklog"
@@ -1692,12 +2251,16 @@ class JiraClient:
             response = self.session.post(url, json=payload, timeout=30)
             response.raise_for_status()
 
-            logger.info(f"Created Jira worklog: {issue_key} - {time_spent_seconds}s on {started}")
-            return True
+            worklog_id = str(response.json().get('id', ''))
+            logger.info(
+                f"Created Jira worklog {worklog_id}: "
+                f"{issue_key} - {time_spent_seconds}s on {started}"
+            )
+            return worklog_id
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Error creating Jira worklog for {issue_key}: {e}")
-            return False
+            return None
 
 
 # ============================================================================
@@ -1716,6 +2279,16 @@ class TempoClient:
             'Authorization': f'Bearer {self.api_token}',
             'Content-Type': 'application/json'
         })
+        # Retry on 429 (rate limit) and 5xx errors with exponential backoff
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        retry = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 502, 503, 504],
+            respect_retry_after_header=True
+        )
+        self.session.mount('https://', HTTPAdapter(max_retries=retry))
         self.account_id = account_id or config.get(
             'user', {}
         ).get('email', '')
@@ -1868,6 +2441,51 @@ class TempoClient:
             today_obj = date.today()
             return f"{today_obj.year}-{today_obj.month:02d}"
 
+    def get_timesheet_periods(
+        self, date_from: str, date_to: str
+    ) -> List[Dict]:
+        """Fetch Tempo timesheet approval periods for a date range.
+
+        Args:
+            date_from: Start date (YYYY-MM-DD).
+            date_to: End date (YYYY-MM-DD).
+
+        Returns:
+            List of period dicts with status, dateFrom, dateTo keys.
+        """
+        try:
+            url = (
+                f"{self.base_url}/timesheet-approvals/user/"
+                f"{self.account_id}"
+            )
+            params = {'from': date_from, 'to': date_to}
+
+            response = self.session.get(
+                url, params=params, timeout=30
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            # API may return a single object or a list
+            if isinstance(data, dict):
+                periods = data.get('results', [data])
+            elif isinstance(data, list):
+                periods = data
+            else:
+                periods = []
+
+            logger.info(
+                f"Fetched {len(periods)} timesheet period(s) "
+                f"for {date_from} to {date_to}"
+            )
+            return periods
+
+        except requests.exceptions.RequestException as e:
+            logger.error(
+                f"Error fetching timesheet periods: {e}"
+            )
+            return []
+
 
 # ============================================================================
 # NOTIFICATION MANAGER
@@ -1960,7 +2578,10 @@ class NotificationManager:
             try:
                 server.starttls()
                 smtp_password = CredentialManager.decrypt(
-                    self.config['notifications'].get('smtp_password', '')
+                    self.config['notifications'].get(
+                        'smtp_password', ''
+                    ),
+                    key='smtp_password'
                 )
                 server.login(
                     self.config['notifications']['smtp_user'],
@@ -2124,13 +2745,15 @@ class NotificationManager:
 class TempoAutomation:
     """Main automation engine."""
     
-    def __init__(self, config_path: Path = CONFIG_FILE):
+    def __init__(self, config_path: Path = CONFIG_FILE,
+                 dry_run: bool = False):
+        self.dry_run = dry_run
         self.config_manager = ConfigManager(config_path)
         self.config = self.config_manager.config
         self.schedule_mgr = ScheduleManager(self.config)
 
         self.jira_client = None
-        if self.config.get('user', {}).get('role') == 'developer':
+        if self.config.get('user', {}).get('role') in ('developer', 'qa'):
             self.jira_client = JiraClient(self.config)
 
         account_id = (
@@ -2143,7 +2766,7 @@ class TempoAutomation:
         self.schedule_mgr.check_year_end_warning()
 
         # Check overhead story configuration
-        if self.config.get('user', {}).get('role') == 'developer':
+        if self.config.get('user', {}).get('role') in ('developer', 'qa'):
             if not self._is_overhead_configured():
                 print(
                     "[INFO] Overhead stories not configured. "
@@ -2176,6 +2799,10 @@ class TempoAutomation:
             f"(started {now_ts})"
         )
         print(f"{'='*60}\n")
+
+        if self.dry_run:
+            print("[DRY RUN] Preview mode -- no changes will be made\n")
+
         print("[INFO] PTO day -- logging hours to overhead story")
 
         oh = self._get_overhead_config()
@@ -2243,6 +2870,74 @@ class TempoAutomation:
             f"{total_hours:.2f}h"
         )
 
+    def _pre_sync_health_check(self) -> bool:
+        """Check Jira and Tempo API connectivity before mutating data.
+
+        Returns:
+            True if both APIs are reachable and authenticated,
+            False with diagnostic print if either fails.
+        """
+        # Check Jira API
+        if self.jira_client:
+            try:
+                url = (
+                    f"{self.jira_client.base_url}/rest/api/3/myself"
+                )
+                response = self.jira_client.session.get(
+                    url, timeout=10
+                )
+                logger.info(
+                    f"API call to {url}: {response.status_code}"
+                )
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                status = e.response.status_code if e.response is not None else 'unknown'
+                if status == 401:
+                    msg = "[FAIL] Jira token expired (401)"
+                else:
+                    msg = (
+                        f"[FAIL] Jira API error ({status})"
+                    )
+                print(msg)
+                logger.error(f"Health check failed: {msg}")
+                return False
+            except Exception as e:
+                msg = f"[FAIL] Jira API unreachable: {e}"
+                print(msg)
+                logger.error(f"Health check failed: {msg}")
+                return False
+
+        # Check Tempo API using /work-attributes (lightweight, always available)
+        if self.tempo_client.account_id or self.tempo_client.api_token:
+            try:
+                url = f"{self.tempo_client.base_url}/work-attributes"
+                response = self.tempo_client.session.get(
+                    url, timeout=10
+                )
+                logger.info(
+                    f"API call to {url}: {response.status_code}"
+                )
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                status = e.response.status_code if e.response is not None else 'unknown'
+                if status == 401:
+                    msg = "[FAIL] Tempo token expired (401)"
+                else:
+                    msg = (
+                        f"[FAIL] Tempo API error ({status})"
+                    )
+                print(msg)
+                logger.error(f"Health check failed: {msg}")
+                return False
+            except Exception as e:
+                msg = f"[FAIL] Tempo API unreachable: {e}"
+                print(msg)
+                logger.error(f"Health check failed: {msg}")
+                return False
+
+        logger.info("Pre-sync health check passed")
+        return True
+
     def sync_daily(self, target_date: str = None):
         """
         Sync daily timesheet entries.
@@ -2287,14 +2982,23 @@ class TempoAutomation:
         # --- End guard ---
 
         logger.info(f"Starting daily sync for {target_date}")
+
+        # Pre-sync health check
+        if not self._pre_sync_health_check():
+            print("[FAIL] Aborting daily sync due to API health check failure.")
+            return
+
         now_ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"\n{'='*60}")
         print(f"TEMPO DAILY SYNC - {target_date} (started {now_ts})")
         print(f"{'='*60}\n")
-        
+
+        if self.dry_run:
+            print("[DRY RUN] Preview mode -- no changes will be made\n")
+
         worklogs_created = []
         
-        if self.config.get('user', {}).get('role') == 'developer':
+        if self.config.get('user', {}).get('role') in ('developer', 'qa'):
             # Auto-log time across active Jira tickets
             worklogs_created = self._auto_log_jira_worklogs(target_date)
         else:
@@ -2320,8 +3024,26 @@ class TempoAutomation:
         else:
             print(f"Status: [!] Incomplete ({total_hours:.2f}h logged)")
         print()
-        
+
         logger.info(f"Daily sync completed: {len(worklogs_created)} entries, {total_hours:.2f}h")
+
+        # Determine reason for any shortfall (used by tray app for accurate notification)
+        oh_stories = self._get_overhead_config().get('current_pi', {}).get('stories', [])
+        fallback = self._get_overhead_config().get('fallback_issue_key', '')
+        if total_hours == 0 and not oh_stories and not fallback:
+            reason = 'no_overhead'
+        elif total_hours == 0:
+            reason = 'no_tickets'
+        elif total_hours < self.schedule_mgr.daily_hours:
+            reason = 'partial'
+        else:
+            reason = 'ok'
+
+        return {
+            'hours_logged': total_hours,
+            'target_hours': self.schedule_mgr.daily_hours,
+            'reason': reason,
+        }
     
     def _sync_jira_worklogs(self, target_date: str) -> List[Dict]:
         """Sync Jira worklogs to Tempo."""
@@ -2356,6 +3078,33 @@ class TempoAutomation:
                 print(f"  [SKIP] Exists: {wl['issue_key']}")
         
         return created
+
+    def _rollback_created(self, created_worklogs: List[Dict],
+                          target_date: str):
+        """Roll back newly created worklogs after a partial failure.
+
+        Args:
+            created_worklogs: List of dicts with issue_key and worklog_id
+            target_date: Date string for logging context
+        """
+        if not created_worklogs:
+            return
+        print(
+            f"\n[!] Rolling back {len(created_worklogs)} "
+            f"created worklog(s)..."
+        )
+        for wl in created_worklogs:
+            deleted = self.jira_client.delete_worklog(
+                wl['issue_key'], wl.get('worklog_id', '')
+            )
+            if deleted:
+                print(f"  [OK] Rolled back {wl['issue_key']}")
+            else:
+                print(
+                    f"  [FAIL] Could not roll back "
+                    f"{wl['issue_key']}"
+                )
+        print("[!] Rollback complete. Original worklogs preserved.\n")
 
     def _auto_log_jira_worklogs(self, target_date: str) -> List[Dict]:
         """
@@ -2410,27 +3159,26 @@ class TempoAutomation:
         )
         overhead_seconds = jira_oh_seconds + tempo_only_seconds
 
-        # Delete only non-overhead Jira worklogs
-        if jira_non_overhead:
-            print(
-                f"Removing {len(jira_non_overhead)} "
-                f"non-overhead worklog(s) for {target_date}..."
-            )
-            for wl in jira_non_overhead:
-                deleted = self.jira_client.delete_worklog(
-                    wl['issue_key'], wl['worklog_id']
+        # Save non-overhead worklogs for deletion AFTER new ones succeed
+        worklogs_to_delete = list(jira_non_overhead)
+        if worklogs_to_delete:
+            if self.dry_run:
+                print(
+                    f"[DRY RUN] Would remove "
+                    f"{len(worklogs_to_delete)} non-overhead "
+                    f"worklog(s) for {target_date}:"
                 )
-                if deleted:
+                for wl in worklogs_to_delete:
+                    wl_h = wl['time_spent_seconds'] / 3600
                     print(
-                        f"  [OK] Removed "
-                        f"{wl['time_spent_seconds']/3600:.2f}h "
-                        f"from {wl['issue_key']}"
+                        f"  [DRY RUN] Would remove "
+                        f"{wl_h:.2f}h from {wl['issue_key']}"
                     )
-                else:
-                    print(
-                        f"  [FAIL] Could not remove worklog "
-                        f"from {wl['issue_key']}"
-                    )
+            else:
+                print(
+                    f"Found {len(worklogs_to_delete)} non-overhead "
+                    f"worklog(s) to replace for {target_date}."
+                )
             print()
 
         # Show overhead summary
@@ -2521,13 +3269,16 @@ class TempoAutomation:
             )
             return overhead_result + created
 
-        # Get active issues
-        active_issues = self.jira_client.get_my_active_issues()
+        # Get active issues for the current role's statuses
+        active_issues = self.jira_client.get_my_active_issues(
+            statuses=self._get_active_statuses()
+        )
 
         # Case 1: No active tickets -> overhead fallback
         if not active_issues:
+            status_label = " / ".join(self._get_active_statuses())
             logger.warning(
-                "No active issues found (IN DEVELOPMENT / CODE REVIEW)"
+                f"No active issues found ({status_label})"
             )
             if self._is_overhead_configured():
                 print(
@@ -2548,58 +3299,256 @@ class TempoAutomation:
 
         # Normal flow: distribute remaining hours across active tickets
         num_tickets = len(active_issues)
-        seconds_per_ticket = remaining_seconds // num_tickets
-        remainder_secs = remaining_seconds - (
-            seconds_per_ticket * num_tickets
-        )
-
         remaining_hours = remaining_seconds / 3600
         print(f"Found {num_tickets} active ticket(s):")
         for issue in active_issues:
             print(
                 f"  - {issue['issue_key']}: {issue['issue_summary']}"
             )
-        print(
-            f"\n{remaining_hours:.2f}h / {num_tickets} tickets = "
-            f"{seconds_per_ticket/3600:.2f}h each\n"
+
+        # Check for weighted distribution config
+        weights = self.config.get('schedule', {}).get(
+            'distribution_weights', {}
+        )
+        use_weights = bool(
+            weights and any(
+                issue['issue_key'] in weights
+                for issue in active_issues
+            )
         )
 
-        created = []
-        for i, issue in enumerate(active_issues):
-            ticket_seconds = seconds_per_ticket + (
-                remainder_secs if i == num_tickets - 1 else 0
-            )
-            ticket_hours = ticket_seconds / 3600
+        if use_weights:
+            # Weighted distribution
+            weighted_items = []
+            total_weight = 0.0
+            for issue in active_issues:
+                w = float(weights.get(issue['issue_key'], 1.0))
+                weighted_items.append((issue, w))
+                total_weight += w
 
-            comment = self._generate_work_summary(
-                issue['issue_key'], issue['issue_summary']
-            )
-            success = self.jira_client.create_worklog(
-                issue_key=issue['issue_key'],
-                time_spent_seconds=ticket_seconds,
-                started=target_date,
-                comment=comment
-            )
-
-            if success:
+            print(f"\nWeighted distribution ({remaining_hours:.2f}h):")
+            allocations = []
+            allocated = 0
+            for idx, (issue, w) in enumerate(weighted_items):
+                if idx == len(weighted_items) - 1:
+                    t_secs = remaining_seconds - allocated
+                else:
+                    t_secs = int(
+                        remaining_seconds * w / total_weight
+                    )
+                    allocated += t_secs
+                t_hours = t_secs / 3600
+                pct = (w / total_weight * 100) if total_weight else 0
                 print(
-                    f"  [OK] Logged {ticket_hours:.2f}h on "
-                    f"{issue['issue_key']}"
+                    f"  - {issue['issue_key']}: "
+                    f"{t_hours:.2f}h (weight {w:.1f}, "
+                    f"{pct:.0f}%)"
+                )
+                allocations.append((issue, t_secs))
+            print()
+        else:
+            # Equal distribution (default)
+            seconds_per_ticket = remaining_seconds // num_tickets
+            remainder_secs = remaining_seconds - (
+                seconds_per_ticket * num_tickets
+            )
+            print(
+                f"\n{remaining_hours:.2f}h / {num_tickets} tickets = "
+                f"{seconds_per_ticket/3600:.2f}h each\n"
+            )
+            allocations = []
+            for i, issue in enumerate(active_issues):
+                t_secs = seconds_per_ticket + (
+                    remainder_secs if i == num_tickets - 1 else 0
+                )
+                allocations.append((issue, t_secs))
+
+        # Phase 1: CREATE new worklogs (or preview in dry-run mode)
+        # Use parallel creation when 2+ tickets and not dry-run
+        if num_tickets >= 2 and not self.dry_run:
+            created, creation_failed = self._create_worklogs_parallel(
+                allocations, target_date, num_tickets
+            )
+        else:
+            # Sequential for single ticket or dry-run
+            created = []
+            creation_failed = False
+            for i, (issue, ticket_seconds) in enumerate(allocations):
+                ticket_hours = ticket_seconds / 3600
+
+                if self.dry_run:
+                    print(
+                        f"  [DRY RUN] Would log "
+                        f"{ticket_hours:.2f}h on "
+                        f"{issue['issue_key']}"
+                    )
+                    created.append({
+                        'issue_key': issue['issue_key'],
+                        'issue_summary': issue['issue_summary'],
+                        'time_spent_seconds': ticket_seconds,
+                    })
+                    continue
+
+                comment = self._generate_work_summary(
+                    issue['issue_key'], issue['issue_summary']
+                )
+                worklog_id = self.jira_client.create_worklog(
+                    issue_key=issue['issue_key'],
+                    time_spent_seconds=ticket_seconds,
+                    started=target_date,
+                    comment=comment
+                )
+
+                if worklog_id:
+                    print(
+                        f"  [{i+1}/{num_tickets}] [OK] Logged "
+                        f"{ticket_hours:.2f}h on "
+                        f"{issue['issue_key']}"
+                    )
+                    print(
+                        f"    Description: "
+                        f"{comment[:80]}"
+                        f"{'...' if len(comment) > 80 else ''}"
+                    )
+                    created.append({
+                        'issue_key': issue['issue_key'],
+                        'issue_summary': issue['issue_summary'],
+                        'time_spent_seconds': ticket_seconds,
+                        'worklog_id': worklog_id
+                    })
+                else:
+                    print(
+                        f"  [{i+1}/{num_tickets}] [FAIL] "
+                        f"{issue['issue_key']}"
+                    )
+                    creation_failed = True
+                    break
+
+        # If any creation failed, roll back and preserve originals
+        if creation_failed:
+            self._rollback_created(created, target_date)
+            return overhead_result
+
+        # Phase 2: DELETE old worklogs only after all new ones succeeded
+        if worklogs_to_delete and not self.dry_run:
+            print(
+                f"\nRemoving {len(worklogs_to_delete)} old "
+                f"non-overhead worklog(s)..."
+            )
+            for wl in worklogs_to_delete:
+                deleted = self.jira_client.delete_worklog(
+                    wl['issue_key'], wl['worklog_id']
+                )
+                if deleted:
+                    print(
+                        f"  [OK] Removed "
+                        f"{wl['time_spent_seconds']/3600:.2f}h "
+                        f"from {wl['issue_key']}"
+                    )
+                else:
+                    print(
+                        f"  [FAIL] Could not remove worklog "
+                        f"from {wl['issue_key']}"
+                    )
+            print()
+
+        return overhead_result + created
+
+    def _create_worklogs_parallel(
+        self,
+        allocations: List[Tuple],
+        target_date: str,
+        num_tickets: int
+    ) -> Tuple[List[Dict], bool]:
+        """Create worklogs in parallel using ThreadPoolExecutor.
+
+        Args:
+            allocations: List of (issue, ticket_seconds) tuples.
+            target_date: Date string (YYYY-MM-DD) for worklogs.
+            num_tickets: Total number of tickets being logged.
+
+        Returns:
+            Tuple of (created worklogs list, creation_failed bool).
+        """
+        created = []
+        creation_failed = False
+        futures = {}
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for i, (issue, ticket_seconds) in enumerate(allocations):
+                comment = self._generate_work_summary(
+                    issue['issue_key'], issue['issue_summary']
+                )
+                future = executor.submit(
+                    self.jira_client.create_worklog,
+                    issue_key=issue['issue_key'],
+                    time_spent_seconds=ticket_seconds,
+                    started=target_date,
+                    comment=comment
+                )
+                futures[future] = (i, issue, ticket_seconds, comment)
+
+            # Collect results as they complete
+            results = {}
+            for future in as_completed(futures):
+                i, issue, ticket_seconds, comment = futures[future]
+                ticket_hours = ticket_seconds / 3600
+                try:
+                    worklog_id = future.result()
+                    if worklog_id:
+                        results[i] = {
+                            'success': True,
+                            'issue': issue,
+                            'ticket_seconds': ticket_seconds,
+                            'ticket_hours': ticket_hours,
+                            'comment': comment,
+                            'worklog_id': worklog_id
+                                if isinstance(worklog_id, str)
+                                else '',
+                        }
+                    else:
+                        results[i] = {
+                            'success': False,
+                            'issue': issue,
+                        }
+                except Exception as e:
+                    logger.error(
+                        f"Parallel worklog creation failed for "
+                        f"{issue['issue_key']}: {e}"
+                    )
+                    results[i] = {
+                        'success': False,
+                        'issue': issue,
+                    }
+
+        # Print results in original order
+        for i in sorted(results.keys()):
+            r = results[i]
+            if r['success']:
+                print(
+                    f"  [{i+1}/{num_tickets}] [OK] Logged "
+                    f"{r['ticket_hours']:.2f}h on "
+                    f"{r['issue']['issue_key']}"
                 )
                 print(
                     f"    Description: "
-                    f"{comment[:80]}"
-                    f"{'...' if len(comment) > 80 else ''}"
+                    f"{r['comment'][:80]}"
+                    f"{'...' if len(r['comment']) > 80 else ''}"
                 )
                 created.append({
-                    'issue_key': issue['issue_key'],
-                    'issue_summary': issue['issue_summary'],
-                    'time_spent_seconds': ticket_seconds
+                    'issue_key': r['issue']['issue_key'],
+                    'issue_summary': r['issue']['issue_summary'],
+                    'time_spent_seconds': r['ticket_seconds'],
+                    'worklog_id': r.get('worklog_id', ''),
                 })
             else:
-                print(f"  [FAIL] {issue['issue_key']}")
+                print(
+                    f"  [{i+1}/{num_tickets}] [FAIL] "
+                    f"{r['issue']['issue_key']}"
+                )
+                creation_failed = True
 
-        return overhead_result + created
+        return created, creation_failed
 
     def _generate_work_summary(self, issue_key: str, issue_summary: str) -> str:
         """
@@ -2650,6 +3599,13 @@ class TempoAutomation:
     # ------------------------------------------------------------------
     # OVERHEAD STORY SUPPORT
     # ------------------------------------------------------------------
+
+    def _get_active_statuses(self) -> List[str]:
+        """Return Jira statuses considered 'active' for the current role."""
+        role = self.config.get('user', {}).get('role', 'developer')
+        if role == 'qa':
+            return QA_STATUSES
+        return DEVELOPER_STATUSES
 
     def _get_overhead_config(self) -> Dict:
         """Get overhead configuration section from config."""
@@ -2811,13 +3767,26 @@ class TempoAutomation:
                 allocations.append((s, secs))
 
         created = []
-        for story, seconds in allocations:
+        num_alloc = len(allocations)
+        for idx, (story, seconds) in enumerate(allocations):
             if seconds <= 0:
                 continue
             hours = seconds / 3600
             key = story['issue_key']
             summary = story.get('summary', key)
             comment = f"Overhead - {summary}"
+
+            if self.dry_run:
+                print(
+                    f"  [DRY RUN] Would log "
+                    f"{hours:.2f}h on {key} (overhead)"
+                )
+                created.append({
+                    'issue_key': key,
+                    'issue_summary': summary,
+                    'time_spent_seconds': seconds
+                })
+                continue
 
             success = self.jira_client.create_worklog(
                 issue_key=key,
@@ -2826,14 +3795,17 @@ class TempoAutomation:
                 comment=comment
             )
             if success:
-                print(f"  [OK] Logged {hours:.2f}h on {key} (overhead)")
+                print(
+                    f"  [{idx+1}/{num_alloc}] [OK] Logged "
+                    f"{hours:.2f}h on {key} (overhead)"
+                )
                 created.append({
                     'issue_key': key,
                     'issue_summary': summary,
                     'time_spent_seconds': seconds
                 })
             else:
-                print(f"  [FAIL] {key}")
+                print(f"  [{idx+1}/{num_alloc}] [FAIL] {key}")
 
         return created
 
@@ -2859,6 +3831,8 @@ class TempoAutomation:
         try:
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2)
+            if sys.platform != 'win32':
+                os.chmod(CONFIG_FILE, 0o600)
             logger.info("Config saved")
         except Exception as e:
             logger.error(f"Error saving config: {e}")
@@ -3355,19 +4329,39 @@ class TempoAutomation:
         for activity in manual_activities:
             # Get issue key from config, or use default
             # Ask your Jira admin what issue key to use for general time tracking
-            issue_key = self.config.get('organization', {}).get('default_issue_key', 'GENERAL-001')
-            
+            issue_key = self.config.get('organization', {}).get(
+                'default_issue_key', 'GENERAL-001'
+            )
+
             time_seconds = int(activity.get('hours', 0) * 3600)
-            
+
+            if self.dry_run:
+                act_hours = activity.get('hours', 0)
+                print(
+                    f"  [DRY RUN] Would log "
+                    f"{act_hours}h on {issue_key} "
+                    f"({activity.get('activity', '')})"
+                )
+                created.append({
+                    'issue_key': issue_key,
+                    'issue_summary': activity['activity'],
+                    'time_spent_seconds': time_seconds
+                })
+                continue
+
             success = self.tempo_client.create_worklog(
                 issue_key=issue_key,
                 time_seconds=time_seconds,
                 start_date=target_date,
                 description=activity.get('activity', '')
             )
-            
+
             if success:
-                print(f"  [OK] Created: {activity['activity']} - {activity['hours']}h")
+                print(
+                    f"  [OK] Created: "
+                    f"{activity['activity']} - "
+                    f"{activity['hours']}h"
+                )
                 created.append({
                     'issue_key': issue_key,
                     'issue_summary': activity['activity'],
@@ -3386,13 +4380,21 @@ class TempoAutomation:
         - If no shortfalls and last day: auto-submits.
         - If no shortfalls but not last day: reports clean status.
         """
+        # Pre-sync health check
+        if not self._pre_sync_health_check():
+            print(
+                "[FAIL] Aborting timesheet submission "
+                "due to API health check failure."
+            )
+            return
+
         today = date.today()
         last_day_num = calendar.monthrange(today.year, today.month)[1]
         is_last_day = (today.day == last_day_num)
         period = f"{today.year}-{today.month:02d}"
 
-        # Guard: already submitted this month
-        if self._is_already_submitted(period):
+        # Guard: already submitted this month (skipped in dry-run)
+        if not self.dry_run and self._is_already_submitted(period):
             print(
                 f"[OK] Timesheet for {period} was already submitted."
             )
@@ -3521,6 +4523,11 @@ class TempoAutomation:
             return
 
         # --- Last day (or early eligible), no shortfall: submit ---
+        if self.dry_run:
+            print(f"[DRY RUN] Would submit timesheet for {period}")
+            print("[DRY RUN] Gap detection ran above -- no API call made.")
+            return
+
         print(f"Submitting timesheet for {period}...")
         success = self.tempo_client.submit_timesheet(period)
 
@@ -3608,9 +4615,15 @@ class TempoAutomation:
         total_actual = 0.0
         working_day_count = 0
 
+        total_days = (end_date - first_date).days + 1
         current = first_date
+        day_index = 0
         while current <= end_date:
+            day_index += 1
             day_str = current.strftime('%Y-%m-%d')
+            logger.debug(
+                f"[{day_index}/{total_days}] Checking {day_str}"
+            )
             is_working, reason = self.schedule_mgr.is_working_day(
                 day_str
             )
@@ -3908,11 +4921,169 @@ class TempoAutomation:
             pass
 
     # ------------------------------------------------------------------
+    # Date-range backfill
+    # ------------------------------------------------------------------
+
+    def backfill_range(self, from_date: str, to_date: str):
+        """Backfill worklogs for a date range.
+
+        Iterates through each day in the range, syncing working days
+        and skipping non-working days (weekends, holidays, PTO).
+
+        Args:
+            from_date: Start date (YYYY-MM-DD).
+            to_date: End date (YYYY-MM-DD).
+        """
+        start = datetime.strptime(from_date, '%Y-%m-%d').date()
+        end = datetime.strptime(to_date, '%Y-%m-%d').date()
+
+        if start > end:
+            print("[FAIL] --from-date must be before --to-date")
+            return
+
+        # Pre-sync health check
+        if not self._pre_sync_health_check():
+            print(
+                "[FAIL] Aborting backfill due to API "
+                "health check failure."
+            )
+            return
+
+        print(f"\n{'='*60}")
+        print(f"BACKFILL: {from_date} to {to_date}")
+        print(f"{'='*60}\n")
+
+        total_days = (end - start).days + 1
+        synced = 0
+        skipped = 0
+        failed = 0
+        skip_reasons = []
+
+        current = start
+        day_num = 0
+        while current <= end:
+            day_num += 1
+            date_str = current.strftime('%Y-%m-%d')
+            is_working, reason = self.schedule_mgr.is_working_day(
+                date_str
+            )
+
+            if not is_working:
+                print(
+                    f"  [{day_num}/{total_days}] {date_str}: "
+                    f"SKIP ({reason})"
+                )
+                skipped += 1
+                skip_reasons.append(reason)
+                current += timedelta(days=1)
+                continue
+
+            print(
+                f"  [{day_num}/{total_days}] {date_str}: "
+                f"Syncing..."
+            )
+            try:
+                self.sync_daily(date_str)
+                synced += 1
+            except Exception as e:
+                print(
+                    f"  [{day_num}/{total_days}] {date_str}: "
+                    f"FAILED ({e})"
+                )
+                logger.error(
+                    f"Backfill failed for {date_str}: {e}",
+                    exc_info=True
+                )
+                failed += 1
+            current += timedelta(days=1)
+
+        print(f"\n{'='*60}")
+        print("BACKFILL COMPLETE")
+        print(f"  Synced: {synced}/{total_days} days")
+        if skipped > 0:
+            unique_reasons = ', '.join(sorted(set(skip_reasons)))
+            print(f"  Skipped: {skipped} ({unique_reasons})")
+        if failed > 0:
+            print(f"  Failed: {failed}")
+        print(f"{'='*60}\n")
+
+    # ------------------------------------------------------------------
+    # Approval status tracking
+    # ------------------------------------------------------------------
+
+    def check_approval_status(self, month_str: str = 'current'):
+        """Check Tempo timesheet approval status for a month.
+
+        Args:
+            month_str: Month string 'YYYY-MM' or 'current' for
+                       the current month.
+        """
+        if month_str == 'current':
+            today = date.today()
+            year, month = today.year, today.month
+        else:
+            try:
+                parts = month_str.split('-')
+                year, month = int(parts[0]), int(parts[1])
+            except (ValueError, IndexError):
+                print(
+                    f"[FAIL] Invalid month format: '{month_str}'. "
+                    f"Use YYYY-MM."
+                )
+                return
+
+        from_date = f"{year}-{month:02d}-01"
+        last_day = calendar.monthrange(year, month)[1]
+        to_date = f"{year}-{month:02d}-{last_day:02d}"
+
+        # Get periods from Tempo
+        periods = self.tempo_client.get_timesheet_periods(
+            from_date, to_date
+        )
+
+        print(f"\n{'='*60}")
+        print(f"APPROVAL STATUS - {year}-{month:02d}")
+        print(f"{'='*60}\n")
+
+        if not periods:
+            print("  No timesheet periods found.")
+            print()
+            return
+
+        status_map = {
+            'OPEN': 'OPEN (not submitted)',
+            'WAITING_FOR_APPROVAL': 'Awaiting approval',
+            'APPROVED': 'APPROVED',
+            'REJECTED': 'REJECTED',
+        }
+
+        for period in periods:
+            status = period.get('status', 'UNKNOWN')
+            display = status_map.get(status, status)
+            period_from = period.get('dateFrom', '?')
+            period_to = period.get('dateTo', '?')
+            print(
+                f"  Period: {period_from} to {period_to}"
+            )
+            print(f"  Status: {display}")
+            # Show reviewer if available
+            reviewer = period.get('reviewer', {})
+            reviewer_name = reviewer.get('displayName', '')
+            if reviewer_name:
+                print(f"  Reviewer: {reviewer_name}")
+            print()
+
+    # ------------------------------------------------------------------
     # Weekly verification
     # ------------------------------------------------------------------
 
     def verify_week(self):
         """Verify and backfill current week (Mon-Fri)."""
+        # Pre-sync health check
+        if not self._pre_sync_health_check():
+            print("[FAIL] Aborting weekly verification due to API health check failure.")
+            return
+
         today = date.today()
         # Calculate Monday of current week
         monday = today - timedelta(days=today.weekday())
@@ -3932,7 +5103,7 @@ class TempoAutomation:
             day_str = day.strftime('%Y-%m-%d')
             day_name = day.strftime('%A')
 
-            print(f"\n--- {day_name} ({day_str}) ---")
+            print(f"\n--- [Day {i+1}/5] {day_name} ({day_str}) ---")
 
             # Skip future dates
             if day > today:
@@ -4171,7 +5342,7 @@ class TempoAutomation:
 
         # Find stories that were active on that date
         issues = self.jira_client.get_issues_in_status_on_date(
-            target_date
+            target_date, statuses=self._get_active_statuses()
         )
 
         # Filter out already-logged issues
@@ -4231,13 +5402,16 @@ class TempoAutomation:
 
             if success:
                 print(
-                    f"  [OK] Backfilled {ticket_hours:.2f}h on "
-                    f"{issue['issue_key']}"
+                    f"  [{i+1}/{num}] [OK] Backfilled "
+                    f"{ticket_hours:.2f}h on {issue['issue_key']}"
                 )
                 result['created_count'] += 1
                 result['hours_added'] += ticket_hours
             else:
-                print(f"  [FAIL] {issue['issue_key']}")
+                print(
+                    f"  [{i+1}/{num}] [FAIL] "
+                    f"{issue['issue_key']}"
+                )
 
         result['method'] = 'stories'
         return result
@@ -4305,6 +5479,11 @@ Examples:
   python tempo_automation.py --view-monthly       # Show current month hours
   python tempo_automation.py --view-monthly 2026-01  # Show January hours
   python tempo_automation.py --fix-shortfall      # Fix monthly hour shortfalls
+  python tempo_automation.py --backfill --from-date 2026-03-01 --to-date 2026-03-10
+  python tempo_automation.py --approval-status    # Current month approval status
+  python tempo_automation.py --approval-status 2026-02  # February approval status
+  python tempo_automation.py --dry-run             # Preview today's sync (no changes)
+  python tempo_automation.py --dry-run --date 2026-03-10  # Preview specific date
         """
     )
 
@@ -4334,6 +5513,10 @@ Examples:
     parser.add_argument(
         '--logfile', type=str,
         help='Also write output to this log file (appends)'
+    )
+    parser.add_argument(
+        '--dry-run', action='store_true',
+        help='Preview worklog operations without making changes'
     )
 
     # Weekly verification
@@ -4404,11 +5587,45 @@ Examples:
         help='Interactive fix for monthly hour shortfalls'
     )
 
+    # Date-range backfill
+    parser.add_argument(
+        '--backfill', action='store_true',
+        help='Backfill worklogs for a date range'
+    )
+    parser.add_argument(
+        '--from-date', type=valid_date,
+        help='Start date for backfill (YYYY-MM-DD)'
+    )
+    parser.add_argument(
+        '--to-date', type=valid_date,
+        help='End date for backfill (YYYY-MM-DD)'
+    )
+
+    # Approval status
+    parser.add_argument(
+        '--approval-status', nargs='?', const='current',
+        metavar='YYYY-MM',
+        help='Check Tempo timesheet approval status'
+    )
+
+    # Output format
+    parser.add_argument(
+        '--log-format', type=str, choices=['text', 'json'],
+        default='text',
+        help='Log output format (default: text)'
+    )
+
     args = parser.parse_args()
 
     # Set up dual output if --logfile is provided
     if args.logfile:
         sys.stdout = DualWriter(sys.stdout, args.logfile)
+
+    # Apply JSON log format if requested
+    if args.log_format == 'json':
+        json_formatter = JsonLogFormatter()
+        for handler in logging.getLogger().handlers:
+            handler.setFormatter(json_formatter)
 
     # Suppress console INFO logs for user-facing commands -- the
     # initialization messages (config loaded, holidays parsed, etc.)
@@ -4426,6 +5643,8 @@ Examples:
         or args.add_workday
         or args.remove_workday
         or args.manage
+        or args.dry_run
+        or args.approval_status is not None
     )
     if quiet_console:
         for h in logging.getLogger().handlers:
@@ -4491,7 +5710,9 @@ Examples:
             return
 
         # Initialize full automation
-        automation = TempoAutomation()
+        automation = TempoAutomation(
+            dry_run=getattr(args, 'dry_run', False)
+        )
 
         # Overhead management
         if args.select_overhead:
@@ -4503,6 +5724,22 @@ Examples:
             automation.view_monthly_hours(args.view_monthly)
         elif args.fix_shortfall:
             automation.fix_shortfall()
+        # Backfill date range
+        elif args.backfill:
+            if not args.from_date or not args.to_date:
+                print(
+                    "[FAIL] --backfill requires both "
+                    "--from-date and --to-date"
+                )
+                sys.exit(1)
+            automation.backfill_range(
+                args.from_date, args.to_date
+            )
+        # Approval status
+        elif args.approval_status is not None:
+            automation.check_approval_status(
+                args.approval_status
+            )
         # Submit timesheet
         elif args.submit:
             automation.submit_timesheet()

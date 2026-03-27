@@ -2,7 +2,7 @@
 
 **Automate your daily Tempo timesheet entry and monthly submission -- save 15+ minutes every day.**
 
-Version 3.9 | Python 3.7+ | Windows + macOS
+Version 4.0 | Python 3.7+ | Windows + macOS
 
 <a href="https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/" target="_blank">View Presentation (Dark Theme)</a> | <a href="https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/case-study.html" target="_blank">View Case Study (Light Theme)</a>
 
@@ -26,10 +26,25 @@ This automation script eliminates the manual burden of timesheet management:
 ### Core Automation
 - **Daily sync** -- distributes hours equally across active Jira tickets (IN DEVELOPMENT / CODE REVIEW)
 - **Smart descriptions** -- generates meaningful worklog comments from ticket description + recent comments
-- **Idempotent** -- safe to re-run anytime; deletes previous entries then creates fresh ones
+- **Data safety** -- create-before-delete pattern: new worklogs created first, old deleted only after success; full rollback on failure
+- **Idempotent** -- safe to re-run anytime; overwrites previous entries for the day
 - **Monthly submission** -- verifies total hours and submits timesheet on the last day of each month (or earlier when all remaining days are non-working)
 - **Weekly verification** -- Friday check catches missed days and backfills using historical ticket data
 - **Overhead stories** -- automatically logs overhead hours on PTO days, holidays, and when no active tickets exist
+- **Date-range backfill** -- `--backfill --from-date --to-date` to backfill multiple days at once after vacation
+- **Approval status** -- `--approval-status` shows current month Tempo timesheet approval state
+- **Dry-run mode** -- `--dry-run` previews what would be logged without creating any worklogs
+- **Weighted distribution** -- `distribution_weights` config key allocates more hours to higher-priority tickets
+
+### Reliability & Quality
+- **Pre-sync health check** -- validates Jira + Tempo API connectivity before every sync/verify/submit
+- **Retry logic** -- automatic retry with backoff for 429/502/503/504 API errors
+- **Config validation** -- startup checks for required keys and value ranges
+- **Progress counters** -- `[i/n]` progress display in sync, verify, monthly, and backfill loops
+- **JSON logging** -- `--log-format json` for structured machine-readable output
+- **Parallel worklog creation** -- ThreadPoolExecutor for faster multi-ticket syncs
+- **Holiday cache** -- ETag/Last-Modified caching with 24h TTL for org holiday fetches
+- **500 automated tests** -- 71% code coverage (pytest + CI/CD via GitHub Actions)
 
 ### Schedule Management
 - **Holiday detection** -- org holidays (always fetched from central URL, local file as fallback) + national/state holidays (100+ countries)
@@ -146,11 +161,23 @@ python tempo_automation.py
 :: Sync a specific date
 python tempo_automation.py --date 2026-02-15
 
+:: Preview what would be synced (no changes made)
+python tempo_automation.py --dry-run
+
 :: Weekly verification & backfill (checks Mon-Fri)
 python tempo_automation.py --verify-week
 
 :: Submit monthly timesheet (only runs on last day of month)
 python tempo_automation.py --submit
+
+:: Backfill a date range (e.g., after vacation)
+python tempo_automation.py --backfill --from-date 2026-03-01 --to-date 2026-03-10
+
+:: Check timesheet approval status
+python tempo_automation.py --approval-status
+
+:: Structured JSON log output
+python tempo_automation.py --log-format json
 ```
 
 ### Schedule Management
@@ -383,8 +410,8 @@ Then delete the installation folder.
 ## Project Structure
 
 ```
-tempo_automation.py          # Main script (4,253 lines, 8 classes)
-tray_app.py                  # System tray app (~1,458 lines, cross-platform)
+tempo_automation.py          # Main script (5,446 lines, 8 classes)
+tray_app.py                  # System tray app (~1,533 lines, cross-platform)
 confirm_and_run.py           # OK/Cancel dialog for Task Scheduler (Windows)
 config.json                  # User config (gitignored, contains tokens)
 config_template.json         # Config template for new users
@@ -406,6 +433,7 @@ examples/                    # Example configs for each role
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.0 | Mar 13, 2026 | Data safety (create-before-delete with rollback), pre-sync health check, retry logic (429/502/503/504), config validation, --dry-run mode, --backfill --from-date --to-date, --approval-status, --log-format json, weighted distribution, holiday cache with TTL, parallel worklog creation, 500 tests (71% coverage), CI/CD (GitHub Actions), ruff+pre-commit, keyring credentials (Mac/Linux) |
 | 3.9 | Feb 23, 2026 | Early timesheet submission: bypasses 7-day window when all remaining days are non-working (PTO/holidays/weekends), tray Submit menu visible mid-month when eligible |
 | 3.8 | Feb 22, 2026 | Distribution zips: build_dist.bat (Win+Python, Win Lite, Mac), install.bat auto-detects Python (embedded or system), run_*.bat regenerated with correct paths |
 | 3.6 | Feb 22, 2026 | Monthly shortfall detection: per-day gap analysis, blocks submission on shortfall, --view-monthly/--fix-shortfall CLI, interactive fix, tray menu restructure with submenus, dynamic Submit Timesheet menu |
