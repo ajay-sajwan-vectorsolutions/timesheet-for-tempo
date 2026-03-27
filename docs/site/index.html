@@ -188,7 +188,7 @@
 <section id="features">
   <div class="section-label">Capabilities</div>
   <h2 class="section-title">Everything You Need. Nothing You Don't.</h2>
-  <p class="section-subtitle">Production-ready with 4,253 lines of tested Python code, 385 automated tests, and 18 CLI commands.</p>
+  <p class="section-subtitle">Production-ready with 5,764 lines of tested Python code, 504 automated tests, and 22 CLI commands.</p>
 
   <span id="roles"></span>
 
@@ -333,6 +333,16 @@
           <div class="card-icon">&#x1F4BB;</div>
           <h3>Developer</h3>
           <p class="mb-2">Hours distributed across active Jira tickets (IN DEVELOPMENT / CODE REVIEW). Smart descriptions generated from ticket content.</p>
+          <table class="data-table">
+            <tr><td class="text-muted">Tokens needed</td><td>Jira + Tempo</td></tr>
+            <tr><td class="text-muted">Time saved/day</td><td style="color: var(--accent-green);">15-20 min</td></tr>
+            <tr><td class="text-muted">Overhead</td><td>2h/day default</td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-icon" style="background: rgba(100,200,255,0.15);">&#x1F9EA;</div>
+          <h3>QA</h3>
+          <p class="mb-2">Hours distributed across active Jira tickets in Testing / User Acceptance Testing. Same Jira-based workflow as Developer.</p>
           <table class="data-table">
             <tr><td class="text-muted">Tokens needed</td><td>Jira + Tempo</td></tr>
             <tr><td class="text-muted">Time saved/day</td><td style="color: var(--accent-green);">15-20 min</td></tr>
@@ -528,16 +538,22 @@
           <p>build_dist.bat, 3 zip types, embedded Python 3.12, install.bat auto-detect</p>
         </div>
         <div class="timeline-item">
-          <span class="version-tag">v4.0</span>
-          <div class="date">March 13, 2026</div>
-          <h3>Enhancement &amp; QA</h3>
-          <p>Data safety (create-before-delete with rollback), pre-sync health check, retry logic (429/502/503/504), config validation, --dry-run, --backfill, --approval-status, --log-format json, weighted distribution, holiday cache with TTL, parallel worklog creation, 500 tests (71% coverage), CI/CD (GitHub Actions), ruff+pre-commit, keyring credentials (Mac/Linux)</p>
-        </div>
-        <div class="timeline-item">
           <span class="version-tag">v3.9</span>
           <div class="date">February 23, 2026</div>
           <h3>Early Submission</h3>
           <p>Submit mid-month when remaining days are non-working. 385 tests passing.</p>
+        </div>
+        <div class="timeline-item">
+          <span class="version-tag">v4.0</span>
+          <div class="date">March 13, 2026</div>
+          <h3>Enhancement &amp; QA</h3>
+          <p>Data safety (create-before-delete with rollback), pre-sync health check, retry logic (429/502/503/504), config validation, --dry-run, --backfill, --approval-status, --log-format json, weighted distribution, holiday cache with TTL, parallel worklog creation, 504 tests (71% coverage), CI/CD (GitHub Actions), ruff+pre-commit, keyring credentials (Mac/Linux)</p>
+        </div>
+        <div class="timeline-item">
+          <span class="version-tag" style="background: var(--accent-cyan); color: #000;">v4.0+</span>
+          <div class="date">March 24-26, 2026</div>
+          <h3>Accurate Sync &amp; QA Role</h3>
+          <p>Auto-sync fires at configured time with accurate toast (hours logged / reason). Task Scheduler double-sync fix. QA role (Testing / UAT statuses). --dry-run works with --submit. 504 tests passing.</p>
         </div>
       </div>
     </div>
@@ -547,8 +563,8 @@
     <span class="badge badge-blue">Python 3.7+</span>
     <span class="badge badge-purple">Jira REST v3</span>
     <span class="badge badge-orange">Tempo API v4</span>
-    <span class="badge badge-green">385 Tests</span>
-    <span class="badge badge-blue">4,253 Lines</span>
+    <span class="badge badge-green">504 Tests</span>
+    <span class="badge badge-blue">5,764 Lines</span>
     <span class="badge badge-purple">8 Classes</span>
   </div>
 </section>
@@ -608,26 +624,7 @@ Status: <span class="success">[OK]</span> Complete
     <div id="tab-schedule" class="tab-content">
       <h3 class="mb-2">Schedule Calendar</h3>
       <p class="text-muted mb-2">Run <code>python tempo_automation.py --show-schedule</code></p>
-      <div class="code-block">
-February 2026<br>
-================================================<br>
-Mon&nbsp;&nbsp;Tue&nbsp;&nbsp;Wed&nbsp;&nbsp;Thu&nbsp;&nbsp;Fri&nbsp;&nbsp;| Sat&nbsp;&nbsp;Sun<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.<br>
-&nbsp;2&nbsp;&nbsp;&nbsp;&nbsp;3&nbsp;&nbsp;&nbsp;&nbsp;4&nbsp;&nbsp;&nbsp;&nbsp;5&nbsp;&nbsp;&nbsp;&nbsp;6&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;7&nbsp;&nbsp;&nbsp;&nbsp;8<br>
-&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;.&nbsp;&nbsp;&nbsp;&nbsp;.<br>
-&nbsp;9&nbsp;&nbsp;&nbsp;10&nbsp;&nbsp;&nbsp;11&nbsp;&nbsp;&nbsp;12&nbsp;&nbsp;&nbsp;13&nbsp;&nbsp;&nbsp;| 14&nbsp;&nbsp;&nbsp;15<br>
-&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;.&nbsp;&nbsp;&nbsp;&nbsp;.<br>
-16&nbsp;&nbsp;&nbsp;17&nbsp;&nbsp;&nbsp;18&nbsp;&nbsp;&nbsp;19&nbsp;&nbsp;&nbsp;20&nbsp;&nbsp;&nbsp;| 21&nbsp;&nbsp;&nbsp;22<br>
-&nbsp;H&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;.&nbsp;&nbsp;&nbsp;&nbsp;.<br>
-23&nbsp;&nbsp;&nbsp;24&nbsp;&nbsp;&nbsp;25&nbsp;&nbsp;&nbsp;26&nbsp;&nbsp;&nbsp;27&nbsp;&nbsp;&nbsp;| 28<br>
-&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;&nbsp;W&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;.<br>
-<br>
-Legend: W=Working&nbsp;&nbsp;H=Holiday&nbsp;&nbsp;PTO=PTO&nbsp;&nbsp;CW=Comp. Working&nbsp;&nbsp;.=Weekend<br>
-<br>
-Summary:<br>
-&nbsp;&nbsp;Working days: 19&nbsp;&nbsp;|&nbsp;&nbsp;Expected hours: 152.0h<br>
-&nbsp;&nbsp;Holidays: 1 (Presidents' Day - Feb 16)
+      <div class="code-block" id="schedule-cal-main">
       </div>
     </div>
 
@@ -790,7 +787,7 @@ python tempo_automation.py --submit
     <div class="arch-row">
       <div class="arch-box">
         <div class="class-name">CLI</div>
-        <div class="class-info">argparse, 18 commands</div>
+        <div class="class-info">argparse, 22 commands</div>
       </div>
     </div>
     <div class="arch-arrow">&#x2193;</div>
@@ -854,7 +851,7 @@ python tempo_automation.py --submit
         <div class="class-info">Auto-syncs from Jira</div>
       </div>
     </div>
-    <p class="text-center text-muted mt-2">Developers write to Jira; Tempo auto-syncs. PO/Sales write directly to Tempo.</p>
+    <p class="text-center text-muted mt-2">Developers and QA write to Jira; Tempo auto-syncs. PO/Sales write directly to Tempo.</p>
   </div>
 
   <button class="toggle-btn" onclick="toggleSection('arch-detail')">Show class details</button>
@@ -901,8 +898,26 @@ python tempo_automation.py --submit
     <div class="roadmap-row">
       <span class="roadmap-icon">&#x1F50D;</span>
       <span class="roadmap-title">--dry-run Mode</span>
-      <span class="roadmap-desc">Preview what would be logged without creating worklogs. For testing and verification.</span>
+      <span class="roadmap-desc">Preview what would be logged without creating worklogs. Also works with --submit (gap detection runs, no API call made).</span>
       <span class="badge badge-green">v4.0</span>
+    </div>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F9EA;</span>
+      <span class="roadmap-title">QA Role</span>
+      <span class="roadmap-desc">Distributes hours across Testing / User Acceptance Testing tickets. Same Jira-based workflow as Developer role.</span>
+      <span class="badge badge-green">v4.0+</span>
+    </div>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x1F514;</span>
+      <span class="roadmap-title">Accurate Sync Notifications</span>
+      <span class="roadmap-desc">Toast shows actual hours logged or specific reason (no overhead stories, no active tickets, partial). Red icon persists on incomplete sync.</span>
+      <span class="badge badge-green">v4.0+</span>
+    </div>
+    <div class="roadmap-row">
+      <span class="roadmap-icon">&#x23F0;</span>
+      <span class="roadmap-title">Task Scheduler Reliability</span>
+      <span class="roadmap-desc">Eliminates double-sync and missed-sync when Task Scheduler fires. --sync-on-start flag triggers immediate sync if tray was closed at scheduled time.</span>
+      <span class="badge badge-green">v4.0+</span>
     </div>
     <div class="roadmap-row">
       <span class="roadmap-icon">&#x1F4CA;</span>
@@ -966,7 +981,7 @@ python tempo_automation.py --submit
     &nbsp;&bull;&nbsp;
     Contact: Ajay Sajwan (Front End Team Lead)
   </p>
-  <p style="margin-top: 1rem; font-size: 0.8rem;">February 2026</p>
+  <p style="margin-top: 1rem; font-size: 0.8rem;">March 2026</p>
   <p style="margin-top: 0.5rem;">
     <a href="case-study.html" style="font-size: 0.8rem;">View light theme case study &rarr;</a>
   </p>
@@ -1118,6 +1133,68 @@ function showTab(tabId) {
     _tabAnimating = false;
   }, dur + 20);
 }
+
+// Dynamic schedule calendar for current month
+function buildScheduleCalendar() {
+  var now = new Date();
+  var year = now.getFullYear();
+  var month = now.getMonth();
+  var monthNames = ['January','February','March','April','May','June','July',
+                    'August','September','October','November','December'];
+  var daysInMonth = new Date(year, month + 1, 0).getDate();
+  // firstDow: 0=Sun..6=Sat; convert to Mon-based index: Mon=0..Sun=6
+  var firstColIdx = (new Date(year, month, 1).getDay() + 6) % 7;
+
+  var workingDays = 0;
+  for (var d = 1; d <= daysInMonth; d++) {
+    var dow = new Date(year, month, d).getDay();
+    if (dow !== 0 && dow !== 6) workingDays++;
+  }
+
+  // Right-align n in 2 chars; '  ' if out of range
+  function pad2(n) {
+    if (n < 1 || n > daysInMonth) return '  ';
+    return n < 10 ? ' ' + n : '' + n;
+  }
+  // Status char: ' W' weekday, ' .' weekend, '  ' out of range
+  function sc(n, isWknd) {
+    if (n < 1 || n > daysInMonth) return '  ';
+    return isWknd ? ' .' : ' W';
+  }
+
+  var lines = [];
+  lines.push(monthNames[month] + ' ' + year);
+  lines.push('================================================');
+  lines.push('Mon  Tue  Wed  Thu  Fri  | Sat  Sun');
+
+  var startDay = 1 - firstColIdx;
+  while (startDay <= daysInMonth) {
+    var dRow = '', sRow = '';
+    for (var c = 0; c < 7; c++) {
+      if (c === 5) { dRow += '| '; sRow += '| '; }
+      var day = startDay + c;
+      var isSun = c === 6, isWknd = c >= 5;
+      dRow += pad2(day) + (isSun ? '' : '   ');
+      sRow += sc(day, isWknd) + (isSun ? '' : '   ');
+    }
+    lines.push(dRow);
+    lines.push(sRow);
+    startDay += 7;
+  }
+
+  lines.push('');
+  lines.push('Legend: W=Working  H=Holiday  PTO=PTO  CW=Comp. Working  .=Weekend');
+  lines.push('');
+  lines.push('Summary:');
+  lines.push('  Working days: ' + workingDays + '  |  Expected hours: ' + (workingDays * 8) + '.0h');
+
+  return lines.map(function(l) { return l.replace(/ /g, '&nbsp;'); }).join('<br>\n');
+}
+
+(function() {
+  var el = document.getElementById('schedule-cal-main');
+  if (el) el.innerHTML = buildScheduleCalendar();
+})();
 
 // Toggle collapsible sections with slide animation
 function toggleSection(id) {
