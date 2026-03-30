@@ -35,7 +35,7 @@ import json
 import sys
 from datetime import date, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import responses as responses_lib
@@ -49,10 +49,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from tempo_automation import TempoAutomation  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Core helper: build a TempoAutomation without triggering __init__
 # ---------------------------------------------------------------------------
+
 
 def _make_automation(config: dict) -> TempoAutomation:
     """
@@ -99,6 +99,7 @@ def _make_automation(config: dict) -> TempoAutomation:
 # Convenience: build a minimal developer config
 # ---------------------------------------------------------------------------
 
+
 def _dev_config(
     daily_hours: float = 8.0,
     overhead_hours: float = 2.0,
@@ -110,9 +111,7 @@ def _dev_config(
     pto_days: list = None,
 ) -> dict:
     if stories is None:
-        stories = [
-            {"issue_key": "OVERHEAD-10", "summary": "Ceremonies", "hours": 2}
-        ]
+        stories = [{"issue_key": "OVERHEAD-10", "summary": "Ceremonies", "hours": 2}]
     return {
         "user": {"email": "dev@example.com", "role": "developer"},
         "jira": {
@@ -155,6 +154,7 @@ def _dev_config(
 # ===========================================================================
 # sync_daily
 # ===========================================================================
+
 
 class TestSyncDaily:
     """Tests for TempoAutomation.sync_daily()."""
@@ -231,9 +231,11 @@ class TestSyncDaily:
         """Working day + developer role -> _auto_log_jira_worklogs called."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta._auto_log_jira_worklogs = MagicMock(return_value=[
-            {"issue_key": "PROJ-1", "issue_summary": "Task", "time_spent_seconds": 28800}
-        ])
+        ta._auto_log_jira_worklogs = MagicMock(
+            return_value=[
+                {"issue_key": "PROJ-1", "issue_summary": "Task", "time_spent_seconds": 28800}
+            ]
+        )
 
         ta.sync_daily("2026-02-10")
 
@@ -255,9 +257,7 @@ class TestSyncDaily:
         """send_daily_summary is called at the end of a successful working day."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        worklogs = [
-            {"issue_key": "PROJ-1", "issue_summary": "Task", "time_spent_seconds": 28800}
-        ]
+        worklogs = [{"issue_key": "PROJ-1", "issue_summary": "Task", "time_spent_seconds": 28800}]
         ta._auto_log_jira_worklogs = MagicMock(return_value=worklogs)
 
         ta.sync_daily("2026-02-10")
@@ -268,6 +268,7 @@ class TestSyncDaily:
 # ===========================================================================
 # _auto_log_jira_worklogs
 # ===========================================================================
+
 
 class TestAutoLogJiraWorklogs:
     """Tests for TempoAutomation._auto_log_jira_worklogs()."""
@@ -288,8 +289,9 @@ class TestAutoLogJiraWorklogs:
 
         def fake_log_overhead(date_, seconds, stories=None, dist=None):
             logged_calls.append(seconds)
-            return [{"issue_key": "OVERHEAD-10", "issue_summary": "x",
-                     "time_spent_seconds": seconds}]
+            return [
+                {"issue_key": "OVERHEAD-10", "issue_summary": "x", "time_spent_seconds": seconds}
+            ]
 
         ta._log_overhead_hours = MagicMock(side_effect=fake_log_overhead)
 
@@ -307,9 +309,11 @@ class TestAutoLogJiraWorklogs:
         ta.jira_client.get_my_active_issues.return_value = []
         ta._is_overhead_configured = MagicMock(return_value=True)
         ta._is_planning_week = MagicMock(return_value=False)
-        ta._log_overhead_hours = MagicMock(return_value=[
-            {"issue_key": "OVERHEAD-10", "issue_summary": "x", "time_spent_seconds": 28800}
-        ])
+        ta._log_overhead_hours = MagicMock(
+            return_value=[
+                {"issue_key": "OVERHEAD-10", "issue_summary": "x", "time_spent_seconds": 28800}
+            ]
+        )
 
         result = ta._auto_log_jira_worklogs("2026-02-10")
 
@@ -357,9 +361,7 @@ class TestAutoLogJiraWorklogs:
         ta._auto_log_jira_worklogs("2026-02-10")
 
         # delete_worklog called for non-overhead only
-        deleted_keys = [
-            c.args[0] for c in ta.jira_client.delete_worklog.call_args_list
-        ]
+        deleted_keys = [c.args[0] for c in ta.jira_client.delete_worklog.call_args_list]
         assert "OVERHEAD-10" not in deleted_keys
         assert "PROJ-1" in deleted_keys
 
@@ -371,20 +373,20 @@ class TestAutoLogJiraWorklogs:
         ta.tempo_client.get_user_worklogs.return_value = []
         ta._is_overhead_configured = MagicMock(return_value=True)
         ta._is_planning_week = MagicMock(return_value=False)
-        ta._log_overhead_hours = MagicMock(return_value=[
-            {"issue_key": "OVERHEAD-10", "issue_summary": "x", "time_spent_seconds": 7200}
-        ])
+        ta._log_overhead_hours = MagicMock(
+            return_value=[
+                {"issue_key": "OVERHEAD-10", "issue_summary": "x", "time_spent_seconds": 7200}
+            ]
+        )
         ta.jira_client.get_my_active_issues.return_value = [
             {"issue_key": "PROJ-1", "issue_summary": "Task A"},
             {"issue_key": "PROJ-2", "issue_summary": "Task B"},
         ]
         ta.jira_client.get_issue_details.return_value = None
 
-        result = ta._auto_log_jira_worklogs("2026-02-10")
+        ta._auto_log_jira_worklogs("2026-02-10")
 
-        ticket_calls = [
-            c for c in ta.jira_client.create_worklog.call_args_list
-        ]
+        ticket_calls = [c for c in ta.jira_client.create_worklog.call_args_list]
         ticket_seconds = [c.kwargs["time_spent_seconds"] for c in ticket_calls]
         # Remaining = 8h - 2h = 6h = 21600s; 21600 // 2 = 10800s = 3h each
         assert ticket_seconds == [10800, 10800]
@@ -409,7 +411,7 @@ class TestAutoLogJiraWorklogs:
         ticket_calls = ta.jira_client.create_worklog.call_args_list
         ticket_seconds = [c.kwargs["time_spent_seconds"] for c in ticket_calls]
         total_seconds = 8 * 3600  # 28800
-        per_ticket = total_seconds // 3           # 9600
+        per_ticket = total_seconds // 3  # 9600
         remainder = total_seconds - (per_ticket * 3)  # 0
         assert ticket_seconds[0] == per_ticket
         assert ticket_seconds[1] == per_ticket
@@ -434,7 +436,9 @@ class TestAutoLogJiraWorklogs:
         ]
         ta.jira_client.get_issue_details.return_value = None
         call_order = []
-        ta.jira_client.delete_worklog.side_effect = lambda *a, **kw: call_order.append("delete") or True
+        ta.jira_client.delete_worklog.side_effect = (
+            lambda *a, **kw: call_order.append("delete") or True
+        )
         ta.jira_client.create_worklog.side_effect = lambda **kw: call_order.append("create") or "99"
 
         ta._auto_log_jira_worklogs("2026-02-10")
@@ -474,9 +478,15 @@ class TestAutoLogJiraWorklogs:
         ta.tempo_client.get_user_worklogs.return_value = []
         ta._is_overhead_configured = MagicMock(return_value=True)
         ta._is_planning_week = MagicMock(return_value=True)
-        ta._log_overhead_hours = MagicMock(return_value=[
-            {"issue_key": "OVERHEAD-20", "issue_summary": "Planning", "time_spent_seconds": 28800}
-        ])
+        ta._log_overhead_hours = MagicMock(
+            return_value=[
+                {
+                    "issue_key": "OVERHEAD-20",
+                    "issue_summary": "Planning",
+                    "time_spent_seconds": 28800,
+                }
+            ]
+        )
 
         result = ta._auto_log_jira_worklogs("2026-02-02")
 
@@ -518,19 +528,23 @@ class TestAutoLogJiraWorklogs:
 # Hour distribution math (parametrized)
 # ===========================================================================
 
+
 class TestHourDistributionMath:
     """
     Parametrized tests for the integer-division + remainder distribution
     logic used inside _auto_log_jira_worklogs.
     """
 
-    @pytest.mark.parametrize("daily_h, overhead_h, num_tickets, expected_each", [
-        (8.0, 2.0, 2, [10800, 10800]),          # 6h / 2 = 3h each
-        (8.0, 2.0, 3, [7200, 7200, 7200]),      # 6h / 3 = 2h each, no remainder
-        (8.0, 0.0, 2, [14400, 14400]),          # 8h / 2 = 4h each
-        (8.0, 2.0, 1, [21600]),                 # 6h / 1 = 6h
-        (7.0, 2.0, 3, [1800, 1800, 1800]),      # 5h / 3 = ~1.67h -> 1800s each, 0 remainder
-    ])
+    @pytest.mark.parametrize(
+        "daily_h, overhead_h, num_tickets, expected_each",
+        [
+            (8.0, 2.0, 2, [10800, 10800]),  # 6h / 2 = 3h each
+            (8.0, 2.0, 3, [7200, 7200, 7200]),  # 6h / 3 = 2h each, no remainder
+            (8.0, 0.0, 2, [14400, 14400]),  # 8h / 2 = 4h each
+            (8.0, 2.0, 1, [21600]),  # 6h / 1 = 6h
+            (7.0, 2.0, 3, [1800, 1800, 1800]),  # 5h / 3 = ~1.67h -> 1800s each, 0 remainder
+        ],
+    )
     def test_distribution(self, daily_h, overhead_h, num_tickets, expected_each):
         """Verify seconds distribution matches integer-division spec."""
         cfg = _dev_config(daily_hours=daily_h, overhead_hours=overhead_h)
@@ -545,11 +559,13 @@ class TestHourDistributionMath:
         existing_overhead_secs = int(overhead_h * 3600)
         overhead_wls = []
         if existing_overhead_secs > 0:
-            overhead_wls = [{
-                "issue_key": "OVERHEAD-10",
-                "worklog_id": "1",
-                "time_spent_seconds": existing_overhead_secs,
-            }]
+            overhead_wls = [
+                {
+                    "issue_key": "OVERHEAD-10",
+                    "worklog_id": "1",
+                    "time_spent_seconds": existing_overhead_secs,
+                }
+            ]
         ta.jira_client.get_my_worklogs.return_value = overhead_wls
 
         active_issues = [
@@ -568,8 +584,7 @@ class TestHourDistributionMath:
         per_ticket = remaining_seconds // num_tickets
         remainder = remaining_seconds - (per_ticket * num_tickets)
         expected = [
-            per_ticket + (remainder if i == num_tickets - 1 else 0)
-            for i in range(num_tickets)
+            per_ticket + (remainder if i == num_tickets - 1 else 0) for i in range(num_tickets)
         ]
 
         assert actual_seconds == expected, (
@@ -581,6 +596,7 @@ class TestHourDistributionMath:
 # ===========================================================================
 # _generate_work_summary
 # ===========================================================================
+
 
 class TestGenerateWorkSummary:
     """Tests for TempoAutomation._generate_work_summary()."""
@@ -651,6 +667,7 @@ class TestGenerateWorkSummary:
 # _is_overhead_configured
 # ===========================================================================
 
+
 class TestIsOverheadConfigured:
     """Tests for TempoAutomation._is_overhead_configured()."""
 
@@ -673,6 +690,7 @@ class TestIsOverheadConfigured:
 # ===========================================================================
 # _parse_pi_end_date
 # ===========================================================================
+
 
 class TestParsePiEndDate:
     """Tests for TempoAutomation._parse_pi_end_date()."""
@@ -708,6 +726,7 @@ class TestParsePiEndDate:
 # _is_planning_week
 # ===========================================================================
 
+
 class TestIsPlanningWeek:
     """Tests for TempoAutomation._is_planning_week()."""
 
@@ -741,6 +760,7 @@ class TestIsPlanningWeek:
 # ===========================================================================
 # _log_overhead_hours
 # ===========================================================================
+
 
 class TestLogOverheadHours:
     """Tests for TempoAutomation._log_overhead_hours()."""
@@ -815,6 +835,7 @@ class TestLogOverheadHours:
 # _detect_monthly_gaps
 # ===========================================================================
 
+
 class TestDetectMonthlyGaps:
     """Tests for TempoAutomation._detect_monthly_gaps()."""
 
@@ -852,8 +873,7 @@ class TestDetectMonthlyGaps:
             d += timedelta(days=1)
 
         tempo_wls = [
-            {"startDate": ds, "timeSpentSeconds": int(h * 3600)}
-            for ds, h in wl_by_date.items()
+            {"startDate": ds, "timeSpentSeconds": int(h * 3600)} for ds, h in wl_by_date.items()
         ]
         ta.tempo_client.get_user_worklogs.return_value = tempo_wls
         ta.schedule_mgr.daily_hours = 8.0
@@ -864,6 +884,7 @@ class TestDetectMonthlyGaps:
             if d.weekday() >= 5:
                 return (False, "Weekend")
             return (True, "")
+
         ta.schedule_mgr.is_working_day.side_effect = is_working
 
         with patch("tempo_automation.date") as mock_date:
@@ -892,6 +913,7 @@ class TestDetectMonthlyGaps:
             if date_str == "2026-02-10":
                 return (True, "")
             return (False, "Weekend")
+
         ta.schedule_mgr.is_working_day.side_effect = is_working
 
         with patch("tempo_automation.date") as mock_date:
@@ -917,6 +939,7 @@ class TestDetectMonthlyGaps:
             if d.weekday() >= 5:
                 return (False, "Weekend")
             return (True, "")
+
         ta.schedule_mgr.is_working_day.side_effect = is_working
 
         with patch("tempo_automation.date") as mock_date:
@@ -944,6 +967,7 @@ class TestDetectMonthlyGaps:
             if d.weekday() >= 5:
                 return (False, "Weekend")
             return (True, "")
+
         ta.schedule_mgr.is_working_day.side_effect = is_working
 
         with patch("tempo_automation.date") as mock_date:
@@ -960,6 +984,7 @@ class TestDetectMonthlyGaps:
 # ===========================================================================
 # submit_timesheet
 # ===========================================================================
+
 
 class TestSubmitTimesheet:
     """Tests for TempoAutomation.submit_timesheet()."""
@@ -984,15 +1009,24 @@ class TestSubmitTimesheet:
         cfg = _dev_config()
         ta = _make_automation(cfg)
         ta._is_already_submitted = MagicMock(return_value=False)
-        ta._detect_monthly_gaps = MagicMock(return_value={
-            "period": "2026-02",
-            "expected": 160.0,
-            "actual": 152.0,
-            "gaps": [{"date": "2026-02-10", "day": "Tuesday", "logged": 6.0,
-                       "expected": 8.0, "gap": 2.0}],
-            "working_days": 20,
-            "day_details": [],
-        })
+        ta._detect_monthly_gaps = MagicMock(
+            return_value={
+                "period": "2026-02",
+                "expected": 160.0,
+                "actual": 152.0,
+                "gaps": [
+                    {
+                        "date": "2026-02-10",
+                        "day": "Tuesday",
+                        "logged": 6.0,
+                        "expected": 8.0,
+                        "gap": 2.0,
+                    }
+                ],
+                "working_days": 20,
+                "day_details": [],
+            }
+        )
         ta._save_shortfall_data = MagicMock()
         ta._send_shortfall_notification = MagicMock()
 
@@ -1011,14 +1045,16 @@ class TestSubmitTimesheet:
         cfg = _dev_config()
         ta = _make_automation(cfg)
         ta._is_already_submitted = MagicMock(return_value=False)
-        ta._detect_monthly_gaps = MagicMock(return_value={
-            "period": "2026-02",
-            "expected": 160.0,
-            "actual": 160.0,
-            "gaps": [],
-            "working_days": 20,
-            "day_details": [],
-        })
+        ta._detect_monthly_gaps = MagicMock(
+            return_value={
+                "period": "2026-02",
+                "expected": 160.0,
+                "actual": 160.0,
+                "gaps": [],
+                "working_days": 20,
+                "day_details": [],
+            }
+        )
         ta._save_submitted_marker = MagicMock()
 
         shortfall_path = tmp_path / "monthly_shortfall.json"
@@ -1036,14 +1072,16 @@ class TestSubmitTimesheet:
         cfg = _dev_config()
         ta = _make_automation(cfg)
         ta._is_already_submitted = MagicMock(return_value=False)
-        ta._detect_monthly_gaps = MagicMock(return_value={
-            "period": "2026-02",
-            "expected": 120.0,
-            "actual": 120.0,
-            "gaps": [],
-            "working_days": 15,
-            "day_details": [],
-        })
+        ta._detect_monthly_gaps = MagicMock(
+            return_value={
+                "period": "2026-02",
+                "expected": 120.0,
+                "actual": 120.0,
+                "gaps": [],
+                "working_days": 15,
+                "day_details": [],
+            }
+        )
         ta._save_submitted_marker = MagicMock()
         # count_working_days returns 0 = no working days remain
         ta.schedule_mgr.count_working_days.return_value = 0
@@ -1082,15 +1120,24 @@ class TestSubmitTimesheet:
         cfg = _dev_config()
         ta = _make_automation(cfg)
         ta._is_already_submitted = MagicMock(return_value=False)
-        ta._detect_monthly_gaps = MagicMock(return_value={
-            "period": "2026-02",
-            "expected": 120.0,
-            "actual": 112.0,
-            "gaps": [{"date": "2026-02-10", "day": "Tuesday",
-                       "logged": 0.0, "expected": 8.0, "gap": 8.0}],
-            "working_days": 15,
-            "day_details": [],
-        })
+        ta._detect_monthly_gaps = MagicMock(
+            return_value={
+                "period": "2026-02",
+                "expected": 120.0,
+                "actual": 112.0,
+                "gaps": [
+                    {
+                        "date": "2026-02-10",
+                        "day": "Tuesday",
+                        "logged": 0.0,
+                        "expected": 8.0,
+                        "gap": 8.0,
+                    }
+                ],
+                "working_days": 15,
+                "day_details": [],
+            }
+        )
         ta._save_shortfall_data = MagicMock()
         ta._send_shortfall_notification = MagicMock()
         ta.schedule_mgr.count_working_days.return_value = 0
@@ -1110,6 +1157,7 @@ class TestSubmitTimesheet:
 # verify_week
 # ===========================================================================
 
+
 class TestVerifyWeek:
     """Tests for TempoAutomation.verify_week()."""
 
@@ -1124,15 +1172,18 @@ class TestVerifyWeek:
             if d.weekday() >= 5:
                 return (False, "Weekend")
             return (True, "")
+
         ta.schedule_mgr.is_working_day.side_effect = is_working
 
         # _check_day_hours: no gap
-        ta._check_day_hours = MagicMock(return_value={
-            "existing_hours": 8.0,
-            "gap_hours": 0.0,
-            "worklogs": [{"issue_key": "PROJ-1", "time_spent_seconds": 28800}],
-            "existing_keys": {"PROJ-1"},
-        })
+        ta._check_day_hours = MagicMock(
+            return_value={
+                "existing_hours": 8.0,
+                "gap_hours": 0.0,
+                "worklogs": [{"issue_key": "PROJ-1", "time_spent_seconds": 28800}],
+                "existing_keys": {"PROJ-1"},
+            }
+        )
         ta._backfill_day = MagicMock()
 
         with patch("tempo_automation.date") as mock_date:
@@ -1153,6 +1204,7 @@ class TestVerifyWeek:
             if d.weekday() >= 5:
                 return (False, "Weekend")
             return (True, "")
+
         ta.schedule_mgr.is_working_day.side_effect = is_working
 
         # Monday has 4h gap; all other days complete
@@ -1171,12 +1223,15 @@ class TestVerifyWeek:
                 "worklogs": [{"issue_key": "PROJ-1", "time_spent_seconds": 28800}],
                 "existing_keys": {"PROJ-1"},
             }
+
         ta._check_day_hours = MagicMock(side_effect=check_day)
-        ta._backfill_day = MagicMock(return_value={
-            "created_count": 1,
-            "hours_added": 4.0,
-            "method": "historical",
-        })
+        ta._backfill_day = MagicMock(
+            return_value={
+                "created_count": 1,
+                "hours_added": 4.0,
+                "method": "historical",
+            }
+        )
 
         with patch("tempo_automation.date") as mock_date:
             mock_date.today.return_value = date(2026, 2, 13)  # Friday
@@ -1194,6 +1249,7 @@ class TestVerifyWeek:
 # _pre_sync_health_check
 # ===========================================================================
 
+
 class TestPreSyncHealthCheck:
     """Tests for TempoAutomation._pre_sync_health_check()."""
 
@@ -1204,6 +1260,7 @@ class TestPreSyncHealthCheck:
         so _pre_sync_health_check can call .session.get().
         """
         import requests as req
+
         cfg = config or _dev_config()
         ta = _make_automation(cfg)
 
@@ -1214,10 +1271,12 @@ class TestPreSyncHealthCheck:
         ta.jira_client.base_url = "https://test.atlassian.net"
 
         tempo_session = req.Session()
-        tempo_session.headers.update({
-            'Authorization': 'Bearer ttok',
-            'Content-Type': 'application/json',
-        })
+        tempo_session.headers.update(
+            {
+                "Authorization": "Bearer ttok",
+                "Content-Type": "application/json",
+            }
+        )
         ta.tempo_client.session = tempo_session
         ta.tempo_client.base_url = "https://api.tempo.io/4"
         ta.tempo_client.account_id = "712020:test-uuid"
@@ -1292,6 +1351,7 @@ class TestPreSyncHealthCheck:
     def test_health_check_jira_timeout(self, capsys):
         """Jira timeout -> returns False, prints unreachable message."""
         import requests as req
+
         ta = self._make_ta_with_sessions()
         responses_lib.add(
             responses_lib.GET,
@@ -1309,6 +1369,7 @@ class TestPreSyncHealthCheck:
     def test_health_check_tempo_timeout(self, capsys):
         """Tempo timeout -> returns False, prints unreachable message."""
         import requests as req
+
         ta = self._make_ta_with_sessions()
         # Jira OK
         responses_lib.add(
@@ -1358,6 +1419,7 @@ class TestPreSyncHealthCheck:
 # TestViewMonthlyHours
 # ===========================================================================
 
+
 class TestViewMonthlyHours:
     """Tests for TempoAutomation.view_monthly_hours()."""
 
@@ -1386,19 +1448,18 @@ class TestViewMonthlyHours:
         ta = _make_automation(cfg)
 
         details = [
-            {"date": "2026-02-09", "day": "Monday", "logged": 8.0,
-             "expected": 8.0, "gap": 0.0},
-            {"date": "2026-02-10", "day": "Tuesday", "logged": 8.0,
-             "expected": 8.0, "gap": 0.0},
+            {"date": "2026-02-09", "day": "Monday", "logged": 8.0, "expected": 8.0, "gap": 0.0},
+            {"date": "2026-02-10", "day": "Tuesday", "logged": 8.0, "expected": 8.0, "gap": 0.0},
         ]
         gap_data = self._make_gap_data(
-            day_details=details, expected=16.0, actual=16.0,
-            working_days=2
+            day_details=details, expected=16.0, actual=16.0, working_days=2
         )
         ta._detect_monthly_gaps = MagicMock(return_value=gap_data)
 
-        with patch("tempo_automation.SHORTFALL_FILE", Path("/fake/sf.json")), \
-             patch("tempo_automation.date") as mock_date:
+        with (
+            patch("tempo_automation.SHORTFALL_FILE", Path("/fake/sf.json")),
+            patch("tempo_automation.date") as mock_date,
+        ):
             mock_date.today.return_value = date(2026, 2, 13)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             ta.view_monthly_hours("current")
@@ -1415,18 +1476,18 @@ class TestViewMonthlyHours:
         ta = _make_automation(cfg)
 
         details = [
-            {"date": "2026-02-09", "day": "Monday", "logged": 6.0,
-             "expected": 8.0, "gap": 2.0},
+            {"date": "2026-02-09", "day": "Monday", "logged": 6.0, "expected": 8.0, "gap": 2.0},
         ]
         gap_data = self._make_gap_data(
-            gaps=details, day_details=details,
-            expected=8.0, actual=6.0, working_days=1
+            gaps=details, day_details=details, expected=8.0, actual=6.0, working_days=1
         )
         ta._detect_monthly_gaps = MagicMock(return_value=gap_data)
 
         shortfall_path = tmp_path / "monthly_shortfall.json"
-        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path), \
-             patch("tempo_automation.date") as mock_date:
+        with (
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+            patch("tempo_automation.date") as mock_date,
+        ):
             mock_date.today.return_value = date(2026, 2, 13)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             ta.view_monthly_hours("current")
@@ -1440,19 +1501,19 @@ class TestViewMonthlyHours:
         ta = _make_automation(cfg)
 
         details = [
-            {"date": "2026-02-09", "day": "Monday", "logged": 4.0,
-             "expected": 8.0, "gap": 4.0},
+            {"date": "2026-02-09", "day": "Monday", "logged": 4.0, "expected": 8.0, "gap": 4.0},
         ]
         gap_data = self._make_gap_data(
-            gaps=details, day_details=details,
-            expected=8.0, actual=4.0, working_days=1
+            gaps=details, day_details=details, expected=8.0, actual=4.0, working_days=1
         )
         ta._detect_monthly_gaps = MagicMock(return_value=gap_data)
 
         shortfall_path = tmp_path / "monthly_shortfall.json"
 
-        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path), \
-             patch("tempo_automation.date") as mock_date:
+        with (
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+            patch("tempo_automation.date") as mock_date,
+        ):
             mock_date.today.return_value = date(2026, 2, 13)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             ta.view_monthly_hours("current")
@@ -1468,19 +1529,19 @@ class TestViewMonthlyHours:
         ta = _make_automation(cfg)
 
         details = [
-            {"date": "2026-02-09", "day": "Monday", "logged": 8.0,
-             "expected": 8.0, "gap": 0.0},
+            {"date": "2026-02-09", "day": "Monday", "logged": 8.0, "expected": 8.0, "gap": 0.0},
         ]
         gap_data = self._make_gap_data(
-            gaps=[], day_details=details,
-            expected=8.0, actual=8.0, working_days=1
+            gaps=[], day_details=details, expected=8.0, actual=8.0, working_days=1
         )
         ta._detect_monthly_gaps = MagicMock(return_value=gap_data)
 
         shortfall_path = tmp_path / "monthly_shortfall.json"
 
-        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path), \
-             patch("tempo_automation.date") as mock_date:
+        with (
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+            patch("tempo_automation.date") as mock_date,
+        ):
             mock_date.today.return_value = date(2026, 2, 13)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             ta.view_monthly_hours("current")
@@ -1578,6 +1639,7 @@ class TestViewMonthlyHours:
 # TestFixShortfall
 # ===========================================================================
 
+
 class TestFixShortfall:
     """Tests for TempoAutomation.fix_shortfall()."""
 
@@ -1591,16 +1653,23 @@ class TestFixShortfall:
             "expected": 176.0,
             "actual": 168.0,
             "gaps": [
-                {"date": "2026-03-10", "day": "Tuesday",
-                 "logged": 0.0, "expected": 8.0, "gap": 8.0},
+                {
+                    "date": "2026-03-10",
+                    "day": "Tuesday",
+                    "logged": 0.0,
+                    "expected": 8.0,
+                    "gap": 8.0,
+                },
             ],
             "working_days": 22,
             "day_details": [],
         }
         ta._detect_monthly_gaps = MagicMock(return_value=gap_data)
 
-        with patch("tempo_automation.date") as mock_date, \
-             patch("builtins.input", side_effect=["Q"]):
+        with (
+            patch("tempo_automation.date") as mock_date,
+            patch("builtins.input", side_effect=["Q"]),
+        ):
             mock_date.today.return_value = date(2026, 3, 13)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             ta.fix_shortfall()
@@ -1617,18 +1686,30 @@ class TestFixShortfall:
             "expected": 176.0,
             "actual": 164.0,
             "gaps": [
-                {"date": "2026-03-10", "day": "Tuesday",
-                 "logged": 0.0, "expected": 8.0, "gap": 8.0},
-                {"date": "2026-03-12", "day": "Thursday",
-                 "logged": 4.0, "expected": 8.0, "gap": 4.0},
+                {
+                    "date": "2026-03-10",
+                    "day": "Tuesday",
+                    "logged": 0.0,
+                    "expected": 8.0,
+                    "gap": 8.0,
+                },
+                {
+                    "date": "2026-03-12",
+                    "day": "Thursday",
+                    "logged": 4.0,
+                    "expected": 8.0,
+                    "gap": 4.0,
+                },
             ],
             "working_days": 22,
             "day_details": [],
         }
         ta._detect_monthly_gaps = MagicMock(return_value=gap_data)
 
-        with patch("tempo_automation.date") as mock_date, \
-             patch("builtins.input", side_effect=["Q"]):
+        with (
+            patch("tempo_automation.date") as mock_date,
+            patch("builtins.input", side_effect=["Q"]),
+        ):
             mock_date.today.return_value = date(2026, 3, 13)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             ta.fix_shortfall()
@@ -1644,31 +1725,35 @@ class TestFixShortfall:
         ta = _make_automation(cfg)
 
         gaps = [
-            {"date": "2026-03-10", "day": "Tuesday",
-             "logged": 0.0, "expected": 8.0, "gap": 8.0},
-            {"date": "2026-03-11", "day": "Wednesday",
-             "logged": 4.0, "expected": 8.0, "gap": 4.0},
+            {"date": "2026-03-10", "day": "Tuesday", "logged": 0.0, "expected": 8.0, "gap": 8.0},
+            {"date": "2026-03-11", "day": "Wednesday", "logged": 4.0, "expected": 8.0, "gap": 4.0},
         ]
         gap_data_initial = {
             "period": "2026-03",
-            "expected": 176.0, "actual": 164.0,
-            "gaps": gaps, "working_days": 22, "day_details": [],
+            "expected": 176.0,
+            "actual": 164.0,
+            "gaps": gaps,
+            "working_days": 22,
+            "day_details": [],
         }
         # After fixing day 1, re-detect shows remaining gap
         gap_data_after = {
             "period": "2026-03",
-            "expected": 176.0, "actual": 172.0,
-            "gaps": [gaps[1]], "working_days": 22, "day_details": [],
+            "expected": 176.0,
+            "actual": 172.0,
+            "gaps": [gaps[1]],
+            "working_days": 22,
+            "day_details": [],
         }
-        ta._detect_monthly_gaps = MagicMock(
-            side_effect=[gap_data_initial, gap_data_after]
-        )
+        ta._detect_monthly_gaps = MagicMock(side_effect=[gap_data_initial, gap_data_after])
         ta.sync_daily = MagicMock()
 
         shortfall_path = tmp_path / "monthly_shortfall.json"
-        with patch("tempo_automation.date") as mock_date, \
-             patch("builtins.input", side_effect=["1", ""]), \
-             patch("tempo_automation.SHORTFALL_FILE", shortfall_path):
+        with (
+            patch("tempo_automation.date") as mock_date,
+            patch("builtins.input", side_effect=["1", ""]),
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+        ):
             mock_date.today.return_value = date(2026, 3, 13)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             ta.fix_shortfall()
@@ -1681,23 +1766,26 @@ class TestFixShortfall:
         ta = _make_automation(cfg)
 
         gaps = [
-            {"date": "2026-03-10", "day": "Tuesday",
-             "logged": 0.0, "expected": 8.0, "gap": 8.0},
-            {"date": "2026-03-12", "day": "Thursday",
-             "logged": 4.0, "expected": 8.0, "gap": 4.0},
+            {"date": "2026-03-10", "day": "Tuesday", "logged": 0.0, "expected": 8.0, "gap": 8.0},
+            {"date": "2026-03-12", "day": "Thursday", "logged": 4.0, "expected": 8.0, "gap": 4.0},
         ]
         gap_data = {
             "period": "2026-03",
-            "expected": 176.0, "actual": 164.0,
-            "gaps": gaps, "working_days": 22, "day_details": [],
+            "expected": 176.0,
+            "actual": 164.0,
+            "gaps": gaps,
+            "working_days": 22,
+            "day_details": [],
         }
         ta._detect_monthly_gaps = MagicMock(return_value=gap_data)
         ta.sync_daily = MagicMock()
 
         shortfall_path = Path("/fake/shortfall.json")
-        with patch("tempo_automation.date") as mock_date, \
-             patch("builtins.input", side_effect=["A", ""]), \
-             patch("tempo_automation.SHORTFALL_FILE", shortfall_path):
+        with (
+            patch("tempo_automation.date") as mock_date,
+            patch("builtins.input", side_effect=["A", ""]),
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+        ):
             mock_date.today.return_value = date(2026, 3, 13)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             ta.fix_shortfall()
@@ -1713,14 +1801,19 @@ class TestFixShortfall:
 
         gap_data = {
             "period": "2026-03",
-            "expected": 176.0, "actual": 176.0,
-            "gaps": [], "working_days": 22, "day_details": [],
+            "expected": 176.0,
+            "actual": 176.0,
+            "gaps": [],
+            "working_days": 22,
+            "day_details": [],
         }
         ta._detect_monthly_gaps = MagicMock(return_value=gap_data)
 
         shortfall_path = Path("/fake/shortfall.json")
-        with patch("tempo_automation.date") as mock_date, \
-             patch("tempo_automation.SHORTFALL_FILE", shortfall_path):
+        with (
+            patch("tempo_automation.date") as mock_date,
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+        ):
             mock_date.today.return_value = date(2026, 3, 13)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             ta.fix_shortfall()
@@ -1734,31 +1827,35 @@ class TestFixShortfall:
         ta = _make_automation(cfg)
 
         gaps = [
-            {"date": "2026-03-10", "day": "Tuesday",
-             "logged": 0.0, "expected": 8.0, "gap": 8.0},
-            {"date": "2026-03-12", "day": "Thursday",
-             "logged": 4.0, "expected": 8.0, "gap": 4.0},
+            {"date": "2026-03-10", "day": "Tuesday", "logged": 0.0, "expected": 8.0, "gap": 8.0},
+            {"date": "2026-03-12", "day": "Thursday", "logged": 4.0, "expected": 8.0, "gap": 4.0},
         ]
         gap_data_initial = {
             "period": "2026-03",
-            "expected": 176.0, "actual": 164.0,
-            "gaps": gaps, "working_days": 22, "day_details": [],
+            "expected": 176.0,
+            "actual": 164.0,
+            "gaps": gaps,
+            "working_days": 22,
+            "day_details": [],
         }
         gap_data_after = {
             "period": "2026-03",
-            "expected": 176.0, "actual": 172.0,
-            "gaps": [gaps[1]], "working_days": 22, "day_details": [],
+            "expected": 176.0,
+            "actual": 172.0,
+            "gaps": [gaps[1]],
+            "working_days": 22,
+            "day_details": [],
         }
-        ta._detect_monthly_gaps = MagicMock(
-            side_effect=[gap_data_initial, gap_data_after]
-        )
+        ta._detect_monthly_gaps = MagicMock(side_effect=[gap_data_initial, gap_data_after])
         ta.sync_daily = MagicMock()
 
         shortfall_path = tmp_path / "monthly_shortfall.json"
 
-        with patch("tempo_automation.date") as mock_date, \
-             patch("builtins.input", side_effect=["1", ""]), \
-             patch("tempo_automation.SHORTFALL_FILE", shortfall_path):
+        with (
+            patch("tempo_automation.date") as mock_date,
+            patch("builtins.input", side_effect=["1", ""]),
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+        ):
             mock_date.today.return_value = date(2026, 3, 13)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             ta.fix_shortfall()
@@ -1771,6 +1868,7 @@ class TestFixShortfall:
 # ===========================================================================
 # TestTempoSourceOfTruth
 # ===========================================================================
+
 
 class TestTempoSourceOfTruth:
     """Tests for the Tempo-as-source-of-truth pattern (max(jira, tempo))."""
@@ -1841,9 +1939,7 @@ class TestTempoSourceOfTruth:
 
             ta._detect_monthly_gaps(2026, 2)
 
-        ta.tempo_client.get_user_worklogs.assert_called_once_with(
-            "2026-02-01", "2026-02-02"
-        )
+        ta.tempo_client.get_user_worklogs.assert_called_once_with("2026-02-01", "2026-02-02")
 
     def test_detect_monthly_gaps_jira_fallback(self):
         """When Tempo account_id is empty, fall back to Jira."""
@@ -1853,8 +1949,7 @@ class TestTempoSourceOfTruth:
         ta.tempo_client.account_id = ""  # No Tempo account
         ta.schedule_mgr.is_working_day.return_value = (True, "")
         ta.jira_client.get_my_worklogs.return_value = [
-            {"started": "2026-02-02", "time_spent_seconds": 28800,
-             "issue_key": "PROJ-1"},
+            {"started": "2026-02-02", "time_spent_seconds": 28800, "issue_key": "PROJ-1"},
         ]
 
         with patch("tempo_automation.date") as mock_date:
@@ -1864,9 +1959,7 @@ class TestTempoSourceOfTruth:
 
             gap_data = ta._detect_monthly_gaps(2026, 2)
 
-        ta.jira_client.get_my_worklogs.assert_called_once_with(
-            "2026-02-01", "2026-02-02"
-        )
+        ta.jira_client.get_my_worklogs.assert_called_once_with("2026-02-01", "2026-02-02")
         assert gap_data["actual"] == 8.0
 
     def test_sync_pto_overhead_tempo_check(self):
@@ -1876,8 +1969,7 @@ class TestTempoSourceOfTruth:
 
         # Both APIs show 8h already logged -> should skip creating
         ta.jira_client.get_my_worklogs.return_value = [
-            {"issue_key": "OVERHEAD-2", "time_spent_seconds": 28800,
-             "issue_summary": "PTO"}
+            {"issue_key": "OVERHEAD-2", "time_spent_seconds": 28800, "issue_summary": "PTO"}
         ]
         ta.tempo_client.get_user_worklogs.return_value = [
             {"timeSpentSeconds": 28800, "startDate": "2026-03-10"}
@@ -1886,12 +1978,8 @@ class TestTempoSourceOfTruth:
         ta._sync_pto_overhead("2026-03-10")
 
         # Both APIs should be consulted
-        ta.jira_client.get_my_worklogs.assert_called_once_with(
-            "2026-03-10", "2026-03-10"
-        )
-        ta.tempo_client.get_user_worklogs.assert_called_once_with(
-            "2026-03-10", "2026-03-10"
-        )
+        ta.jira_client.get_my_worklogs.assert_called_once_with("2026-03-10", "2026-03-10")
+        ta.tempo_client.get_user_worklogs.assert_called_once_with("2026-03-10", "2026-03-10")
         # Since 28800s >= total_seconds, no new worklog created
         ta.jira_client.create_worklog.assert_not_called()
 
@@ -1907,14 +1995,14 @@ class TestTempoSourceOfTruth:
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = weekday_schedule
-        ta._check_day_hours = MagicMock(return_value={
-            "existing_hours": 8.0,
-            "gap_hours": 0.0,
-            "worklogs": [
-                {"issue_key": "PROJ-1", "time_spent_seconds": 28800}
-            ],
-            "existing_keys": {"PROJ-1"},
-        })
+        ta._check_day_hours = MagicMock(
+            return_value={
+                "existing_hours": 8.0,
+                "gap_hours": 0.0,
+                "worklogs": [{"issue_key": "PROJ-1", "time_spent_seconds": 28800}],
+                "existing_keys": {"PROJ-1"},
+            }
+        )
         ta._backfill_day = MagicMock()
 
         with patch("tempo_automation.date") as mock_date:
@@ -1948,6 +2036,7 @@ class TestTempoSourceOfTruth:
 # 2C. Create-Before-Delete Tests
 # ===========================================================================
 
+
 class TestCreateBeforeDelete:
     """Tests for the create-before-delete strategy in _auto_log_jira_worklogs."""
 
@@ -1955,9 +2044,11 @@ class TestCreateBeforeDelete:
         """Common setup: configure mocks for _auto_log_jira_worklogs."""
         ta._is_overhead_configured = MagicMock(return_value=False)
         ta._check_overhead_pi_current = MagicMock(return_value=True)
-        ta._get_overhead_config = MagicMock(return_value={
-            'project_prefix': 'OVERHEAD-',
-        })
+        ta._get_overhead_config = MagicMock(
+            return_value={
+                "project_prefix": "OVERHEAD-",
+            }
+        )
         ta._generate_work_summary = MagicMock(return_value="Working on task")
         ta.jira_client.get_my_active_issues.return_value = active_issues
         ta.jira_client.get_my_worklogs.return_value = existing_worklogs or []
@@ -1970,13 +2061,13 @@ class TestCreateBeforeDelete:
 
         existing = [
             {
-                'issue_key': 'PROJ-OLD',
-                'worklog_id': 'w-old',
-                'time_spent_seconds': 28800,
+                "issue_key": "PROJ-OLD",
+                "worklog_id": "w-old",
+                "time_spent_seconds": 28800,
             }
         ]
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_auto_log(ta, active, existing)
         ta.jira_client.create_worklog.return_value = "new-wl-id"
@@ -1987,11 +2078,11 @@ class TestCreateBeforeDelete:
         orig_delete = ta.jira_client.delete_worklog
 
         def track_create(**kwargs):
-            call_order.append('create')
+            call_order.append("create")
             return orig_create(**kwargs)
 
         def track_delete(*args, **kwargs):
-            call_order.append('delete')
+            call_order.append("delete")
             return orig_delete(*args, **kwargs)
 
         ta.jira_client.create_worklog = track_create
@@ -1999,7 +2090,7 @@ class TestCreateBeforeDelete:
 
         ta._auto_log_jira_worklogs("2026-02-10")
 
-        assert call_order.index('create') < call_order.index('delete')
+        assert call_order.index("create") < call_order.index("delete")
 
     def test_partial_create_failure_rollback(self):
         """If 2nd creation fails, _rollback_created is called for 1st."""
@@ -2007,36 +2098,34 @@ class TestCreateBeforeDelete:
         ta = _make_automation(cfg)
 
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_auto_log(ta, active, [])
         # Single ticket uses sequential path; create fails
         ta.jira_client.create_worklog.return_value = None
         ta._rollback_created = MagicMock()
 
-        result = ta._auto_log_jira_worklogs("2026-02-10")
+        ta._auto_log_jira_worklogs("2026-02-10")
 
         # No worklogs created successfully, so nothing to roll back
         # (failure on first ticket -> created list is empty)
         # But with 2 tickets, first succeeds, second fails:
         active2 = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
-            {'issue_key': 'PROJ-2', 'issue_summary': 'Task 2'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
+            {"issue_key": "PROJ-2", "issue_summary": "Task 2"},
         ]
         self._setup_auto_log(ta, active2, [])
         # Parallel path: mock _create_worklogs_parallel to simulate
         # partial failure
         created_partial = [
             {
-                'issue_key': 'PROJ-1',
-                'issue_summary': 'Task 1',
-                'time_spent_seconds': 14400,
-                'worklog_id': 'wl-1',
+                "issue_key": "PROJ-1",
+                "issue_summary": "Task 1",
+                "time_spent_seconds": 14400,
+                "worklog_id": "wl-1",
             }
         ]
-        ta._create_worklogs_parallel = MagicMock(
-            return_value=(created_partial, True)
-        )
+        ta._create_worklogs_parallel = MagicMock(return_value=(created_partial, True))
         ta._rollback_created = MagicMock()
 
         ta._auto_log_jira_worklogs("2026-02-10")
@@ -2044,7 +2133,7 @@ class TestCreateBeforeDelete:
         ta._rollback_created.assert_called_once()
         rolled_back = ta._rollback_created.call_args[0][0]
         assert len(rolled_back) == 1
-        assert rolled_back[0]['issue_key'] == 'PROJ-1'
+        assert rolled_back[0]["issue_key"] == "PROJ-1"
 
     def test_all_creates_succeed_then_deletes(self):
         """Success -> old worklogs deleted after creation."""
@@ -2053,13 +2142,13 @@ class TestCreateBeforeDelete:
 
         existing = [
             {
-                'issue_key': 'PROJ-OLD',
-                'worklog_id': 'w-old',
-                'time_spent_seconds': 28800,
+                "issue_key": "PROJ-OLD",
+                "worklog_id": "w-old",
+                "time_spent_seconds": 28800,
             }
         ]
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_auto_log(ta, active, existing)
         ta.jira_client.create_worklog.return_value = "new-wl-id"
@@ -2067,9 +2156,7 @@ class TestCreateBeforeDelete:
 
         ta._auto_log_jira_worklogs("2026-02-10")
 
-        ta.jira_client.delete_worklog.assert_called_once_with(
-            'PROJ-OLD', 'w-old'
-        )
+        ta.jira_client.delete_worklog.assert_called_once_with("PROJ-OLD", "w-old")
 
     def test_no_existing_worklogs_creates_only(self):
         """First sync: creates only, no deletes."""
@@ -2077,7 +2164,7 @@ class TestCreateBeforeDelete:
         ta = _make_automation(cfg)
 
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_auto_log(ta, active, [])
         ta.jira_client.create_worklog.return_value = "new-wl-id"
@@ -2093,7 +2180,7 @@ class TestCreateBeforeDelete:
         ta = _make_automation(cfg)
 
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         # First sync: no existing worklogs
         self._setup_auto_log(ta, active, [])
@@ -2103,9 +2190,9 @@ class TestCreateBeforeDelete:
         # Second sync: existing worklogs from first sync
         existing = [
             {
-                'issue_key': 'PROJ-1',
-                'worklog_id': 'wl-1',
-                'time_spent_seconds': 28800,
+                "issue_key": "PROJ-1",
+                "worklog_id": "wl-1",
+                "time_spent_seconds": 28800,
             }
         ]
         self._setup_auto_log(ta, active, existing)
@@ -2116,8 +2203,8 @@ class TestCreateBeforeDelete:
         # Both produce 1 worklog for PROJ-1
         assert len(result1) == 1
         assert len(result2) == 1
-        assert result1[0]['issue_key'] == 'PROJ-1'
-        assert result2[0]['issue_key'] == 'PROJ-1'
+        assert result1[0]["issue_key"] == "PROJ-1"
+        assert result2[0]["issue_key"] == "PROJ-1"
 
     def test_overhead_worklogs_preserved(self):
         """Overhead worklogs are never deleted during re-sync."""
@@ -2126,18 +2213,18 @@ class TestCreateBeforeDelete:
 
         existing = [
             {
-                'issue_key': 'OVERHEAD-10',
-                'worklog_id': 'oh-wl',
-                'time_spent_seconds': 7200,
+                "issue_key": "OVERHEAD-10",
+                "worklog_id": "oh-wl",
+                "time_spent_seconds": 7200,
             },
             {
-                'issue_key': 'PROJ-OLD',
-                'worklog_id': 'w-old',
-                'time_spent_seconds': 21600,
+                "issue_key": "PROJ-OLD",
+                "worklog_id": "w-old",
+                "time_spent_seconds": 21600,
             },
         ]
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_auto_log(ta, active, existing)
         ta.jira_client.create_worklog.return_value = "new-wl-id"
@@ -2148,13 +2235,14 @@ class TestCreateBeforeDelete:
         # Only non-overhead worklog should be deleted
         delete_calls = ta.jira_client.delete_worklog.call_args_list
         deleted_keys = [c[0][0] for c in delete_calls]
-        assert 'OVERHEAD-10' not in deleted_keys
-        assert 'PROJ-OLD' in deleted_keys
+        assert "OVERHEAD-10" not in deleted_keys
+        assert "PROJ-OLD" in deleted_keys
 
 
 # ===========================================================================
 # 2E. Dry-Run Tests
 # ===========================================================================
+
 
 class TestDryRun:
     """Tests for dry_run mode."""
@@ -2164,9 +2252,11 @@ class TestDryRun:
         ta.dry_run = True
         ta._is_overhead_configured = MagicMock(return_value=False)
         ta._check_overhead_pi_current = MagicMock(return_value=True)
-        ta._get_overhead_config = MagicMock(return_value={
-            'project_prefix': 'OVERHEAD-',
-        })
+        ta._get_overhead_config = MagicMock(
+            return_value={
+                "project_prefix": "OVERHEAD-",
+            }
+        )
         ta._generate_work_summary = MagicMock(return_value="Summary")
         ta.jira_client.get_my_active_issues.return_value = active_issues
         ta.jira_client.get_my_worklogs.return_value = []
@@ -2177,7 +2267,7 @@ class TestDryRun:
         cfg = _dev_config(overhead_hours=0)
         ta = _make_automation(cfg)
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_dry_run(ta, active)
 
@@ -2192,13 +2282,13 @@ class TestDryRun:
 
         existing = [
             {
-                'issue_key': 'PROJ-OLD',
-                'worklog_id': 'w-old',
-                'time_spent_seconds': 28800,
+                "issue_key": "PROJ-OLD",
+                "worklog_id": "w-old",
+                "time_spent_seconds": 28800,
             }
         ]
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_dry_run(ta, active)
         ta.jira_client.get_my_worklogs.return_value = existing
@@ -2212,7 +2302,7 @@ class TestDryRun:
         cfg = _dev_config(overhead_hours=0)
         ta = _make_automation(cfg)
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_dry_run(ta, active)
 
@@ -2225,7 +2315,7 @@ class TestDryRun:
         cfg = _dev_config(overhead_hours=0)
         ta = _make_automation(cfg)
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_dry_run(ta, active)
 
@@ -2239,7 +2329,7 @@ class TestDryRun:
         cfg = _dev_config(overhead_hours=0)
         ta = _make_automation(cfg)
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_dry_run(ta, active)
 
@@ -2252,13 +2342,11 @@ class TestDryRun:
 
     def test_dry_run_cli_flag(self):
         """--dry-run is parsed by argparse correctly."""
-        import argparse
+
         from tempo_automation import main
 
-        with patch('sys.argv', ['prog', '--dry-run']):
-            with patch(
-                'tempo_automation.TempoAutomation'
-            ) as MockTA:
+        with patch("sys.argv", ["prog", "--dry-run"]):
+            with patch("tempo_automation.TempoAutomation") as MockTA:
                 instance = MagicMock()
                 MockTA.return_value = instance
                 instance.sync_daily = MagicMock()
@@ -2275,6 +2363,7 @@ class TestDryRun:
 # 2F. Progress Indication Tests
 # ===========================================================================
 
+
 class TestProgressIndication:
     """Tests for progress counter output in sync operations."""
 
@@ -2282,9 +2371,11 @@ class TestProgressIndication:
         """Common setup for sync tests."""
         ta._is_overhead_configured = MagicMock(return_value=False)
         ta._check_overhead_pi_current = MagicMock(return_value=True)
-        ta._get_overhead_config = MagicMock(return_value={
-            'project_prefix': 'OVERHEAD-',
-        })
+        ta._get_overhead_config = MagicMock(
+            return_value={
+                "project_prefix": "OVERHEAD-",
+            }
+        )
         ta._generate_work_summary = MagicMock(return_value="Summary")
         ta.jira_client.get_my_active_issues.return_value = active_issues
         ta.jira_client.get_my_worklogs.return_value = existing or []
@@ -2296,24 +2387,26 @@ class TestProgressIndication:
         cfg = _dev_config(overhead_hours=0)
         ta = _make_automation(cfg)
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
-            {'issue_key': 'PROJ-2', 'issue_summary': 'Task 2'},
-            {'issue_key': 'PROJ-3', 'issue_summary': 'Task 3'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
+            {"issue_key": "PROJ-2", "issue_summary": "Task 2"},
+            {"issue_key": "PROJ-3", "issue_summary": "Task 3"},
         ]
         self._setup_sync(ta, active)
         # Parallel path returns ordered results
-        ta._create_worklogs_parallel = MagicMock(return_value=(
-            [
-                {
-                    'issue_key': f'PROJ-{i}',
-                    'issue_summary': f'Task {i}',
-                    'time_spent_seconds': 9600,
-                    'worklog_id': f'wl-{i}',
-                }
-                for i in range(1, 4)
-            ],
-            False,
-        ))
+        ta._create_worklogs_parallel = MagicMock(
+            return_value=(
+                [
+                    {
+                        "issue_key": f"PROJ-{i}",
+                        "issue_summary": f"Task {i}",
+                        "time_spent_seconds": 9600,
+                        "worklog_id": f"wl-{i}",
+                    }
+                    for i in range(1, 4)
+                ],
+                False,
+            )
+        )
 
         ta._auto_log_jira_worklogs("2026-02-10")
 
@@ -2327,7 +2420,7 @@ class TestProgressIndication:
         cfg = _dev_config(overhead_hours=0)
         ta = _make_automation(cfg)
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
         ]
         self._setup_sync(ta, active)
 
@@ -2341,12 +2434,14 @@ class TestProgressIndication:
         cfg = _dev_config()
         ta = _make_automation(cfg)
 
-        ta._check_day_hours = MagicMock(return_value={
-            "existing_hours": 8.0,
-            "gap_hours": 0.0,
-            "worklogs": [],
-            "existing_keys": set(),
-        })
+        ta._check_day_hours = MagicMock(
+            return_value={
+                "existing_hours": 8.0,
+                "gap_hours": 0.0,
+                "worklogs": [],
+                "existing_keys": set(),
+            }
+        )
         ta._backfill_day = MagicMock()
 
         with patch("tempo_automation.date") as mock_date:
@@ -2380,6 +2475,7 @@ class TestProgressIndication:
 # ===========================================================================
 # 2G. Backfill, Weights, Approval Tests
 # ===========================================================================
+
 
 class TestDateRangeBackfill:
     """Tests for TempoAutomation.backfill_range()."""
@@ -2465,9 +2561,11 @@ class TestWeightedDistribution:
         """Setup for weighted distribution tests."""
         ta._is_overhead_configured = MagicMock(return_value=False)
         ta._check_overhead_pi_current = MagicMock(return_value=True)
-        ta._get_overhead_config = MagicMock(return_value={
-            'project_prefix': 'OVERHEAD-',
-        })
+        ta._get_overhead_config = MagicMock(
+            return_value={
+                "project_prefix": "OVERHEAD-",
+            }
+        )
         ta._generate_work_summary = MagicMock(return_value="Summary")
         ta.jira_client.get_my_active_issues.return_value = active
         ta.jira_client.get_my_worklogs.return_value = []
@@ -2475,7 +2573,7 @@ class TestWeightedDistribution:
         ta.jira_client.create_worklog.return_value = "wl-id"
 
         if weights:
-            ta.config['schedule']['distribution_weights'] = weights
+            ta.config["schedule"]["distribution_weights"] = weights
 
     def test_weights_applied(self):
         """Weights 3:1 for 2 tickets -> 6h and 2h on 8h day."""
@@ -2483,27 +2581,24 @@ class TestWeightedDistribution:
         ta = _make_automation(cfg)
 
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Heavy task'},
-            {'issue_key': 'PROJ-2', 'issue_summary': 'Light task'},
+            {"issue_key": "PROJ-1", "issue_summary": "Heavy task"},
+            {"issue_key": "PROJ-2", "issue_summary": "Light task"},
         ]
-        weights = {'PROJ-1': 3.0, 'PROJ-2': 1.0}
+        weights = {"PROJ-1": 3.0, "PROJ-2": 1.0}
         self._setup_weighted(ta, active, weights)
 
         # Use _create_worklogs_parallel mock to capture allocations
-        original_parallel = None
         captured_allocations = []
 
         def mock_parallel(allocations, target_date, num_tickets):
             for issue, secs in allocations:
-                captured_allocations.append(
-                    (issue['issue_key'], secs)
-                )
+                captured_allocations.append((issue["issue_key"], secs))
             created = [
                 {
-                    'issue_key': issue['issue_key'],
-                    'issue_summary': issue['issue_summary'],
-                    'time_spent_seconds': secs,
-                    'worklog_id': f'wl-{issue["issue_key"]}',
+                    "issue_key": issue["issue_key"],
+                    "issue_summary": issue["issue_summary"],
+                    "time_spent_seconds": secs,
+                    "worklog_id": f"wl-{issue['issue_key']}",
                 }
                 for issue, secs in allocations
             ]
@@ -2511,7 +2606,7 @@ class TestWeightedDistribution:
 
         ta._create_worklogs_parallel = mock_parallel
 
-        result = ta._auto_log_jira_worklogs("2026-02-10")
+        ta._auto_log_jira_worklogs("2026-02-10")
 
         # 3:1 ratio on 8h (28800s): PROJ-1 gets ~21600 (6h),
         # PROJ-2 gets remainder = 7200 (2h)
@@ -2519,7 +2614,7 @@ class TestWeightedDistribution:
         proj1_secs = captured_allocations[0][1]
         proj2_secs = captured_allocations[1][1]
         assert proj1_secs == 21600  # 6h
-        assert proj2_secs == 7200   # 2h
+        assert proj2_secs == 7200  # 2h
 
     def test_weights_equal_when_unconfigured(self):
         """No weights -> equal split."""
@@ -2527,8 +2622,8 @@ class TestWeightedDistribution:
         ta = _make_automation(cfg)
 
         active = [
-            {'issue_key': 'PROJ-1', 'issue_summary': 'Task 1'},
-            {'issue_key': 'PROJ-2', 'issue_summary': 'Task 2'},
+            {"issue_key": "PROJ-1", "issue_summary": "Task 1"},
+            {"issue_key": "PROJ-2", "issue_summary": "Task 2"},
         ]
         self._setup_weighted(ta, active)
 
@@ -2536,15 +2631,13 @@ class TestWeightedDistribution:
 
         def mock_parallel(allocations, target_date, num_tickets):
             for issue, secs in allocations:
-                captured_allocations.append(
-                    (issue['issue_key'], secs)
-                )
+                captured_allocations.append((issue["issue_key"], secs))
             created = [
                 {
-                    'issue_key': issue['issue_key'],
-                    'issue_summary': issue['issue_summary'],
-                    'time_spent_seconds': secs,
-                    'worklog_id': f'wl-{issue["issue_key"]}',
+                    "issue_key": issue["issue_key"],
+                    "issue_summary": issue["issue_summary"],
+                    "time_spent_seconds": secs,
+                    "worklog_id": f"wl-{issue['issue_key']}",
                 }
                 for issue, secs in allocations
             ]
@@ -2552,7 +2645,7 @@ class TestWeightedDistribution:
 
         ta._create_worklogs_parallel = mock_parallel
 
-        result = ta._auto_log_jira_worklogs("2026-02-10")
+        ta._auto_log_jira_worklogs("2026-02-10")
 
         # Equal: 28800 / 2 = 14400 each (4h)
         assert len(captured_allocations) == 2
@@ -2572,13 +2665,13 @@ class TestApprovalStatus:
 
         ta.tempo_client.get_timesheet_periods.return_value = [
             {
-                'status': 'OPEN',
-                'dateFrom': '2026-02-01',
-                'dateTo': '2026-02-28',
+                "status": "OPEN",
+                "dateFrom": "2026-02-01",
+                "dateTo": "2026-02-28",
             }
         ]
 
-        ta.check_approval_status('2026-02')
+        ta.check_approval_status("2026-02")
 
         captured = capsys.readouterr()
         assert "OPEN (not submitted)" in captured.out
@@ -2592,17 +2685,189 @@ class TestApprovalStatus:
 
         ta.tempo_client.get_timesheet_periods.return_value = [
             {
-                'status': 'WAITING_FOR_APPROVAL',
-                'dateFrom': '2026-03-01',
-                'dateTo': '2026-03-31',
-                'reviewer': {
-                    'displayName': 'Jane Manager'
-                },
+                "status": "WAITING_FOR_APPROVAL",
+                "dateFrom": "2026-03-01",
+                "dateTo": "2026-03-31",
+                "reviewer": {"displayName": "Jane Manager"},
             }
         ]
 
-        ta.check_approval_status('2026-03')
+        ta.check_approval_status("2026-03")
 
         captured = capsys.readouterr()
         assert "Awaiting approval" in captured.out
         assert "Jane Manager" in captured.out
+
+    def test_approval_status_dict_status(self, capsys):
+        """API returning status as dict {"key": "OPEN"} should be handled."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+
+        ta.tempo_client.get_timesheet_periods.return_value = [
+            {
+                "status": {"key": "OPEN"},
+                "period": {"from": "2026-03-01", "to": "2026-03-31"},
+            }
+        ]
+
+        ta.check_approval_status("2026-03")
+
+        captured = capsys.readouterr()
+        assert "OPEN (not submitted)" in captured.out
+        assert "2026-03-01" in captured.out
+        assert "2026-03-31" in captured.out
+
+    def test_approval_status_nested_period_dates(self, capsys):
+        """Period dates nested under 'period' key should be extracted."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+
+        ta.tempo_client.get_timesheet_periods.return_value = [
+            {
+                "status": {"key": "APPROVED"},
+                "period": {"from": "2026-02-01", "to": "2026-02-28"},
+            }
+        ]
+
+        ta.check_approval_status("2026-02")
+
+        captured = capsys.readouterr()
+        assert "APPROVED" in captured.out
+        assert "2026-02-01" in captured.out
+
+
+# ===========================================================================
+# Forge migration resilience
+# ===========================================================================
+
+
+class TestForgeSyncWait:
+    """Tests for TempoAutomation._forge_sync_wait()."""
+
+    def test_no_delay_by_default(self):
+        """With default config (no forge_sync_delay_seconds), no sleep."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+
+        import time
+
+        start = time.monotonic()
+        ta._forge_sync_wait()
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 0.1
+
+    def test_delay_when_configured(self):
+        """When forge_sync_delay_seconds is set, sleep is called."""
+        cfg = _dev_config()
+        cfg["tempo"] = {"api_token": "test", "forge_sync_delay_seconds": 5}
+        ta = _make_automation(cfg)
+
+        with patch("time.sleep") as mock_sleep:
+            ta._forge_sync_wait()
+            mock_sleep.assert_called_once_with(5)
+
+    def test_zero_delay_skips_sleep(self):
+        """forge_sync_delay_seconds=0 should not sleep."""
+        cfg = _dev_config()
+        cfg["tempo"] = {"api_token": "test", "forge_sync_delay_seconds": 0}
+        ta = _make_automation(cfg)
+
+        with patch("time.sleep") as mock_sleep:
+            ta._forge_sync_wait()
+            mock_sleep.assert_not_called()
+
+
+class TestCheckForgeConnectivity:
+    """Tests for TempoAutomation._check_forge_connectivity()."""
+
+    def test_no_warning_when_hosts_reachable(self, capsys):
+        """No output when all hosts are reachable."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+
+        with patch("socket.create_connection") as mock_conn:
+            mock_sock = MagicMock()
+            mock_conn.return_value = mock_sock
+            ta._check_forge_connectivity()
+
+        captured = capsys.readouterr()
+        assert "[!]" not in captured.out
+
+    def test_warning_when_host_unreachable(self, capsys):
+        """Should print warning when a host is unreachable."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+
+        with patch("socket.create_connection", side_effect=TimeoutError("timed out")):
+            ta._check_forge_connectivity()
+
+        captured = capsys.readouterr()
+        assert "[!]" in captured.out
+        assert "unreachable" in captured.out
+
+
+class TestCheckForge:
+    """Tests for TempoAutomation.check_forge()."""
+
+    def test_outputs_diagnostics(self, capsys):
+        """check_forge should print all 4 diagnostic sections."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+
+        ta.tempo_client.check_forge_status.return_value = {
+            "platform": "connect",
+            "headers": {"Server": "nginx"},
+            "latency_ms": 100,
+            "healthy": True,
+        }
+        ta.tempo_client.base_url = "https://api.tempo.io/4"
+        ta.tempo_client.session = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        ta.tempo_client.session.get.return_value = mock_resp
+
+        ta.jira_client.get_my_worklogs.return_value = []
+        ta.tempo_client.get_user_worklogs.return_value = []
+
+        with patch("socket.create_connection") as mock_conn:
+            mock_sock = MagicMock()
+            mock_conn.return_value = mock_sock
+            ta.check_forge()
+
+        captured = capsys.readouterr()
+        assert "FORGE MIGRATION DIAGNOSTICS" in captured.out
+        assert "[1/4]" in captured.out
+        assert "[2/4]" in captured.out
+        assert "[3/4]" in captured.out
+        assert "[4/4]" in captured.out
+        assert "CONNECT" in captured.out
+
+    def test_reports_forge_platform(self, capsys):
+        """When Forge detected, summary should say FORGE."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+
+        ta.tempo_client.check_forge_status.return_value = {
+            "platform": "forge",
+            "headers": {"X-Forge-App": "tempo"},
+            "latency_ms": 50,
+            "healthy": True,
+        }
+        ta.tempo_client.base_url = "https://api.tempo.io/4"
+        ta.tempo_client.session = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        ta.tempo_client.session.get.return_value = mock_resp
+
+        ta.jira_client.get_my_worklogs.return_value = []
+        ta.tempo_client.get_user_worklogs.return_value = []
+
+        with patch("socket.create_connection") as mock_conn:
+            mock_sock = MagicMock()
+            mock_conn.return_value = mock_sock
+            ta.check_forge()
+
+        captured = capsys.readouterr()
+        assert "FORGE" in captured.out
+        assert "regenerate" in captured.out
