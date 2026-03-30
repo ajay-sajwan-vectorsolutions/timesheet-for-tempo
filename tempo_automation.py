@@ -4698,10 +4698,17 @@ class TempoAutomation:
         }
 
         for period in periods:
-            status = period.get("status", "UNKNOWN")
+            # status may be a string or a dict {"key": "OPEN"}
+            raw_status = period.get("status", "UNKNOWN")
+            if isinstance(raw_status, dict):
+                status = raw_status.get("key", "UNKNOWN")
+            else:
+                status = raw_status
             display = status_map.get(status, status)
-            period_from = period.get("dateFrom", "?")
-            period_to = period.get("dateTo", "?")
+            # period dates may be top-level or nested under "period"
+            period_obj = period.get("period", period)
+            period_from = period_obj.get("from", period.get("dateFrom", "?"))
+            period_to = period_obj.get("to", period.get("dateTo", "?"))
             print(f"  Period: {period_from} to {period_to}")
             print(f"  Status: {display}")
             # Show reviewer if available
