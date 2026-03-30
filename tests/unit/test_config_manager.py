@@ -19,19 +19,19 @@ traffic is generated.
 
 import json
 import sys
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-import responses as responses_lib
 import requests
+import responses as responses_lib
 
-from tempo_automation import ConfigManager, CredentialManager, CONFIG_FILE
+from tempo_automation import ConfigManager, CredentialManager
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-TEMPO_USER_URL = "https://api.tempo.io/4/user"
+TEMPO_USER_URL = "https://api.tempo.io/4/user"  # legacy (unused)
+JIRA_MYSELF_URL = "https://test.atlassian.net/rest/api/3/myself"
 ACCOUNT_ID = "712020:test-uuid-1234"
 USER_EMAIL = "dev@example.com"
 
@@ -39,6 +39,7 @@ USER_EMAIL = "dev@example.com"
 # ===========================================================================
 # CredentialManager
 # ===========================================================================
+
 
 class TestCredentialManager:
     """Tests for the CredentialManager encryption/decryption utility."""
@@ -104,9 +105,7 @@ class TestCredentialManager:
         assert result == encrypted
 
     @pytest.mark.windows
-    @pytest.mark.skipif(
-        sys.platform != "win32", reason="DPAPI only available on Windows"
-    )
+    @pytest.mark.skipif(sys.platform != "win32", reason="DPAPI only available on Windows")
     def test_encrypt_decrypt_roundtrip_on_windows(self):
         """On Windows, encrypt then decrypt should return the original value."""
         original = "my-super-secret-api-token-12345"
@@ -121,9 +120,7 @@ class TestCredentialManager:
         assert decrypted == original
 
     @pytest.mark.windows
-    @pytest.mark.skipif(
-        sys.platform != "win32", reason="DPAPI only available on Windows"
-    )
+    @pytest.mark.skipif(sys.platform != "win32", reason="DPAPI only available on Windows")
     def test_encrypt_produces_enc_prefix_on_windows(self):
         """On Windows, encrypted output must start with 'ENC:'."""
         encrypted = CredentialManager.encrypt("test-value")
@@ -133,6 +130,7 @@ class TestCredentialManager:
 # ===========================================================================
 # ConfigManager.__init__ / load_config
 # ===========================================================================
+
 
 class TestConfigManagerInit:
     """Tests for ConfigManager construction and config loading."""
@@ -190,6 +188,7 @@ class TestConfigManagerInit:
 # ConfigManager.save_config
 # ===========================================================================
 
+
 class TestSaveConfig:
     """Tests for persisting configuration to disk."""
 
@@ -203,7 +202,7 @@ class TestSaveConfig:
         new_config["user"]["name"] = "Updated Name"
         cm.save_config(new_config)
 
-        with open(cfg_path, "r", encoding="utf-8") as f:
+        with open(cfg_path, encoding="utf-8") as f:
             saved = json.load(f)
         assert saved["user"]["name"] == "Updated Name"
 
@@ -218,7 +217,7 @@ class TestSaveConfig:
         cm.save_config(developer_config)
 
         assert new_path.exists()
-        with open(new_path, "r", encoding="utf-8") as f:
+        with open(new_path, encoding="utf-8") as f:
             saved = json.load(f)
         assert saved["user"]["email"] == developer_config["user"]["email"]
 
@@ -231,7 +230,7 @@ class TestSaveConfig:
         minimal_config = {"user": {"email": "new@test.com"}}
         cm.save_config(minimal_config)
 
-        with open(cfg_path, "r", encoding="utf-8") as f:
+        with open(cfg_path, encoding="utf-8") as f:
             saved = json.load(f)
         assert saved == minimal_config
         # Original keys should be gone
@@ -253,6 +252,7 @@ class TestSaveConfig:
 # ConfigManager.get_account_id
 # ===========================================================================
 
+
 class TestGetAccountId:
     """Tests for fetching the Tempo user account ID."""
 
@@ -261,7 +261,7 @@ class TestGetAccountId:
         """Successful API call returns the accountId field."""
         responses_lib.add(
             responses_lib.GET,
-            TEMPO_USER_URL,
+            JIRA_MYSELF_URL,
             json={"accountId": ACCOUNT_ID, "displayName": "Test User"},
             status=200,
         )
@@ -270,11 +270,11 @@ class TestGetAccountId:
         assert result == ACCOUNT_ID
 
     @responses_lib.activate
-    def test_uses_bearer_token_in_header(self, config_file, developer_config):
-        """The request should include the Bearer token from config."""
+    def test_uses_basic_auth_header(self, config_file, developer_config):
+        """The request should include Basic auth from Jira config."""
         responses_lib.add(
             responses_lib.GET,
-            TEMPO_USER_URL,
+            JIRA_MYSELF_URL,
             json={"accountId": ACCOUNT_ID},
             status=200,
         )
@@ -284,14 +284,14 @@ class TestGetAccountId:
         # Inspect the request that was made
         assert len(responses_lib.calls) == 1
         auth_header = responses_lib.calls[0].request.headers.get("Authorization")
-        assert auth_header == "Bearer tempo-test-token"
+        assert auth_header.startswith("Basic ")
 
     @responses_lib.activate
     def test_falls_back_to_email_when_no_account_id(self, config_file, developer_config):
         """When response lacks accountId, fall back to user email."""
         responses_lib.add(
             responses_lib.GET,
-            TEMPO_USER_URL,
+            JIRA_MYSELF_URL,
             json={"displayName": "Test User"},  # no accountId
             status=200,
         )
@@ -304,7 +304,7 @@ class TestGetAccountId:
         """On HTTP 401/403/500 the method should fall back to email."""
         responses_lib.add(
             responses_lib.GET,
-            TEMPO_USER_URL,
+            JIRA_MYSELF_URL,
             json={"error": "Unauthorized"},
             status=401,
         )
@@ -317,7 +317,7 @@ class TestGetAccountId:
         """On network failure (ConnectionError) fall back to email."""
         responses_lib.add(
             responses_lib.GET,
-            TEMPO_USER_URL,
+            JIRA_MYSELF_URL,
             body=requests.ConnectionError("Network unreachable"),
         )
         cm = ConfigManager(config_path=config_file)
@@ -329,7 +329,7 @@ class TestGetAccountId:
         """On request timeout, fall back to email."""
         responses_lib.add(
             responses_lib.GET,
-            TEMPO_USER_URL,
+            JIRA_MYSELF_URL,
             body=requests.Timeout("Request timed out"),
         )
         cm = ConfigManager(config_path=config_file)
@@ -340,6 +340,7 @@ class TestGetAccountId:
 # ===========================================================================
 # ConfigManager.setup_wizard
 # ===========================================================================
+
 
 class TestSetupWizard:
     """Tests for the interactive setup wizard."""
@@ -352,14 +353,14 @@ class TestSetupWizard:
     def _developer_inputs(self):
         """Input sequence for a developer setup flow."""
         return [
-            "dev@example.com",       # email
-            "1",                     # role: developer
-            "tempo-test-token",      # tempo token
-            "jira-test-token",       # jira token (developer only)
+            "dev@example.com",  # email
+            "1",  # role: developer
+            "tempo-test-token",  # tempo token
+            "jira-test-token",  # jira token (developer only)
             # name auto-populated from Jira /myself mock
-            "8",                     # daily hours
-            "1",                     # location: US
-            "no",                    # enable email: no
+            "8",  # daily hours
+            "1",  # location: US
+            "no",  # enable email: no
         ]
 
     def _register_jira_myself(self):
@@ -383,17 +384,17 @@ class TestSetupWizard:
     def _po_inputs(self):
         """Input sequence for a product owner setup flow."""
         return [
-            "po@example.com",        # email
-            "3",                     # role: product_owner
-            "tempo-po-token",        # tempo token
-            "Test PO",               # name
-            "8",                     # daily hours
-            "1",                     # location: US
-            "no",                    # enable email: no
-            "yes",                   # add activity?
+            "po@example.com",  # email
+            "3",  # role: product_owner
+            "tempo-po-token",  # tempo token
+            "Test PO",  # name
+            "8",  # daily hours
+            "1",  # location: US
+            "no",  # enable email: no
+            "yes",  # add activity?
             "Stakeholder Meetings",  # activity name
-            "3",                     # activity hours
-            "no",                    # add another? no
+            "3",  # activity hours
+            "no",  # add another? no
         ]
 
     @responses_lib.activate
@@ -452,7 +453,7 @@ class TestSetupWizard:
         cm.setup_wizard()
 
         assert cfg_path.exists()
-        with open(cfg_path, "r", encoding="utf-8") as f:
+        with open(cfg_path, encoding="utf-8") as f:
             saved = json.load(f)
         assert saved["user"]["email"] == "dev@example.com"
 
@@ -494,14 +495,14 @@ class TestSetupWizard:
         """Sales role wizard should work with manual activities."""
         self._register_tempo_user()
         inputs = [
-            "sales@example.com",    # email
-            "4",                    # role: sales
-            "tempo-sales-token",    # tempo token
-            "Test Sales",           # name
-            "8",                    # daily hours
-            "1",                    # location: US
-            "no",                   # enable email: no
-            "no",                   # add activity? no
+            "sales@example.com",  # email
+            "4",  # role: sales
+            "tempo-sales-token",  # tempo token
+            "Test Sales",  # name
+            "8",  # daily hours
+            "1",  # location: US
+            "no",  # enable email: no
+            "no",  # add activity? no
         ]
         mock_input.side_effect = inputs
         cfg_path = tmp_path / "config.json"
@@ -543,8 +544,14 @@ class TestSetupWizard:
         config = cm.setup_wizard()
 
         required_sections = [
-            "user", "jira", "tempo", "organization", "schedule",
-            "notifications", "manual_activities", "options",
+            "user",
+            "jira",
+            "tempo",
+            "organization",
+            "schedule",
+            "notifications",
+            "manual_activities",
+            "options",
         ]
         for section in required_sections:
             assert section in config, f"Missing section: {section}"
@@ -673,6 +680,7 @@ class TestSetupWizard:
 # ConfigManager._select_role
 # ===========================================================================
 
+
 class TestSelectRole:
     """Tests for the _select_role interactive helper."""
 
@@ -721,6 +729,7 @@ class TestSelectRole:
 # ===========================================================================
 # ConfigManager._select_location
 # ===========================================================================
+
 
 class TestSelectLocation:
     """Tests for the _select_location interactive helper."""
@@ -797,6 +806,7 @@ class TestSelectLocation:
 # ===========================================================================
 # ConfigManager.validate_config
 # ===========================================================================
+
 
 class TestConfigValidation:
     """Tests for _validate_config() called during config loading.
@@ -907,11 +917,11 @@ class TestConfigValidation:
         support for future config migrations.
         """
         import os
+
         template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "config_template.json"
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config_template.json"
         )
-        with open(template_path, "r", encoding="utf-8") as f:
+        with open(template_path, encoding="utf-8") as f:
             template = json.load(f)
 
         # config_version should be present in the template
