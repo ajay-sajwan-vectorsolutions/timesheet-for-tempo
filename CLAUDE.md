@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # Tempo Timesheet Automation
 
-**Version:** 4.0 | **Status:** Production | **Updated:** March 13, 2026
+**Version:** 4.0.1 | **Status:** Production | **Updated:** March 31, 2026
 **Owner:** Ajay Sajwan (ajay.sajwan-ctr@vectorsolutions.com, developer role)
 
 ---
@@ -22,8 +22,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Automates daily timesheet entry and monthly submission for a 200-person engineering team.
 Developers get Jira worklogs auto-distributed across active tickets; Tempo syncs from Jira.
 
-- **Main script:** `tempo_automation.py` (5,446 lines, 8 classes)
-- **Tray app:** `tray_app.py` (~1,458 lines, cross-platform: Windows + Mac)
+- **Main script:** `tempo_automation.py` (5,411 lines, 8 classes)
+- **Tray app:** `tray_app.py` (~1,857 lines, cross-platform: Windows + Mac)
 - **Installers:** `install.bat` (Windows), `install.sh` (Mac) -- 7 steps each
 - **Build script:** `build_dist.bat` -- generates 3 distribution zip types
 - **Python:** 3.7+ (Ajay: Python 3.14)
@@ -48,15 +48,15 @@ Developers get Jira worklogs auto-distributed across active tickets; Tempo syncs
 
 | Class | Lines | Purpose |
 |-------|-------|---------|
-| DualWriter | 55 | stdout + file dual output (--logfile) |
-| CredentialManager | 120-285 | DPAPI encrypt/decrypt for Windows |
-| ConfigManager | 285-822 | Config, setup wizard, location picker, get_account_id() |
-| ScheduleManager | 822-1566 | Holidays, PTO, overrides, is_working_day(), calendar, holiday cache |
-| JiraClient | ~1566 | Worklogs CRUD, active issues, historical JQL, ADF, get_myself_account_id(), account_id attr |
-| TempoClient | ~1984 | Worklogs, submit timesheet, get period, get_timesheet_periods() |
-| NotificationManager | ~2208 | SMTP email, Teams webhook, desktop toast (Win + Mac) |
-| TempoAutomation | ~2459 | Orchestration, sync, verify_week, backfill_range, overhead, monthly gap detection, shortfall fix, approval status |
-| CLI | ~5033-5341 | argparse with 22 arguments (added --backfill, --from-date, --to-date, --approval-status) |
+| DualWriter | 56 | stdout + file dual output (--logfile) |
+| CredentialManager | 136-284 | DPAPI encrypt/decrypt for Windows |
+| ConfigManager | 284-948 | Config, setup wizard, location picker, get_account_id() |
+| ScheduleManager | 948-1615 | Holidays, PTO, overrides, is_working_day(), calendar, holiday cache |
+| JiraClient | ~1615 | Worklogs CRUD, active issues, historical JQL, ADF, get_myself_account_id(), account_id attr |
+| TempoClient | ~2013 | Worklogs, submit timesheet (v4 API), get_approval_status, get_timesheet_periods(), reviewer lookup |
+| NotificationManager | ~2382 | SMTP email, Teams webhook, desktop toast (Win + Mac) |
+| TempoAutomation | ~2604 | Orchestration, sync, verify_week, backfill_range, overhead, monthly gap detection, shortfall fix, approval status |
+| CLI | ~5114 | argparse with 22 arguments (added --backfill, --from-date, --to-date, --approval-status) |
 
 ### Key Patterns
 - **Day priority:** working_days > pto > weekend > org_holidays > country_holidays > extra_holidays
@@ -181,11 +181,11 @@ pytest tests/ --cov=tempo_automation                 # Coverage report
 
 ## Current Status
 
-**Working:** Daily sync, idempotent overwrite (create-before-delete with rollback), smart descriptions, schedule guard (weekends/holidays/PTO), pre-sync health check (Jira + Tempo API validation), retry logic (TempoClient + JiraClient on 429/502/503/504), config schema validation, --dry-run preview mode, progress counters ([i/n] in sync/verify/monthly), --log-format json (structured logging), parallel worklog creation (ThreadPoolExecutor), weekly verify, monthly submit with per-day gap detection (blocks submission on shortfall), --view-monthly hours report (saves shortfall file on gaps), --fix-shortfall interactive fix, date-range backfill (--backfill --from-date --to-date), weighted time distribution (distribution_weights config), approval status tracking (--approval-status), holiday cache with ETag/Last-Modified and 24h TTL, Tempo as source of truth for hours (gap detection, verify-week, PTO idempotence, tray exit check), tray app with favicon (cross-platform: Windows + Mac), tray menu submenus (Configure, Log and Reports), user identity header in tray menu, dynamic Submit Timesheet/Fix Shortfall menu items with update_menu() refresh, cmd /k outer quotes, quiet console, welcome toast redesign, install.bat + install.sh, DPAPI encryption + keyring (Mac/Linux), --stop flag, auto-register autostart, tray auto-restart, overhead story support (5 cases), hybrid Jira+Tempo overhead detection, holiday overhead logging, email notifications default disabled, Mac support (osascript, LaunchAgent, fcntl, cron), build_dist.bat, early timesheet submission, CI/CD (GitHub Actions), ruff + pre-commit
+**Working:** Daily sync, idempotent overwrite (create-before-delete with rollback), smart descriptions, schedule guard (weekends/holidays/PTO), pre-sync health check (Jira + Tempo API validation), retry logic (TempoClient + JiraClient on 429/502/503/504), config schema validation, --dry-run preview mode, progress counters ([i/n] in sync/verify/monthly), --log-format json (structured logging), parallel worklog creation (ThreadPoolExecutor), weekly verify, monthly submit with per-day gap detection (blocks submission on shortfall), --view-monthly hours report (saves shortfall file on gaps), --fix-shortfall interactive fix, date-range backfill (--backfill --from-date --to-date), weighted time distribution (distribution_weights config), approval status tracking (--approval-status), holiday cache with ETag/Last-Modified and 24h TTL, Tempo as source of truth for hours (gap detection, verify-week, PTO idempotence, tray exit check), tray app with favicon (cross-platform: Windows + Mac), tray menu submenus (Configure, Log and Reports), user identity header in tray menu, dynamic Submit Timesheet/Fix Shortfall menu items with update_menu() refresh, cmd /k outer quotes, quiet console, welcome toast redesign, install.bat + install.sh, DPAPI encryption + keyring (Mac/Linux), --stop flag, auto-register autostart, tray auto-restart, overhead story support (5 cases), hybrid Jira+Tempo overhead detection, holiday overhead logging, email notifications default disabled, Mac support (osascript, LaunchAgent, fcntl, cron), build_dist.bat, early timesheet submission, CI/CD (GitHub Actions), ruff + pre-commit, Tempo API v4 submit with reviewer lookup and response body logging
 
 **TODO:**
 - [ ] Test --verify-week with live data
-- [ ] Test monthly submission (end of month)
+- [x] Test monthly submission (end of month) -- fixed submit endpoint, reviewer, response logging
 - [ ] Test PO/Sales roles
 - [ ] Teams webhook: uncomment call + add webhook URL
 - [ ] Test tray app on actual Mac hardware
@@ -205,7 +205,7 @@ pytest tests/ --cov=tempo_automation                 # Coverage report
 - [x] Approval status tracking (--approval-status)
 - [x] Holiday cache with ETag/Last-Modified TTL
 - [x] Parallel worklog creation (ThreadPoolExecutor)
-- [x] 500 tests total (385 -> 500), all passing, 71% coverage
+- [x] 528 tests total (385 -> 528), all passing, 71% coverage
 
 ### Version History
 | Version | Date | Changes |
@@ -224,6 +224,7 @@ pytest tests/ --cov=tempo_automation                 # Coverage report
 | v3.8.1 | Feb 23 | Tray UX: cmd /k fix, menu auto-refresh, quiet console, welcome toast redesign |
 | v3.9 | Feb 23 | Early timesheet submission when all remaining days are non-working |
 | v4.0 | Mar 13 | Data safety (create-before-delete, rollback, health check), retry logic (TempoClient), --dry-run, config validation, progress counters, JSON logging, CI/CD, ruff+pre-commit, cross-platform credentials (keyring), date-range backfill, weighted distribution, approval status, holiday cache with TTL, parallel worklog creation, 500 tests |
+| v4.0.1 | Mar 31 | Fix timesheet submission: correct Tempo API v4 endpoints (submit, approval status, reviewer lookup), response body error logging, 528 tests |
 
 ---
 
@@ -242,6 +243,8 @@ pytest tests/ --cov=tempo_automation                 # Coverage report
 - `tempo_automation.log` -- internal runtime logs
 - `daily-timesheet.log` -- execution output
 - 401 = expired/invalid API token
+- 400 on submit = check response body in log (e.g., "Reviewer is required", "Missing payload")
+- 404 on Tempo = may be Forge migration; check if API token needs regeneration
 - "No active tickets" = no IN DEVELOPMENT / CODE REVIEW tickets assigned
 - UnicodeEncodeError = Unicode in print() -- replace with ASCII
 

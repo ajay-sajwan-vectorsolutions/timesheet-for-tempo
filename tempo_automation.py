@@ -2137,70 +2137,139 @@ class TempoClient:
             logger.error(f"Error creating Tempo worklog: {e}{hint}")
             return False
 
-    def submit_timesheet(self, period_key: str = None) -> bool:
-        """
-        Submit timesheet for approval.
+    def get_approval_status(self, date_from: str, date_to: str) -> dict | None:
+        """Fetch approval status for a single period.
+
+        Returns the full TimesheetApproval object including ``actions``
+        and ``reviewer``, or ``None`` on failure.
 
         Args:
-            period_key: Timesheet period key (auto-detects if None)
-
-        Returns:
-            True if successful, False otherwise
+            date_from: Period start date YYYY-MM-DD.
+            date_to:   Period end date YYYY-MM-DD.
         """
         try:
-            # If no period specified, use current period
-            if not period_key:
-                period_key = self._get_current_period()
+            url = f"{self.base_url}/timesheet-approvals/user/{self.account_id}"
+            params = {"from": date_from, "to": date_to}
 
-            url = f"{self.base_url}/timesheet-approvals/submit"
-
-            data = {"worker": {"accountId": self.account_id}, "period": {"key": period_key}}
-
-            response = self.session.post(url, json=data, timeout=30)
+            response = self.session.get(url, params=params, timeout=30)
             response.raise_for_status()
 
-            logger.info(f"Successfully submitted timesheet for period: {period_key}")
-            return True
+            data = response.json()
+            # API may return a list wrapper; take first result
+            if isinstance(data, dict) and "results" in data:
+                results = data["results"]
+                return results[0] if results else None
+            if isinstance(data, list):
+                return data[0] if data else None
+            return data
 
         except requests.exceptions.RequestException as e:
             hint = self._forge_error_hint(e)
-            logger.error(f"Error submitting timesheet: {e}{hint}")
-            return False
+            logger.error(f"Error fetching approval status: {e}{hint}")
+            return None
 
-    def _get_current_period(self) -> str:
-        """Get current timesheet period key."""
+    def _get_reviewer_account_id(self) -> str | None:
+        """Fetch the first available timesheet reviewer for this user.
+
+        Calls ``GET /timesheet-approvals/user/{accountId}/reviewers``.
+
+        Returns:
+            Reviewer account ID string, or None if unavailable.
+        """
         try:
-            url = f"{self.base_url}/periods"
-
-            # Get current date to find matching period
-            today = date.today().strftime("%Y-%m-%d")
-
-            response = self.session.get(url, params={"from": today, "to": today}, timeout=30)
+            url = f"{self.base_url}/timesheet-approvals/user/{self.account_id}/reviewers"
+            response = self.session.get(url, timeout=30)
             response.raise_for_status()
 
-            periods = response.json().get("results", [])
+            data = response.json()
+            results = data.get("results", [])
+            if results:
+                reviewer_id = results[0].get("accountId")
+                logger.info(f"Found timesheet reviewer: {reviewer_id}")
+                return reviewer_id
 
-            # Find period containing today's date
-            for period in periods:
-                period_from = period.get("dateFrom")
-                period_to = period.get("dateTo")
-
-                if period_from and period_to:
-                    if period_from <= today <= period_to:
-                        period_key = period.get("key")
-                        logger.info(f"Found current period: {period_key}")
-                        return period_key
-
-            # Fallback to simplified format
-            logger.warning("No period found in API, using simplified format")
-            today_obj = date.today()
-            return f"{today_obj.year}-{today_obj.month:02d}"
+            logger.warning("No timesheet reviewers found")
+            return None
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching Tempo period: {e}")
-            # Fallback to simplified format
-            today_obj = date.today()
-            return f"{today_obj.year}-{today_obj.month:02d}"
+            hint = self._forge_error_hint(e)
+            logger.error(f"Error fetching reviewers: {e}{hint}")
+            return None
+
+    def submit_timesheet(self, date_from: str = None, date_to: str = None) -> bool:
+        """Submit timesheet for approval.
+
+        Fetches the current approval status to obtain the submit
+        action URL and reviewer, then POSTs to that URL.
+
+        Args:
+            date_from: Period start date YYYY-MM-DD (defaults to 1st of current month).
+            date_to:   Period end date YYYY-MM-DD (defaults to last day of current month).
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        try:
+            if not date_from or not date_to:
+                today = date.today()
+                last_day = calendar.monthrange(today.year, today.month)[1]
+                date_from = today.replace(day=1).strftime("%Y-%m-%d")
+                date_to = today.replace(day=last_day).strftime("%Y-%m-%d")
+
+            # Step 1: Fetch approval status to get submit URL and reviewer
+            approval = self.get_approval_status(date_from, date_to)
+            if not approval:
+                logger.error("Cannot submit: failed to fetch approval status")
+                return False
+
+            # Step 2: Extract submit action URL
+            actions = approval.get("actions", {})
+            submit_action = actions.get("submit", {})
+            submit_url = submit_action.get("self")
+
+            if not submit_url:
+                raw_status = approval.get("status", {})
+                status_key = (
+                    raw_status.get("key", "unknown") if isinstance(raw_status, dict) else raw_status
+                )
+                logger.error(
+                    f"No submit action for {date_from} to {date_to}. "
+                    f"Status: {status_key}. "
+                    f"Available actions: {list(actions.keys())}"
+                )
+                return False
+
+            # Step 3: Build request body with reviewer
+            # Try reviewer from approval status first, then fetch from
+            # the dedicated reviewers endpoint.
+            reviewer = approval.get("reviewer", {})
+            reviewer_id = reviewer.get("accountId") if reviewer else None
+
+            if not reviewer_id:
+                reviewer_id = self._get_reviewer_account_id()
+
+            body = {"reviewerAccountId": reviewer_id} if reviewer_id else {}
+
+            # Step 4: Submit
+            response = self.session.post(submit_url, json=body, timeout=30)
+            response.raise_for_status()
+
+            logger.info(f"Successfully submitted timesheet for {date_from} to {date_to}")
+            return True
+
+        except requests.exceptions.RequestException as e:
+            response_body = ""
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    response_body = e.response.text
+                except Exception:
+                    response_body = "(unable to read response body)"
+            hint = self._forge_error_hint(e)
+            logger.error(
+                f"Error submitting timesheet: {e}{hint}"
+                f"{f' | Response: {response_body}' if response_body else ''}"
+            )
+            return False
 
     def check_forge_status(self) -> dict:
         """Check if Tempo instance has migrated to Atlassian Forge.
@@ -4093,7 +4162,7 @@ class TempoAutomation:
             return
 
         print(f"Submitting timesheet for {period}...")
-        success = self.tempo_client.submit_timesheet(period)
+        success = self.tempo_client.submit_timesheet()
 
         if success:
             print(f"[OK] Timesheet submitted successfully for {period}")

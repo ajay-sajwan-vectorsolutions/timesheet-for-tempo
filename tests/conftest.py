@@ -8,7 +8,7 @@ used across all test modules.
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -25,6 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # ---------------------------------------------------------------------------
 # Config builders
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def developer_config():
@@ -119,9 +120,7 @@ def po_config(developer_config):
 def config_file(tmp_path, developer_config):
     """Write developer config to temp file, return Path."""
     config_path = tmp_path / "config.json"
-    config_path.write_text(
-        json.dumps(developer_config, indent=2), encoding="utf-8"
-    )
+    config_path.write_text(json.dumps(developer_config, indent=2), encoding="utf-8")
     return config_path
 
 
@@ -129,13 +128,14 @@ def config_file(tmp_path, developer_config):
 def org_holidays_data():
     """Org holidays fixture data (parsed JSON)."""
     path = FIXTURES_DIR / "org_holidays.json"
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
 # ---------------------------------------------------------------------------
 # API response factories
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def jira_myself_response():
@@ -188,9 +188,7 @@ def jira_worklogs_response():
                     "content": [
                         {
                             "type": "paragraph",
-                            "content": [
-                                {"type": "text", "text": "Worked on auth module"}
-                            ],
+                            "content": [{"type": "text", "text": "Worked on auth module"}],
                         }
                     ],
                 },
@@ -294,32 +292,16 @@ def tempo_worklogs_response():
     }
 
 
-@pytest.fixture
-def tempo_periods_response():
-    """GET /timesheet-approvals/periods response."""
-    return {
-        "results": [
-            {
-                "key": "2026-02",
-                "dateFrom": "2026-02-01",
-                "dateTo": "2026-02-28",
-                "status": "OPEN",
-            }
-        ]
-    }
-
-
 # ---------------------------------------------------------------------------
 # Module-level patching helpers
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def patch_org_holidays_file(tmp_path, org_holidays_data):
     """Write org_holidays.json to tmp_path and patch ORG_HOLIDAYS_FILE."""
     hol_path = tmp_path / "org_holidays.json"
-    hol_path.write_text(
-        json.dumps(org_holidays_data, indent=2), encoding="utf-8"
-    )
+    hol_path.write_text(json.dumps(org_holidays_data, indent=2), encoding="utf-8")
     with patch("tempo_automation.ORG_HOLIDAYS_FILE", hol_path):
         yield hol_path
 

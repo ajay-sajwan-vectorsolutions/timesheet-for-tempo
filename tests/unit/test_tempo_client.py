@@ -5,8 +5,7 @@ Coverage:
   - Constructor / __init__ (Bearer token, account_id parameter, email fallback)
   - get_user_worklogs (success, correct URL/params, HTTP error)
   - create_worklog (success, request body fields, HTTP error, network error)
-  - submit_timesheet (success with explicit period key, body structure, error)
-  - _get_current_period (matching period, no-match fallback, exception fallback)
+  - submit_timesheet (explicit dates, auto-detect month, error, URL format)
 
 All HTTP calls are intercepted by the `responses` library so no real network
 traffic is generated.  `freezegun` is used to pin date.today() for the period
@@ -26,11 +25,11 @@ from tempo_automation import TempoClient
 # ---------------------------------------------------------------------------
 TEMPO_BASE_URL = "https://api.tempo.io/4"
 WORKLOGS_URL = f"{TEMPO_BASE_URL}/worklogs"
-PERIODS_URL = f"{TEMPO_BASE_URL}/periods"
-SUBMIT_URL = f"{TEMPO_BASE_URL}/timesheet-approvals/submit"
 WORK_ATTRIBUTES_URL = f"{TEMPO_BASE_URL}/work-attributes"
 ACCOUNT_ID = "712020:test-uuid-1234"
 USER_EMAIL = "dev@example.com"
+APPROVAL_URL = f"{TEMPO_BASE_URL}/timesheet-approvals/user/{ACCOUNT_ID}"
+SUBMIT_URL = f"{APPROVAL_URL}/submit"
 
 
 # ---------------------------------------------------------------------------
@@ -265,14 +264,83 @@ class TestCreateWorklog:
 # ===========================================================================
 
 
-class TestSubmitTimesheet:
+def _approval_response(
+    status_key: str = "OPEN",
+    has_submit: bool = True,
+    reviewer_id: str = None,
+) -> dict:
+    """Build a mock TimesheetApproval response."""
+    actions = {}
+    if has_submit:
+        actions["submit"] = {"self": SUBMIT_URL}
+    result = {
+        "status": {"key": status_key},
+        "period": {"from": "2026-02-01", "to": "2026-02-28"},
+        "actions": actions,
+        "requiredSeconds": 633600,
+        "timeSpentSeconds": 633600,
+    }
+    if reviewer_id:
+        result["reviewer"] = {
+            "accountId": reviewer_id,
+            "displayName": "Reviewer",
+        }
+    return result
+
+
+class TestGetApprovalStatus:
+    """Tests for TempoClient.get_approval_status()."""
+
     @responses_lib.activate
-    def test_returns_true_and_body_has_worker_and_period(
-        self, developer_config, tempo_periods_response
-    ):
-        """Successful submit must return True and send the correct JSON body."""
+    def test_returns_approval_dict(self, developer_config):
+        """Successful call returns the approval dict."""
         client = _make_client(developer_config)
-        # The submit call uses an explicit period key so no periods lookup needed.
+        body = _approval_response()
+        responses_lib.add(responses_lib.GET, APPROVAL_URL, json=body, status=200)
+
+        result = client.get_approval_status("2026-02-01", "2026-02-28")
+
+        assert result is not None
+        assert result["status"]["key"] == "OPEN"
+        assert "submit" in result["actions"]
+
+    @responses_lib.activate
+    def test_unwraps_results_list(self, developer_config):
+        """API returning {results: [...]} should unwrap to first item."""
+        client = _make_client(developer_config)
+        body = {"results": [_approval_response()]}
+        responses_lib.add(responses_lib.GET, APPROVAL_URL, json=body, status=200)
+
+        result = client.get_approval_status("2026-02-01", "2026-02-28")
+
+        assert result is not None
+        assert result["status"]["key"] == "OPEN"
+
+    @responses_lib.activate
+    def test_returns_none_on_error(self, developer_config):
+        """HTTP error returns None."""
+        client = _make_client(developer_config)
+        responses_lib.add(responses_lib.GET, APPROVAL_URL, status=404)
+
+        result = client.get_approval_status("2026-02-01", "2026-02-28")
+
+        assert result is None
+
+
+class TestSubmitTimesheet:
+    """Tests for TempoClient.submit_timesheet()."""
+
+    @responses_lib.activate
+    @freeze_time("2026-02-15")
+    def test_returns_true_on_success(self, developer_config):
+        """Successful submit returns True."""
+        client = _make_client(developer_config)
+        responses_lib.add(
+            responses_lib.GET,
+            APPROVAL_URL,
+            json=_approval_response(),
+            status=200,
+        )
         responses_lib.add(
             responses_lib.POST,
             SUBMIT_URL,
@@ -280,40 +348,21 @@ class TestSubmitTimesheet:
             status=200,
         )
 
-        result = client.submit_timesheet(period_key="2026-02")
+        result = client.submit_timesheet(date_from="2026-02-01", date_to="2026-02-28")
 
         assert result is True
-        sent_body = json.loads(responses_lib.calls[-1].request.body)
-        assert sent_body["worker"]["accountId"] == ACCOUNT_ID
-        assert sent_body["period"]["key"] == "2026-02"
 
     @responses_lib.activate
-    def test_returns_false_on_http_error(self, developer_config):
-        """A 4xx response on the submit endpoint must return False."""
+    @freeze_time("2026-02-15")
+    def test_auto_detects_current_month_dates(self, developer_config):
+        """When no dates given, uses first/last day of current month."""
         client = _make_client(developer_config)
-        responses_lib.add(
-            responses_lib.POST,
-            SUBMIT_URL,
-            status=400,
-        )
-
-        result = client.submit_timesheet(period_key="2026-02")
-
-        assert result is False
-
-    @responses_lib.activate
-    @freeze_time("2026-02-22")
-    def test_auto_detects_period_when_not_provided(self, developer_config, tempo_periods_response):
-        """When period_key is None the client must call _get_current_period first."""
-        client = _make_client(developer_config)
-        # Register the periods lookup
         responses_lib.add(
             responses_lib.GET,
-            PERIODS_URL,
-            json=tempo_periods_response,
+            APPROVAL_URL,
+            json=_approval_response(),
             status=200,
         )
-        # Register the submit call
         responses_lib.add(
             responses_lib.POST,
             SUBMIT_URL,
@@ -324,137 +373,105 @@ class TestSubmitTimesheet:
         result = client.submit_timesheet()
 
         assert result is True
-        # The submit call must use the period found from the periods API
-        sent_body = json.loads(responses_lib.calls[-1].request.body)
-        assert sent_body["period"]["key"] == "2026-02"
+        # GET call should use Feb dates
+        get_req = responses_lib.calls[0].request
+        assert "from=2026-02-01" in get_req.url
+        assert "to=2026-02-28" in get_req.url
 
-
-# ===========================================================================
-# _get_current_period
-# ===========================================================================
-
-
-class TestGetCurrentPeriod:
     @responses_lib.activate
-    @freeze_time("2026-02-22")
-    def test_returns_key_of_matching_period(self, developer_config, tempo_periods_response):
-        """Period whose dateFrom <= today <= dateTo must be returned."""
+    @freeze_time("2026-02-15")
+    def test_passes_reviewer_account_id(self, developer_config):
+        """Reviewer ID from approval status is sent in submit body."""
         client = _make_client(developer_config)
         responses_lib.add(
             responses_lib.GET,
-            PERIODS_URL,
-            json=tempo_periods_response,
+            APPROVAL_URL,
+            json=_approval_response(reviewer_id="reviewer-123"),
+            status=200,
+        )
+        responses_lib.add(
+            responses_lib.POST,
+            SUBMIT_URL,
+            json={"message": "Submitted"},
             status=200,
         )
 
-        result = client._get_current_period()
+        result = client.submit_timesheet()
 
-        assert result == "2026-02"
+        assert result is True
+        post_req = responses_lib.calls[-1].request
+        sent_body = json.loads(post_req.body)
+        assert sent_body["reviewerAccountId"] == "reviewer-123"
 
     @responses_lib.activate
-    @freeze_time("2026-03-15")
-    def test_returns_fallback_format_when_no_period_matches(self, developer_config):
-        """When today falls outside all periods, return 'YYYY-MM' fallback."""
+    @freeze_time("2026-02-15")
+    def test_empty_body_when_no_reviewer(self, developer_config):
+        """When no reviewer, POST body should be empty JSON object."""
         client = _make_client(developer_config)
-        # Return a period that does NOT contain March 15
         responses_lib.add(
             responses_lib.GET,
-            PERIODS_URL,
-            json={
-                "results": [
-                    {
-                        "key": "2026-02",
-                        "dateFrom": "2026-02-01",
-                        "dateTo": "2026-02-28",
-                        "status": "OPEN",
-                    }
-                ]
-            },
+            APPROVAL_URL,
+            json=_approval_response(),
+            status=200,
+        )
+        responses_lib.add(
+            responses_lib.POST,
+            SUBMIT_URL,
+            json={"message": "Submitted"},
             status=200,
         )
 
-        result = client._get_current_period()
+        client.submit_timesheet()
 
-        # Fallback must be "2026-03" since today is frozen to March 2026
-        assert result == "2026-03"
+        post_req = responses_lib.calls[-1].request
+        sent_body = json.loads(post_req.body)
+        assert sent_body == {}
 
     @responses_lib.activate
-    @freeze_time("2026-04-05")
-    def test_returns_fallback_format_on_http_exception(self, developer_config):
-        """Any HTTP error must be caught and the YYYY-MM fallback returned."""
+    @freeze_time("2026-02-15")
+    def test_returns_false_when_no_submit_action(self, developer_config):
+        """If approval has no submit action, returns False without POST."""
         client = _make_client(developer_config)
         responses_lib.add(
             responses_lib.GET,
-            PERIODS_URL,
-            status=500,
-        )
-
-        result = client._get_current_period()
-
-        assert result == "2026-04"
-
-    @responses_lib.activate
-    @freeze_time("2026-05-10")
-    def test_returns_fallback_format_on_network_error(self, developer_config):
-        """A ConnectionError must be caught and the YYYY-MM fallback returned."""
-        client = _make_client(developer_config)
-        responses_lib.add(
-            responses_lib.GET,
-            PERIODS_URL,
-            body=requests.exceptions.ConnectionError("no route to host"),
-        )
-
-        result = client._get_current_period()
-
-        assert result == "2026-05"
-
-    @responses_lib.activate
-    @freeze_time("2026-02-22")
-    def test_returns_first_matching_period_when_multiple_exist(self, developer_config):
-        """If multiple periods span today, the first match is returned."""
-        client = _make_client(developer_config)
-        responses_lib.add(
-            responses_lib.GET,
-            PERIODS_URL,
-            json={
-                "results": [
-                    {
-                        "key": "2026-02",
-                        "dateFrom": "2026-02-01",
-                        "dateTo": "2026-02-28",
-                        "status": "OPEN",
-                    },
-                    {
-                        "key": "2026-Q1",
-                        "dateFrom": "2026-01-01",
-                        "dateTo": "2026-03-31",
-                        "status": "OPEN",
-                    },
-                ]
-            },
+            APPROVAL_URL,
+            json=_approval_response(status_key="WAITING_FOR_APPROVAL", has_submit=False),
             status=200,
         )
 
-        result = client._get_current_period()
+        result = client.submit_timesheet()
 
-        # First period in the list that contains today wins
-        assert result == "2026-02"
+        assert result is False
+        # Only the GET call should have been made
+        assert len(responses_lib.calls) == 1
 
     @responses_lib.activate
-    @freeze_time("2026-02-22")
-    def test_returns_fallback_when_results_empty(self, developer_config):
-        """Empty results list (no periods configured) returns YYYY-MM fallback."""
+    @freeze_time("2026-02-15")
+    def test_returns_false_on_post_error(self, developer_config):
+        """A 4xx response on the submit POST returns False."""
         client = _make_client(developer_config)
         responses_lib.add(
             responses_lib.GET,
-            PERIODS_URL,
-            json={"results": []},
+            APPROVAL_URL,
+            json=_approval_response(),
             status=200,
         )
+        responses_lib.add(responses_lib.POST, SUBMIT_URL, status=400)
 
-        result = client._get_current_period()
+        result = client.submit_timesheet(date_from="2026-02-01", date_to="2026-02-28")
 
-        assert result == "2026-02"
+        assert result is False
+
+    @responses_lib.activate
+    @freeze_time("2026-02-15")
+    def test_returns_false_when_approval_fetch_fails(self, developer_config):
+        """If GET approval status fails, returns False."""
+        client = _make_client(developer_config)
+        responses_lib.add(responses_lib.GET, APPROVAL_URL, status=500)
+
+        result = client.submit_timesheet()
+
+        assert result is False
 
 
 # ===========================================================================

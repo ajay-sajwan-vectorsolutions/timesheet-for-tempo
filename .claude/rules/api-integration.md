@@ -37,8 +37,10 @@
 | GET | `/user` | Get current user (accountId, displayName) |
 | GET | `/worklogs/user/{accountId}?from=&to=` | Fetch user worklogs |
 | POST | `/worklogs` | Create worklog (legacy/manual only) |
-| GET | `/timesheet-approvals/periods` | Get timesheet periods |
-| POST | `/timesheet-approvals/submit` | Submit timesheet for approval |
+| GET | `/timesheet-approvals/user/{accountId}?from=&to=` | Get approval status (actions, reviewer, period) |
+| GET | `/timesheet-approvals/user/{accountId}/reviewers` | Get available reviewers |
+| POST | `/timesheet-approvals/user/{accountId}/submit?from=&to=` | Submit timesheet (body: `{reviewerAccountId}`) |
+| GET | `/periods?from=&to=` | Get timesheet periods |
 
 ### Account ID
 - Format: `712020:uuid` (e.g., `712020:66c372bc-e38f-414e-b5d3-fd8ff7513a44`)

@@ -1064,7 +1064,7 @@ class TestSubmitTimesheet:
                 mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
                 ta.submit_timesheet()
 
-        ta.tempo_client.submit_timesheet.assert_called_once_with("2026-02")
+        ta.tempo_client.submit_timesheet.assert_called_once_with()
         ta._save_submitted_marker.assert_called_once_with("2026-02")
 
     def test_early_submit_when_remaining_days_non_working(self, tmp_path):
@@ -1094,7 +1094,7 @@ class TestSubmitTimesheet:
                 mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
                 ta.submit_timesheet()
 
-        ta.tempo_client.submit_timesheet.assert_called_once_with("2026-02")
+        ta.tempo_client.submit_timesheet.assert_called_once_with()
         ta._save_submitted_marker.assert_called_once_with("2026-02")
 
     def test_early_submit_skipped_when_working_days_remain(self):
