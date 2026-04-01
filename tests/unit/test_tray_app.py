@@ -15,14 +15,14 @@ Mocking approach:
   - datetime.date.today / datetime.datetime.now -> @patch
   - sys.platform -> @patch where platform-specific logic is tested
 
-Coverage targets (~32 tests)
+Coverage targets (~35 tests)
 -----------------------------
 - TestTrayAppInit:           4 tests
 - TestGetSyncTime:           3 tests
 - TestShortfallVisible:      3 tests
 - TestSubmitVisible:         5 tests
 - TestOnSyncNow:             4 tests
-- TestProcessPtoInput:       4 tests
+- TestOnAddPto:              6 tests
 - TestFindPythonw:           3 tests
 - TestReloadConfig:          3 tests
 - TestScheduleNextSync:      3 tests
@@ -31,9 +31,10 @@ Coverage targets (~32 tests)
 import json
 import sys
 import threading
-from datetime import date, datetime, timedelta
+import time
+from datetime import date, datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -82,18 +83,15 @@ for mod_name, stub in [
 
 # Now we can safely import tray_app
 from tray_app import (  # noqa: E402
+    BG_COLORS,
     TrayApp,
     _find_pythonw,
-    BG_COLORS,
-    SHORTFALL_FILE,
-    SUBMITTED_FILE,
-    CONFIG_FILE,
 )
-
 
 # ===========================================================================
 # Fixtures
 # ===========================================================================
+
 
 @pytest.fixture
 def app():
@@ -129,6 +127,7 @@ def config_file_path(tmp_path):
 # TestTrayAppInit
 # ===========================================================================
 
+
 class TestTrayAppInit:
     """Verify all instance attributes are initialised correctly."""
 
@@ -161,14 +160,13 @@ class TestTrayAppInit:
 # TestGetSyncTime
 # ===========================================================================
 
+
 class TestGetSyncTime:
     """Tests for _get_sync_time()."""
 
     def test_returns_configured_time(self, app):
         """When config has schedule.daily_sync_time, return it."""
-        app._config = {
-            "schedule": {"daily_sync_time": "09:30"}
-        }
+        app._config = {"schedule": {"daily_sync_time": "09:30"}}
         assert app._get_sync_time() == "09:30"
 
     def test_returns_default_when_no_config(self, app):
@@ -186,14 +184,13 @@ class TestGetSyncTime:
 # TestShortfallVisible
 # ===========================================================================
 
+
 class TestShortfallVisible:
     """Tests for _shortfall_visible() dynamic menu visibility."""
 
     def test_returns_true_when_file_exists(self, app, shortfall_file):
         """Visible when the shortfall JSON file is present."""
-        shortfall_file.write_text(
-            json.dumps({"days": ["2026-02-10"]}), encoding="utf-8"
-        )
+        shortfall_file.write_text(json.dumps({"days": ["2026-02-10"]}), encoding="utf-8")
         assert app._shortfall_visible(None) is True
 
     def test_returns_false_when_file_missing(self, app, shortfall_file):
@@ -213,6 +210,7 @@ class TestShortfallVisible:
 # TestSubmitVisible
 # ===========================================================================
 
+
 class TestSubmitVisible:
     """Tests for _submit_visible() dynamic menu visibility."""
 
@@ -226,39 +224,25 @@ class TestSubmitVisible:
         with patch("tray_app._today", return_value=date(2026, 2, 25)):
             assert app._submit_visible(None) is True
 
-    def test_hidden_when_shortfall_exists(
-        self, app, shortfall_file, submitted_file
-    ):
+    def test_hidden_when_shortfall_exists(self, app, shortfall_file, submitted_file):
         """Even in the last 7 days, hide if shortfall file exists."""
-        shortfall_file.write_text(
-            json.dumps({"days": ["2026-02-10"]}), encoding="utf-8"
-        )
+        shortfall_file.write_text(json.dumps({"days": ["2026-02-10"]}), encoding="utf-8")
         with patch("tray_app._today", return_value=date(2026, 2, 25)):
             assert app._submit_visible(None) is False
 
-    def test_hidden_when_already_submitted(
-        self, app, shortfall_file, submitted_file
-    ):
+    def test_hidden_when_already_submitted(self, app, shortfall_file, submitted_file):
         """Hide if submitted_file shows the current period was submitted."""
-        submitted_file.write_text(
-            json.dumps({"period": "2026-02"}), encoding="utf-8"
-        )
+        submitted_file.write_text(json.dumps({"period": "2026-02"}), encoding="utf-8")
         with patch("tray_app._today", return_value=date(2026, 2, 25)):
             assert app._submit_visible(None) is False
 
-    def test_visible_when_submitted_different_period(
-        self, app, shortfall_file, submitted_file
-    ):
+    def test_visible_when_submitted_different_period(self, app, shortfall_file, submitted_file):
         """Visible if submitted_file is for a different month."""
-        submitted_file.write_text(
-            json.dumps({"period": "2026-01"}), encoding="utf-8"
-        )
+        submitted_file.write_text(json.dumps({"period": "2026-01"}), encoding="utf-8")
         with patch("tray_app._today", return_value=date(2026, 2, 25)):
             assert app._submit_visible(None) is True
 
-    def test_visible_early_when_no_working_days_remain(
-        self, app, shortfall_file, submitted_file
-    ):
+    def test_visible_early_when_no_working_days_remain(self, app, shortfall_file, submitted_file):
         """Visible mid-month when all remaining days are non-working."""
         mock_schedule = MagicMock()
         mock_schedule.count_working_days.return_value = 0
@@ -269,9 +253,7 @@ class TestSubmitVisible:
         with patch("tray_app._today", return_value=date(2026, 1, 15)):
             assert app._submit_visible(None) is True
 
-    def test_hidden_early_when_working_days_remain(
-        self, app, shortfall_file, submitted_file
-    ):
+    def test_hidden_early_when_working_days_remain(self, app, shortfall_file, submitted_file):
         """Hidden mid-month when working days still remain."""
         mock_schedule = MagicMock()
         mock_schedule.count_working_days.return_value = 5
@@ -282,9 +264,7 @@ class TestSubmitVisible:
         with patch("tray_app._today", return_value=date(2026, 1, 15)):
             assert app._submit_visible(None) is False
 
-    def test_hidden_early_when_automation_none(
-        self, app, shortfall_file, submitted_file
-    ):
+    def test_hidden_early_when_automation_none(self, app, shortfall_file, submitted_file):
         """Falls back to 7-day window when automation is None."""
         app._automation = None
         with patch("tray_app._today", return_value=date(2026, 1, 15)):
@@ -294,6 +274,7 @@ class TestSubmitVisible:
 # ===========================================================================
 # TestOnSyncNow
 # ===========================================================================
+
 
 class TestOnSyncNow:
     """Tests for _on_sync_now()."""
@@ -338,81 +319,225 @@ class TestOnSyncNow:
 
 
 # ===========================================================================
-# TestProcessPtoInput
+# TestShowYesnoDialog
 # ===========================================================================
 
-class TestProcessPtoInput:
-    """Tests for _process_pto_input()."""
 
-    def test_sanitizes_input(self, app):
-        """Regex should strip non-date characters."""
-        mock_schedule = MagicMock()
-        mock_schedule.add_pto.return_value = (["2026-03-10"], [])
+class TestShowYesnoDialog:
+    """Tests for TrayApp._show_yesno_dialog()."""
+
+    def test_windows_yes_returns_true(self, app):
+        """MessageBoxW returning 6 (IDYES) -> True."""
+        import tray_app as _tray_mod
+
+        mock_ctypes = MagicMock()
+        mock_ctypes.windll.user32.MessageBoxW.return_value = 6
+        with (
+            patch("sys.platform", "win32"),
+            patch.object(_tray_mod, "ctypes", mock_ctypes, create=True),
+        ):
+            result = app._show_yesno_dialog("Sync?", "Title")
+        assert result is True
+
+    def test_windows_no_returns_false(self, app):
+        """MessageBoxW returning 7 (IDNO) -> False."""
+        import tray_app as _tray_mod
+
+        mock_ctypes = MagicMock()
+        mock_ctypes.windll.user32.MessageBoxW.return_value = 7
+        with (
+            patch("sys.platform", "win32"),
+            patch.object(_tray_mod, "ctypes", mock_ctypes, create=True),
+        ):
+            result = app._show_yesno_dialog("Sync?", "Title")
+        assert result is False
+
+    def test_mac_yes_returns_true(self, app):
+        """osascript stdout containing 'Yes' -> True."""
+        with patch("sys.platform", "darwin"):
+            with patch("tray_app.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="button returned:Yes\n")
+                result = app._show_yesno_dialog("Sync?", "Title")
+        assert result is True
+
+    def test_mac_no_returns_false(self, app):
+        """osascript stdout containing 'No' -> False."""
+        with patch("sys.platform", "darwin"):
+            with patch("tray_app.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="button returned:No\n")
+                result = app._show_yesno_dialog("Sync?", "Title")
+        assert result is False
+
+    def test_unknown_platform_returns_false(self, app):
+        """Unknown platform -> False (safe default)."""
+        with patch("sys.platform", "linux"):
+            result = app._show_yesno_dialog("Sync?", "Title")
+        assert result is False
+
+
+# ===========================================================================
+# TestSyncPtoDatesBackground
+# ===========================================================================
+
+
+class TestSyncPtoDatesBackground:
+    """Tests for TrayApp._sync_pto_dates_background()."""
+
+    def test_calls_sync_daily_for_each_date(self, app):
+        """sync_daily() is called once per date."""
         app._automation = MagicMock()
-        app._automation.schedule_mgr = mock_schedule
+        app._automation.sync_daily = MagicMock()
 
         with patch.object(app, "_show_toast"):
-            app._process_pto_input("  2026-03-10 (Monday)  ")
+            app._sync_pto_dates_background(["2026-04-07", "2026-04-08"])
+            # Allow daemon thread to complete
+            time.sleep(0.2)
 
-        # add_pto should receive the cleaned date string
-        args = mock_schedule.add_pto.call_args[0][0]
-        assert "2026-03-10" in args
-        # Parenthetical text should have been stripped
-        for d in args:
-            assert "(" not in d
-            assert ")" not in d
+        assert app._automation.sync_daily.call_count == 2
+        app._automation.sync_daily.assert_any_call("2026-04-07")
+        app._automation.sync_daily.assert_any_call("2026-04-08")
 
-    def test_splits_comma_separated_dates(self, app):
-        """Multiple comma-separated dates should be split and passed."""
-        mock_schedule = MagicMock()
-        mock_schedule.add_pto.return_value = (
-            ["2026-03-10", "2026-03-11"], []
-        )
+    def test_shows_success_toast_after_sync(self, app):
+        """A success toast is shown when all syncs complete."""
         app._automation = MagicMock()
-        app._automation.schedule_mgr = mock_schedule
-
-        with patch.object(app, "_show_toast"):
-            app._process_pto_input("2026-03-10, 2026-03-11")
-
-        dates_arg = mock_schedule.add_pto.call_args[0][0]
-        assert len(dates_arg) == 2
-        assert "2026-03-10" in dates_arg
-        assert "2026-03-11" in dates_arg
-
-    def test_shows_toast_when_no_valid_dates(self, app):
-        """Input with only special chars (no digits/dashes) should toast."""
-        # The regex strips everything except digits, dashes, commas, and
-        # whitespace.  Pure letters + symbols produce only whitespace,
-        # which is truthy but yields an empty dates list.  add_pto([])
-        # returns ([], ["reason"]) in real code -- mock that.
-        mock_schedule = MagicMock()
-        mock_schedule.add_pto.return_value = ([], ["No valid dates"])
-        app._automation = MagicMock()
-        app._automation.schedule_mgr = mock_schedule
+        app._automation.sync_daily = MagicMock()
 
         with patch.object(app, "_show_toast") as mock_toast:
-            app._process_pto_input("nothing valid here")
+            app._sync_pto_dates_background(["2026-04-07"])
+            time.sleep(0.2)
 
         mock_toast.assert_called_once()
-        assert "No PTO Added" in mock_toast.call_args[0][0]
+        title, _ = mock_toast.call_args[0]
+        assert "Synced" in title or "PTO" in title
 
-    def test_calls_schedule_mgr_add_pto(self, app):
-        """Should call schedule_mgr.add_pto with cleaned date list."""
-        mock_schedule = MagicMock()
-        mock_schedule.add_pto.return_value = (["2026-04-01"], [])
+    def test_shows_error_toast_on_failure(self, app):
+        """If sync_daily raises, an error toast is shown and sync continues."""
         app._automation = MagicMock()
-        app._automation.schedule_mgr = mock_schedule
+        app._automation.sync_daily = MagicMock(side_effect=RuntimeError("API down"))
 
-        with patch.object(app, "_show_toast"):
-            app._process_pto_input("2026-04-01")
+        with patch.object(app, "_show_toast") as mock_toast:
+            app._sync_pto_dates_background(["2026-04-07"])
+            time.sleep(0.2)
 
-        mock_schedule.add_pto.assert_called_once()
-        assert "2026-04-01" in mock_schedule.add_pto.call_args[0][0]
+        # Expect 2 toasts: one error toast + one partial-sync summary
+        assert mock_toast.call_count == 2
+        titles = [call[0][0] for call in mock_toast.call_args_list]
+        assert any("Error" in t or "error" in t.lower() for t in titles)
+
+
+# ===========================================================================
+# TestOnAddPto
+# ===========================================================================
+
+
+class TestOnAddPto:
+    """Tests for the revised TrayApp._on_add_pto() flow."""
+
+    def _make_app_with_schedule(self, add_pto_return=None, overhead=True):
+        """Helper: TrayApp with mocked automation and schedule manager."""
+        app = TrayApp()
+        mock_schedule = MagicMock()
+        mock_schedule.add_pto.return_value = add_pto_return or ([], [])
+        mock_schedule.expand_date_range.return_value = []
+        mock_automation = MagicMock()
+        mock_automation.schedule_mgr = mock_schedule
+        mock_automation._is_overhead_configured.return_value = overhead
+        app._automation = mock_automation
+        return app, mock_schedule, mock_automation
+
+    def test_no_automation_shows_error_toast(self):
+        """If _automation is None, show an error toast and return."""
+        app = TrayApp()
+        app._automation = None
+        with patch.object(app, "_show_toast") as mock_toast:
+            app._on_add_pto()
+        mock_toast.assert_called_once()
+        assert "Error" in mock_toast.call_args[0][0]
+
+    def test_range_flow_calls_expand_date_range(self):
+        """When user picks Yes (range), expand_date_range is called."""
+        app, mock_schedule, _ = self._make_app_with_schedule(
+            add_pto_return=(["2026-04-07", "2026-04-08"], [])
+        )
+        mock_schedule.expand_date_range.return_value = ["2026-04-07", "2026-04-08"]
+
+        with (
+            patch.object(app, "_show_yesno_dialog", side_effect=[True, False]),
+            patch.object(app, "_show_input_dialog", side_effect=["2026-04-07", "2026-04-08"]),
+            patch.object(app, "_show_toast"),
+            patch("tray_app._today", return_value=date(2026, 4, 6)),
+        ):
+            app._on_add_pto()
+
+        mock_schedule.expand_date_range.assert_called_once_with("2026-04-07", "2026-04-08")
+
+    def test_single_day_flow_skips_expand(self):
+        """When user picks No (single day), expand_date_range is NOT called."""
+        app, mock_schedule, _ = self._make_app_with_schedule(add_pto_return=(["2026-04-07"], []))
+
+        with (
+            patch.object(app, "_show_yesno_dialog", side_effect=[False, False]),
+            patch.object(app, "_show_input_dialog", return_value="2026-04-07"),
+            patch.object(app, "_show_toast"),
+            patch("tray_app._today", return_value=date(2026, 4, 6)),
+        ):
+            app._on_add_pto()
+
+        mock_schedule.expand_date_range.assert_not_called()
+        mock_schedule.add_pto.assert_called_once_with(["2026-04-07"])
+
+    def test_cancelled_input_returns_early(self):
+        """If user cancels the start date dialog, add_pto is never called."""
+        app, mock_schedule, _ = self._make_app_with_schedule()
+
+        with (
+            patch.object(app, "_show_yesno_dialog", return_value=True),
+            patch.object(app, "_show_input_dialog", return_value=""),
+            patch.object(app, "_show_toast"),
+        ):
+            app._on_add_pto()
+
+        mock_schedule.add_pto.assert_not_called()
+
+    def test_future_dates_trigger_sync_offer(self):
+        """Future dates cause the Tempo sync Yes/No dialog to appear."""
+        app, mock_schedule, mock_auto = self._make_app_with_schedule(
+            add_pto_return=(["2026-04-10"], [])
+        )
+
+        with (
+            patch.object(app, "_show_yesno_dialog", side_effect=[False, False]) as mock_yn,
+            patch.object(app, "_show_input_dialog", return_value="2026-04-10"),
+            patch.object(app, "_show_toast"),
+            patch("tray_app._today", return_value=date(2026, 4, 1)),
+        ):
+            app._on_add_pto()
+
+        # Second _show_yesno_dialog call = the sync offer
+        assert mock_yn.call_count == 2
+
+    def test_sync_yes_calls_sync_background(self):
+        """If user says Yes to sync, _sync_pto_dates_background is called."""
+        app, mock_schedule, mock_auto = self._make_app_with_schedule(
+            add_pto_return=(["2026-04-10"], [])
+        )
+
+        with (
+            patch.object(app, "_show_yesno_dialog", side_effect=[False, True]),
+            patch.object(app, "_show_input_dialog", return_value="2026-04-10"),
+            patch.object(app, "_show_toast"),
+            patch.object(app, "_sync_pto_dates_background") as mock_bg,
+            patch("tray_app._today", return_value=date(2026, 4, 1)),
+        ):
+            app._on_add_pto()
+
+        mock_bg.assert_called_once_with(["2026-04-10"])
 
 
 # ===========================================================================
 # TestFindPythonw
 # ===========================================================================
+
 
 class TestFindPythonw:
     """Tests for the module-level _find_pythonw() function."""
@@ -458,6 +583,7 @@ class TestFindPythonw:
 # TestReloadConfig
 # ===========================================================================
 
+
 class TestReloadConfig:
     """Tests for _reload_config()."""
 
@@ -467,9 +593,7 @@ class TestReloadConfig:
             "schedule": {"daily_sync_time": "17:00"},
             "user": {"name": "Test"},
         }
-        config_file_path.write_text(
-            json.dumps(config_data), encoding="utf-8"
-        )
+        config_file_path.write_text(json.dumps(config_data), encoding="utf-8")
         app._reload_config()
         assert app._config is not None
         assert app._config["schedule"]["daily_sync_time"] == "17:00"
@@ -483,9 +607,7 @@ class TestReloadConfig:
 
     def test_silently_handles_json_error(self, app, config_file_path):
         """Should not raise when config.json contains invalid JSON."""
-        config_file_path.write_text(
-            "{ this is not valid json !!!", encoding="utf-8"
-        )
+        config_file_path.write_text("{ this is not valid json !!!", encoding="utf-8")
         app._config = {"old": "value"}
         app._reload_config()  # should not raise
         # _config should retain its old value (exception was swallowed)
@@ -495,6 +617,7 @@ class TestReloadConfig:
 # ===========================================================================
 # TestScheduleNextSync
 # ===========================================================================
+
 
 class TestScheduleNextSync:
     """Tests for _schedule_next_sync()."""
@@ -533,7 +656,7 @@ class TestScheduleNextSync:
 
         # Mock datetime.now to return 10:00 (past the 06:00 sync time)
         fake_now = datetime(2026, 2, 22, 10, 0, 0)
-        with patch.object(app, '_reload_config'):  # prevent overwriting injected config
+        with patch.object(app, "_reload_config"):  # prevent overwriting injected config
             with patch("tray_app.datetime") as mock_dt:
                 mock_dt.now.return_value = fake_now
                 mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
@@ -553,6 +676,7 @@ class TestScheduleNextSync:
 # TestBGColors
 # ===========================================================================
 
+
 class TestBGColors:
     """Verify the BG_COLORS constant."""
 
@@ -568,6 +692,4 @@ class TestBGColors:
             assert isinstance(rgb, tuple), f"{color} is not a tuple"
             assert len(rgb) == 3, f"{color} tuple length != 3"
             for channel in rgb:
-                assert 0 <= channel <= 255, (
-                    f"{color} channel {channel} out of range"
-                )
+                assert 0 <= channel <= 255, f"{color} channel {channel} out of range"

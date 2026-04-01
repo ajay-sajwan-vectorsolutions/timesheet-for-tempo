@@ -18,10 +18,9 @@ Tests cover:
 
 import json
 import sys
-from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -33,10 +32,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from tempo_automation import ScheduleManager  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Helper: build a ScheduleManager with all file I/O patched out
 # ---------------------------------------------------------------------------
+
 
 def _make_schedule_manager(
     config: dict,
@@ -65,9 +64,7 @@ def _make_schedule_manager(
 
     # Write org holidays fixture to a temp file
     hol_path = tmp_dir / "org_holidays.json"
-    hol_path.write_text(
-        json.dumps(org_holidays_data or {}, indent=2), encoding="utf-8"
-    )
+    hol_path.write_text(json.dumps(org_holidays_data or {}, indent=2), encoding="utf-8")
     cfg_path = tmp_dir / "config.json"
 
     with (
@@ -132,6 +129,7 @@ ORG_HOLIDAYS_DATA = {
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def base_config():
     """Minimal schedule config for a US developer with no overrides."""
@@ -157,6 +155,7 @@ def sm(base_config, tmp_path):
 # ===========================================================================
 # 1. Construction & org holidays parsing
 # ===========================================================================
+
 
 class TestConstruction:
     def test_daily_hours_defaults_to_8(self, tmp_path):
@@ -207,9 +206,7 @@ class TestConstruction:
         with (
             patch("tempo_automation.ORG_HOLIDAYS_FILE", absent_path),
             patch("tempo_automation.CONFIG_FILE", cfg_path),
-            patch.object(
-                ScheduleManager, "_fetch_remote_org_holidays", return_value=None
-            ),
+            patch.object(ScheduleManager, "_fetch_remote_org_holidays", return_value=None),
         ):
             sm = ScheduleManager(base_config)
         assert sm._org_holidays == {}
@@ -218,6 +215,7 @@ class TestConstruction:
 # ===========================================================================
 # 2. is_working_day() -- priority chain
 # ===========================================================================
+
 
 class TestIsWorkingDay:
     """Priority: working_days > pto > weekend > org_holidays >
@@ -239,7 +237,7 @@ class TestIsWorkingDay:
 
     def test_working_day_override_on_pto(self, sm):
         """A PTO date in working_days returns True (override wins)."""
-        sm.pto_days.add("2026-03-02")      # Monday
+        sm.pto_days.add("2026-03-02")  # Monday
         sm.working_days.add("2026-03-02")  # override
         is_work, reason = sm.is_working_day("2026-03-02")
         assert is_work is True
@@ -252,10 +250,13 @@ class TestIsWorkingDay:
         assert reason == "PTO"
 
     # Priority 3: Weekend
-    @pytest.mark.parametrize("date_str,expected_day", [
-        ("2026-02-28", "Saturday"),
-        ("2026-03-01", "Sunday"),
-    ])
+    @pytest.mark.parametrize(
+        "date_str,expected_day",
+        [
+            ("2026-02-28", "Saturday"),
+            ("2026-03-01", "Sunday"),
+        ],
+    )
     def test_weekend_returns_false(self, sm, date_str, expected_day):
         is_work, reason = sm.is_working_day(date_str)
         assert is_work is False
@@ -314,6 +315,7 @@ class TestIsWorkingDay:
 # 3. get_holiday_name()
 # ===========================================================================
 
+
 class TestGetHolidayName:
     def test_org_holiday_returns_name(self, sm):
         name = sm.get_holiday_name("2026-12-25")
@@ -338,6 +340,7 @@ class TestGetHolidayName:
 # ===========================================================================
 # 4. count_working_days() and get_expected_hours()
 # ===========================================================================
+
 
 class TestCountWorkingDays:
     def test_single_working_day(self, sm):
@@ -381,6 +384,7 @@ class TestCountWorkingDays:
 # 5. check_year_end_warning()
 # ===========================================================================
 
+
 class TestCheckYearEndWarning:
     def test_non_december_returns_none(self, sm):
         with patch("tempo_automation.date") as mock_date:
@@ -420,6 +424,7 @@ class TestCheckYearEndWarning:
 # ===========================================================================
 # 6. get_month_calendar()
 # ===========================================================================
+
 
 class TestGetMonthCalendar:
     def test_returns_correct_number_of_days(self, sm):
@@ -477,6 +482,7 @@ class TestGetMonthCalendar:
 # ===========================================================================
 # 7. add_pto() / remove_pto()
 # ===========================================================================
+
 
 class TestAddRemovePto:
     def test_add_valid_weekday(self, sm, tmp_path):
@@ -541,6 +547,7 @@ class TestAddRemovePto:
 # 8. add_extra_holidays() / remove_extra_holidays()
 # ===========================================================================
 
+
 class TestExtraHolidays:
     def test_add_extra_holiday(self, sm, tmp_path):
         with patch("tempo_automation.CONFIG_FILE", sm._test_cfg_path):
@@ -582,6 +589,7 @@ class TestExtraHolidays:
 # 9. add_working_days() / remove_working_days()
 # ===========================================================================
 
+
 class TestWorkingDays:
     def test_add_compensatory_working_day(self, sm, tmp_path):
         with patch("tempo_automation.CONFIG_FILE", sm._test_cfg_path):
@@ -618,26 +626,33 @@ class TestWorkingDays:
 # 10. _validate_date()
 # ===========================================================================
 
+
 class TestValidateDate:
-    @pytest.mark.parametrize("valid_date", [
-        "2026-01-01",
-        "2026-12-31",
-        "2027-06-15",
-        "2000-02-29",  # leap year
-    ])
+    @pytest.mark.parametrize(
+        "valid_date",
+        [
+            "2026-01-01",
+            "2026-12-31",
+            "2027-06-15",
+            "2000-02-29",  # leap year
+        ],
+    )
     def test_valid_dates_return_true(self, sm, valid_date):
         assert sm._validate_date(valid_date) is True
 
-    @pytest.mark.parametrize("invalid_date", [
-        "26-01-01",          # 2-digit year
-        "2026/01/01",        # slashes instead of hyphens (non-digit chars)
-        "2026-13-01",        # month 13
-        "2026-00-01",        # month 0
-        "2026-01-32",        # day 32
-        "not-a-date",        # non-digit chars
-        "",                  # empty string
-        "2026 01 01",        # spaces (non-digit chars)
-    ])
+    @pytest.mark.parametrize(
+        "invalid_date",
+        [
+            "26-01-01",  # 2-digit year
+            "2026/01/01",  # slashes instead of hyphens (non-digit chars)
+            "2026-13-01",  # month 13
+            "2026-00-01",  # month 0
+            "2026-01-32",  # day 32
+            "not-a-date",  # non-digit chars
+            "",  # empty string
+            "2026 01 01",  # spaces (non-digit chars)
+        ],
+    )
     def test_invalid_dates_return_false(self, sm, invalid_date):
         assert sm._validate_date(invalid_date) is False
 
@@ -655,6 +670,7 @@ class TestValidateDate:
 # ===========================================================================
 # 11. Remote fetch behaviour
 # ===========================================================================
+
 
 class TestRemoteFetch:
     def test_fetch_updates_file_when_version_differs(self, base_config, tmp_path):
@@ -680,11 +696,10 @@ class TestRemoteFetch:
             patch("tempo_automation.CONFIG_FILE", cfg_path),
             patch("tempo_automation.requests.get", return_value=mock_resp) as mock_get,
         ):
-            sm = ScheduleManager(base_config)
+            _ = ScheduleManager(base_config)
 
         mock_get.assert_called_once_with(
-            "https://example.com/holidays.json",
-            headers={}, timeout=10
+            "https://example.com/holidays.json", headers={}, timeout=10
         )
         written = json.loads(hol_path.read_text(encoding="utf-8"))
         assert written["version"] == "new"
@@ -703,7 +718,7 @@ class TestRemoteFetch:
             patch("tempo_automation.CONFIG_FILE", cfg_path),
             patch("tempo_automation.requests.get") as mock_get,
         ):
-            sm = ScheduleManager(base_config)
+            _ = ScheduleManager(base_config)
 
         mock_get.assert_not_called()
 
@@ -756,9 +771,9 @@ class TestRemoteFetch:
             sm = ScheduleManager(base_config)
 
         # Local file should contain remote data
-        with open(hol_path, 'r') as f:
+        with open(hol_path) as f:
             saved = json.load(f)
-        assert saved.get('version') == same_data.get('version')
+        assert saved.get("version") == same_data.get("version")
         assert "2026-12-25" in sm._org_holidays
 
 
@@ -766,15 +781,16 @@ class TestRemoteFetch:
 # 12. Integration: is_working_day full priority chain in one scenario
 # ===========================================================================
 
+
 class TestPriorityChainIntegration:
     """Verify each priority level in a single ScheduleManager instance."""
 
     def test_full_priority_chain(self, base_config, tmp_path):
         config = dict(base_config)
         # Set up every level explicitly
-        config["schedule"]["working_days"] = ["2026-02-28"]    # P1: Saturday override
-        config["schedule"]["pto_days"] = ["2026-02-23"]         # P2: Monday PTO
-        config["schedule"]["extra_holidays"] = ["2026-03-03"]   # P6: Tuesday
+        config["schedule"]["working_days"] = ["2026-02-28"]  # P1: Saturday override
+        config["schedule"]["pto_days"] = ["2026-02-23"]  # P2: Monday PTO
+        config["schedule"]["extra_holidays"] = ["2026-03-03"]  # P6: Tuesday
         sm = _make_schedule_manager(config, ORG_HOLIDAYS_DATA, tmp_path=tmp_path)
 
         # P1: Saturday in working_days -> True
@@ -800,3 +816,74 @@ class TestPriorityChainIntegration:
         # P7: Default working day -> True
         is_work, reason = sm.is_working_day("2026-02-24")
         assert is_work is True and reason == "Working day"
+
+
+# ===========================================================================
+# TestExpandDateRange
+# ===========================================================================
+
+
+class TestExpandDateRange:
+    """Tests for ScheduleManager.expand_date_range()."""
+
+    def test_single_working_day(self, sm):
+        """A range of one weekday returns that day."""
+        result = sm.expand_date_range("2026-03-02", "2026-03-02")  # Monday
+        assert result == ["2026-03-02"]
+
+    def test_range_skips_weekend(self, sm):
+        """Mon-Sun range returns only the 5 weekdays."""
+        result = sm.expand_date_range("2026-03-02", "2026-03-08")
+        assert "2026-03-07" not in result  # Saturday
+        assert "2026-03-08" not in result  # Sunday
+        assert len(result) == 5
+
+    def test_range_skips_org_holiday(self, tmp_path):
+        """A day marked as org holiday is excluded."""
+        config = {
+            "schedule": {
+                "daily_hours": 8.0,
+                "country_code": "US",
+                "state": "",
+                "pto_days": [],
+                "extra_holidays": [],
+                "working_days": [],
+            },
+            "organization": {"holidays_url": ""},
+        }
+        org_data = {
+            "version": "2026.test",
+            "holidays": {
+                "US": {"2026": {"common": [{"date": "2026-03-04", "name": "Test Holiday"}]}},
+                "IN": {},
+            },
+        }
+        sm2 = _make_schedule_manager(config, org_data, tmp_path=tmp_path)
+        result = sm2.expand_date_range("2026-03-02", "2026-03-06")
+        assert "2026-03-04" not in result  # org holiday
+        assert len(result) == 4
+
+    def test_start_after_end_raises(self, sm):
+        """start > end raises ValueError."""
+        with pytest.raises(ValueError, match="start_date"):
+            sm.expand_date_range("2026-03-10", "2026-03-05")
+
+    def test_invalid_start_date_raises(self, sm):
+        """Bad format raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid"):
+            sm.expand_date_range("not-a-date", "2026-03-10")
+
+    def test_invalid_end_date_raises(self, sm):
+        """Bad format raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid"):
+            sm.expand_date_range("2026-03-02", "not-a-date")
+
+    def test_all_weekend_range_returns_empty(self, sm):
+        """A Sat-Sun range returns an empty list."""
+        result = sm.expand_date_range("2026-03-07", "2026-03-08")
+        assert result == []
+
+    def test_multi_week_range(self, sm):
+        """Two full working weeks return 10 dates."""
+        result = sm.expand_date_range("2026-03-02", "2026-03-13")
+        assert len(result) == 10
