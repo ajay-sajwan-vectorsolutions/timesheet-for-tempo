@@ -826,12 +826,12 @@ class TestPriorityChainIntegration:
 class TestExpandDateRange:
     """Tests for ScheduleManager.expand_date_range()."""
 
-    def test_single_working_day(self, sm, tmp_path):
+    def test_single_working_day(self, sm):
         """A range of one weekday returns that day."""
         result = sm.expand_date_range("2026-03-02", "2026-03-02")  # Monday
         assert result == ["2026-03-02"]
 
-    def test_range_skips_weekend(self, sm, tmp_path):
+    def test_range_skips_weekend(self, sm):
         """Mon-Sun range returns only the 5 weekdays."""
         result = sm.expand_date_range("2026-03-02", "2026-03-08")
         assert "2026-03-07" not in result  # Saturday
