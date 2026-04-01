@@ -401,7 +401,7 @@ class TestSyncPtoDatesBackground:
         assert "Synced" in title or "PTO" in title
 
     def test_shows_error_toast_on_failure(self, app):
-        """If sync_daily raises, an error toast is shown."""
+        """If sync_daily raises, an error toast is shown and sync continues."""
         app._automation = MagicMock()
         app._automation.sync_daily = MagicMock(side_effect=RuntimeError("API down"))
 
@@ -409,9 +409,10 @@ class TestSyncPtoDatesBackground:
             app._sync_pto_dates_background(["2026-04-07"])
             time.sleep(0.2)
 
-        mock_toast.assert_called_once()
-        title, _ = mock_toast.call_args[0]
-        assert "Error" in title or "error" in title.lower()
+        # Expect 2 toasts: one error toast + one partial-sync summary
+        assert mock_toast.call_count == 2
+        titles = [call[0][0] for call in mock_toast.call_args_list]
+        assert any("Error" in t or "error" in t.lower() for t in titles)
 
 
 # ===========================================================================
@@ -454,9 +455,8 @@ class TestOnAddPto:
             patch.object(app, "_show_yesno_dialog", side_effect=[True, False]),
             patch.object(app, "_show_input_dialog", side_effect=["2026-04-07", "2026-04-08"]),
             patch.object(app, "_show_toast"),
-            patch("tray_app.date") as mock_date,
+            patch("tray_app._today", return_value=date(2026, 4, 6)),
         ):
-            mock_date.today.return_value = date(2026, 4, 6)
             app._on_add_pto()
 
         mock_schedule.expand_date_range.assert_called_once_with("2026-04-07", "2026-04-08")
@@ -469,9 +469,8 @@ class TestOnAddPto:
             patch.object(app, "_show_yesno_dialog", side_effect=[False, False]),
             patch.object(app, "_show_input_dialog", return_value="2026-04-07"),
             patch.object(app, "_show_toast"),
-            patch("tray_app.date") as mock_date,
+            patch("tray_app._today", return_value=date(2026, 4, 6)),
         ):
-            mock_date.today.return_value = date(2026, 4, 6)
             app._on_add_pto()
 
         mock_schedule.expand_date_range.assert_not_called()
@@ -500,9 +499,8 @@ class TestOnAddPto:
             patch.object(app, "_show_yesno_dialog", side_effect=[False, False]) as mock_yn,
             patch.object(app, "_show_input_dialog", return_value="2026-04-10"),
             patch.object(app, "_show_toast"),
-            patch("tray_app.date") as mock_date,
+            patch("tray_app._today", return_value=date(2026, 4, 1)),
         ):
-            mock_date.today.return_value = date(2026, 4, 1)
             app._on_add_pto()
 
         # Second _show_yesno_dialog call = the sync offer
@@ -519,9 +517,8 @@ class TestOnAddPto:
             patch.object(app, "_show_input_dialog", return_value="2026-04-10"),
             patch.object(app, "_show_toast"),
             patch.object(app, "_sync_pto_dates_background") as mock_bg,
-            patch("tray_app.date") as mock_date,
+            patch("tray_app._today", return_value=date(2026, 4, 1)),
         ):
-            mock_date.today.return_value = date(2026, 4, 1)
             app._on_add_pto()
 
         mock_bg.assert_called_once_with(["2026-04-10"])

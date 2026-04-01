@@ -637,7 +637,7 @@ class TrayApp:
             if not added:
                 return
 
-            today = date.today()
+            today = _today()
             future_dates = [d for d in added if d >= today.strftime("%Y-%m-%d")]
             if not future_dates:
                 return
@@ -740,8 +740,8 @@ class TrayApp:
         Mac: osascript with Yes/No buttons.
         """
         if sys.platform == "win32":
-            # MB_YESNO=0x04 | MB_ICONQUESTION=0x20 | MB_TOPMOST=0x40000
-            flags = 0x04 | 0x20 | 0x40000
+            # MB_YESNO=0x04 | MB_ICONQUESTION=0x20 | MB_TOPMOST=0x40000 | MB_SETFOREGROUND=0x10000
+            flags = 0x04 | 0x20 | 0x40000 | 0x10000
             result = ctypes.windll.user32.MessageBoxW(0, msg, title, flags)
             return result == 6  # 6 = IDYES
         elif sys.platform == "darwin":
@@ -767,15 +767,22 @@ class TrayApp:
 
         def _run():
             synced = 0
+            failed = 0
             for d in dates:
                 try:
                     self._automation.sync_daily(d)
                     synced += 1
                 except Exception as e:
+                    failed += 1
                     tray_logger.error(f"PTO sync failed for {d}: {e}", exc_info=True)
                     self._show_toast("Sync Error", f"Failed to sync {d}: {e}")
-                    return
-            self._show_toast("PTO Synced", f"Synced {synced} day(s) to Tempo.")
+            if failed == 0:
+                self._show_toast("PTO Synced", f"Synced {synced} day(s) to Tempo.")
+            else:
+                self._show_toast(
+                    "PTO Sync Partial",
+                    f"Synced {synced} day(s). {failed} failed (see log).",
+                )
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
