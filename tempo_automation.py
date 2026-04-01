@@ -1406,6 +1406,31 @@ class ScheduleManager:
             print(f"\n[OK] Added {len(added)} PTO day(s). Config saved.")
         return added, skipped
 
+    def expand_date_range(self, start_date: str, end_date: str) -> list[str]:
+        """
+        Return all working days between start_date and end_date inclusive.
+
+        Skips weekends, org holidays, country holidays, and extra holidays.
+        Raises ValueError on bad date format or start > end.
+        """
+        if not self._validate_date(start_date):
+            raise ValueError(f"Invalid start_date: {start_date!r}")
+        if not self._validate_date(end_date):
+            raise ValueError(f"Invalid end_date: {end_date!r}")
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        if start > end:
+            raise ValueError(f"start_date {start_date!r} is after end_date {end_date!r}")
+        working = []
+        current = start
+        while current <= end:
+            d_str = current.strftime("%Y-%m-%d")
+            is_working, _ = self.is_working_day(d_str)
+            if is_working:
+                working.append(d_str)
+            current += timedelta(days=1)
+        return working
+
     def remove_pto(self, dates: list[str]) -> list[str]:
         """Remove PTO dates from config."""
         removed = []
