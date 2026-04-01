@@ -577,21 +577,88 @@ class TrayApp:
         timer.start()
 
     def _on_add_pto(self, icon=None, item=None):
-        """Show input dialog to add PTO dates."""
+        """Add PTO via two-step dialog: range or single day, then optional Tempo sync."""
         if self._automation is None:
             msg = self._import_error or "Automation not loaded"
             self._show_toast("Error", msg)
             return
 
         try:
-            raw = self._show_input_dialog(
-                "Enter PTO date(s) in YYYY-MM-DD format.\n"
-                "Separate multiple dates with commas.\n\n"
-                "Example: 2026-03-10,2026-03-11",
+            use_range = self._show_yesno_dialog(
+                "Add PTO for a date range?\n\n"
+                "Yes = enter start and end date\n"
+                "No  = enter a single date",
                 "Tempo - Add PTO",
             )
-            if raw:
-                self._process_pto_input(raw)
+
+            if use_range:
+                start = self._show_input_dialog(
+                    "Enter the START date (YYYY-MM-DD):", "Tempo - Add PTO Range"
+                )
+                if not start:
+                    return
+                end = self._show_input_dialog(
+                    "Enter the END date (YYYY-MM-DD):", "Tempo - Add PTO Range"
+                )
+                if not end:
+                    return
+                try:
+                    dates = self._automation.schedule_mgr.expand_date_range(
+                        start.strip(), end.strip()
+                    )
+                except ValueError as e:
+                    self._show_toast("Invalid Range", str(e))
+                    return
+                if not dates:
+                    self._show_toast("No Working Days", "No working days found in that range.")
+                    return
+            else:
+                single = self._show_input_dialog(
+                    "Enter the PTO date (YYYY-MM-DD):", "Tempo - Add PTO"
+                )
+                if not single:
+                    return
+                dates = [single.strip()]
+
+            added, skipped = self._automation.schedule_mgr.add_pto(dates)
+
+            if added and skipped:
+                self._show_toast(
+                    "PTO Added (with warnings)",
+                    f"Added: {', '.join(added)}\nSkipped: {'; '.join(skipped)}",
+                )
+            elif added:
+                self._show_toast("PTO Added", f"Added {len(added)} day(s): {', '.join(added)}")
+            else:
+                self._show_toast(
+                    "No PTO Added", "\n".join(skipped) if skipped else "No valid dates entered."
+                )
+
+            if not added:
+                return
+
+            today = date.today()
+            future_dates = [d for d in added if d >= today.strftime("%Y-%m-%d")]
+            if not future_dates:
+                return
+
+            if not self._automation._is_overhead_configured():
+                self._show_toast(
+                    "PTO Added",
+                    "Overhead story not configured. PTO saved but cannot sync to Tempo.",
+                )
+                return
+
+            n = len(future_dates)
+            date_list = ", ".join(future_dates)
+            want_sync = self._show_yesno_dialog(
+                f"Sync {n} PTO day(s) to Tempo now?\n\n{date_list}", "Tempo - Sync PTO"
+            )
+            if want_sync:
+                self._sync_pto_dates_background(future_dates)
+            else:
+                self._show_toast("PTO Added", "PTO saved. Not synced to Tempo.")
+
         except Exception as e:
             self._show_toast("Error", f"Could not add PTO: {e}")
             tray_logger.error(f"Add PTO failed: {e}", exc_info=True)
@@ -712,30 +779,6 @@ class TrayApp:
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
-
-    def _process_pto_input(self, raw: str):
-        """Sanitize PTO input and add dates via ScheduleManager."""
-        import re
-
-        cleaned = re.sub(r"[^\d\-,\s]", "", raw)
-        if not cleaned:
-            self._show_toast("No PTO Added", "No valid dates entered.")
-            return
-
-        dates = [d.strip() for d in cleaned.split(",") if d.strip()]
-        added, skipped = self._automation.schedule_mgr.add_pto(dates)
-
-        if added and not skipped:
-            self._show_toast("PTO Added", f"Added {len(added)} day(s): {', '.join(added)}")
-        elif added and skipped:
-            self._show_toast(
-                "PTO Added (with warnings)",
-                f"Added: {', '.join(added)}\nSkipped: {'; '.join(skipped)}",
-            )
-        else:
-            self._show_toast(
-                "No PTO Added", "\n".join(skipped) if skipped else "No valid dates entered."
-            )
 
     def _on_change_sync_time(self, icon=None, item=None):
         """Show input dialog to change the daily sync time."""

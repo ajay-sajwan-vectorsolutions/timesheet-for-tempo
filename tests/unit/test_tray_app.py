@@ -15,14 +15,14 @@ Mocking approach:
   - datetime.date.today / datetime.datetime.now -> @patch
   - sys.platform -> @patch where platform-specific logic is tested
 
-Coverage targets (~32 tests)
+Coverage targets (~35 tests)
 -----------------------------
 - TestTrayAppInit:           4 tests
 - TestGetSyncTime:           3 tests
 - TestShortfallVisible:      3 tests
 - TestSubmitVisible:         5 tests
 - TestOnSyncNow:             4 tests
-- TestProcessPtoInput:       4 tests
+- TestOnAddPto:              6 tests
 - TestFindPythonw:           3 tests
 - TestReloadConfig:          3 tests
 - TestScheduleNextSync:      3 tests
@@ -319,78 +319,6 @@ class TestOnSyncNow:
 
 
 # ===========================================================================
-# TestProcessPtoInput
-# ===========================================================================
-
-
-class TestProcessPtoInput:
-    """Tests for _process_pto_input()."""
-
-    def test_sanitizes_input(self, app):
-        """Regex should strip non-date characters."""
-        mock_schedule = MagicMock()
-        mock_schedule.add_pto.return_value = (["2026-03-10"], [])
-        app._automation = MagicMock()
-        app._automation.schedule_mgr = mock_schedule
-
-        with patch.object(app, "_show_toast"):
-            app._process_pto_input("  2026-03-10 (Monday)  ")
-
-        # add_pto should receive the cleaned date string
-        args = mock_schedule.add_pto.call_args[0][0]
-        assert "2026-03-10" in args
-        # Parenthetical text should have been stripped
-        for d in args:
-            assert "(" not in d
-            assert ")" not in d
-
-    def test_splits_comma_separated_dates(self, app):
-        """Multiple comma-separated dates should be split and passed."""
-        mock_schedule = MagicMock()
-        mock_schedule.add_pto.return_value = (["2026-03-10", "2026-03-11"], [])
-        app._automation = MagicMock()
-        app._automation.schedule_mgr = mock_schedule
-
-        with patch.object(app, "_show_toast"):
-            app._process_pto_input("2026-03-10, 2026-03-11")
-
-        dates_arg = mock_schedule.add_pto.call_args[0][0]
-        assert len(dates_arg) == 2
-        assert "2026-03-10" in dates_arg
-        assert "2026-03-11" in dates_arg
-
-    def test_shows_toast_when_no_valid_dates(self, app):
-        """Input with only special chars (no digits/dashes) should toast."""
-        # The regex strips everything except digits, dashes, commas, and
-        # whitespace.  Pure letters + symbols produce only whitespace,
-        # which is truthy but yields an empty dates list.  add_pto([])
-        # returns ([], ["reason"]) in real code -- mock that.
-        mock_schedule = MagicMock()
-        mock_schedule.add_pto.return_value = ([], ["No valid dates"])
-        app._automation = MagicMock()
-        app._automation.schedule_mgr = mock_schedule
-
-        with patch.object(app, "_show_toast") as mock_toast:
-            app._process_pto_input("nothing valid here")
-
-        mock_toast.assert_called_once()
-        assert "No PTO Added" in mock_toast.call_args[0][0]
-
-    def test_calls_schedule_mgr_add_pto(self, app):
-        """Should call schedule_mgr.add_pto with cleaned date list."""
-        mock_schedule = MagicMock()
-        mock_schedule.add_pto.return_value = (["2026-04-01"], [])
-        app._automation = MagicMock()
-        app._automation.schedule_mgr = mock_schedule
-
-        with patch.object(app, "_show_toast"):
-            app._process_pto_input("2026-04-01")
-
-        mock_schedule.add_pto.assert_called_once()
-        assert "2026-04-01" in mock_schedule.add_pto.call_args[0][0]
-
-
-# ===========================================================================
 # TestShowYesnoDialog
 # ===========================================================================
 
@@ -484,6 +412,119 @@ class TestSyncPtoDatesBackground:
         mock_toast.assert_called_once()
         title, _ = mock_toast.call_args[0]
         assert "Error" in title or "error" in title.lower()
+
+
+# ===========================================================================
+# TestOnAddPto
+# ===========================================================================
+
+
+class TestOnAddPto:
+    """Tests for the revised TrayApp._on_add_pto() flow."""
+
+    def _make_app_with_schedule(self, add_pto_return=None, overhead=True):
+        """Helper: TrayApp with mocked automation and schedule manager."""
+        app = TrayApp()
+        mock_schedule = MagicMock()
+        mock_schedule.add_pto.return_value = add_pto_return or ([], [])
+        mock_schedule.expand_date_range.return_value = []
+        mock_automation = MagicMock()
+        mock_automation.schedule_mgr = mock_schedule
+        mock_automation._is_overhead_configured.return_value = overhead
+        app._automation = mock_automation
+        return app, mock_schedule, mock_automation
+
+    def test_no_automation_shows_error_toast(self):
+        """If _automation is None, show an error toast and return."""
+        app = TrayApp()
+        app._automation = None
+        with patch.object(app, "_show_toast") as mock_toast:
+            app._on_add_pto()
+        mock_toast.assert_called_once()
+        assert "Error" in mock_toast.call_args[0][0]
+
+    def test_range_flow_calls_expand_date_range(self):
+        """When user picks Yes (range), expand_date_range is called."""
+        app, mock_schedule, _ = self._make_app_with_schedule(
+            add_pto_return=(["2026-04-07", "2026-04-08"], [])
+        )
+        mock_schedule.expand_date_range.return_value = ["2026-04-07", "2026-04-08"]
+
+        with (
+            patch.object(app, "_show_yesno_dialog", side_effect=[True, False]),
+            patch.object(app, "_show_input_dialog", side_effect=["2026-04-07", "2026-04-08"]),
+            patch.object(app, "_show_toast"),
+            patch("tray_app.date") as mock_date,
+        ):
+            mock_date.today.return_value = date(2026, 4, 6)
+            app._on_add_pto()
+
+        mock_schedule.expand_date_range.assert_called_once_with("2026-04-07", "2026-04-08")
+
+    def test_single_day_flow_skips_expand(self):
+        """When user picks No (single day), expand_date_range is NOT called."""
+        app, mock_schedule, _ = self._make_app_with_schedule(add_pto_return=(["2026-04-07"], []))
+
+        with (
+            patch.object(app, "_show_yesno_dialog", side_effect=[False, False]),
+            patch.object(app, "_show_input_dialog", return_value="2026-04-07"),
+            patch.object(app, "_show_toast"),
+            patch("tray_app.date") as mock_date,
+        ):
+            mock_date.today.return_value = date(2026, 4, 6)
+            app._on_add_pto()
+
+        mock_schedule.expand_date_range.assert_not_called()
+        mock_schedule.add_pto.assert_called_once_with(["2026-04-07"])
+
+    def test_cancelled_input_returns_early(self):
+        """If user cancels the start date dialog, add_pto is never called."""
+        app, mock_schedule, _ = self._make_app_with_schedule()
+
+        with (
+            patch.object(app, "_show_yesno_dialog", return_value=True),
+            patch.object(app, "_show_input_dialog", return_value=""),
+            patch.object(app, "_show_toast"),
+        ):
+            app._on_add_pto()
+
+        mock_schedule.add_pto.assert_not_called()
+
+    def test_future_dates_trigger_sync_offer(self):
+        """Future dates cause the Tempo sync Yes/No dialog to appear."""
+        app, mock_schedule, mock_auto = self._make_app_with_schedule(
+            add_pto_return=(["2026-04-10"], [])
+        )
+
+        with (
+            patch.object(app, "_show_yesno_dialog", side_effect=[False, False]) as mock_yn,
+            patch.object(app, "_show_input_dialog", return_value="2026-04-10"),
+            patch.object(app, "_show_toast"),
+            patch("tray_app.date") as mock_date,
+        ):
+            mock_date.today.return_value = date(2026, 4, 1)
+            app._on_add_pto()
+
+        # Second _show_yesno_dialog call = the sync offer
+        assert mock_yn.call_count == 2
+
+    def test_sync_yes_calls_sync_background(self):
+        """If user says Yes to sync, _sync_pto_dates_background is called."""
+        app, mock_schedule, mock_auto = self._make_app_with_schedule(
+            add_pto_return=(["2026-04-10"], [])
+        )
+
+        with (
+            patch.object(app, "_show_yesno_dialog", side_effect=[False, True]),
+            patch.object(app, "_show_input_dialog", return_value="2026-04-10"),
+            patch.object(app, "_show_toast"),
+            patch.object(app, "_sync_pto_dates_background") as mock_bg,
+            patch("tray_app.date") as mock_date,
+        ):
+            mock_date.today.return_value = date(2026, 4, 1)
+            app._on_add_pto()
+
+        mock_bg.assert_called_once_with(["2026-04-10"])
 
 
 # ===========================================================================
