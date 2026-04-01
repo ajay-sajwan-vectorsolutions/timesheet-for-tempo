@@ -28,9 +28,9 @@ Coverage (~8 tests)
 
 import json
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -43,10 +43,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from tempo_automation import TempoAutomation  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Helper: build a TempoAutomation without triggering __init__
 # ---------------------------------------------------------------------------
+
 
 def _make_automation(config: dict) -> TempoAutomation:
     """
@@ -111,6 +111,7 @@ def _build_tempo_worklogs_for_month(
         List of dicts with startDate and timeSpentSeconds.
     """
     import calendar as cal
+
     last_day = end_day or cal.monthrange(year, month)[1]
     worklogs = []
     for d in range(1, last_day + 1):
@@ -118,10 +119,12 @@ def _build_tempo_worklogs_for_month(
         day_str = day.strftime("%Y-%m-%d")
         is_working, _ = is_working_day_fn(day_str)
         if is_working:
-            worklogs.append({
-                "startDate": day_str,
-                "timeSpentSeconds": int(hours_per_day * 3600),
-            })
+            worklogs.append(
+                {
+                    "startDate": day_str,
+                    "timeSpentSeconds": int(hours_per_day * 3600),
+                }
+            )
     return worklogs
 
 
@@ -136,6 +139,7 @@ def _weekday_schedule(date_str: str):
 # ===========================================================================
 # Monthly submission flow
 # ===========================================================================
+
 
 @pytest.mark.integration
 class TestMonthlySubmitFlow:
@@ -162,17 +166,17 @@ class TestMonthlySubmitFlow:
         ta.schedule_mgr.is_working_day.side_effect = _weekday_schedule
 
         # Build 8h worklogs for every weekday in Feb 2026 (up to 28th)
-        feb_worklogs = _build_tempo_worklogs_for_month(
-            2026, 2, 8.0, _weekday_schedule, end_day=28
-        )
+        feb_worklogs = _build_tempo_worklogs_for_month(2026, 2, 8.0, _weekday_schedule, end_day=28)
         ta.tempo_client.get_user_worklogs.return_value = feb_worklogs
 
         shortfall_path = tmp_path / "monthly_shortfall.json"
         submitted_path = tmp_path / "monthly_submitted.json"
 
-        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path), \
-             patch("tempo_automation.SUBMITTED_FILE", submitted_path), \
-             patch("tempo_automation.date") as mock_date:
+        with (
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+            patch("tempo_automation.SUBMITTED_FILE", submitted_path),
+            patch("tempo_automation.date") as mock_date,
+        ):
             mock_date.today.return_value = date(2026, 2, 28)
             mock_date.fromisoformat = date.fromisoformat
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
@@ -180,7 +184,7 @@ class TestMonthlySubmitFlow:
             ta.submit_timesheet()
 
         # Tempo submit_timesheet should be called
-        ta.tempo_client.submit_timesheet.assert_called_once_with("2026-02")
+        ta.tempo_client.submit_timesheet.assert_called_once_with()
 
         # Submitted marker should be saved
         assert submitted_path.exists()
@@ -188,9 +192,7 @@ class TestMonthlySubmitFlow:
         assert marker["period"] == "2026-02"
 
         # Notification sent
-        ta.notifier.send_submission_confirmation.assert_called_once_with(
-            "2026-02"
-        )
+        ta.notifier.send_submission_confirmation.assert_called_once_with("2026-02")
 
     def test_submission_blocked_by_gaps(self, dev_config, tmp_path):
         """Some days have shortfall -> submission blocked.
@@ -206,9 +208,7 @@ class TestMonthlySubmitFlow:
         ta.schedule_mgr.is_working_day.side_effect = _weekday_schedule
 
         # Build worklogs: all days at 8h except Feb 10 (6h) and Feb 12 (4h)
-        feb_worklogs = _build_tempo_worklogs_for_month(
-            2026, 2, 8.0, _weekday_schedule, end_day=28
-        )
+        feb_worklogs = _build_tempo_worklogs_for_month(2026, 2, 8.0, _weekday_schedule, end_day=28)
         # Modify specific days to create shortfalls
         for wl in feb_worklogs:
             if wl["startDate"] == "2026-02-10":
@@ -220,9 +220,11 @@ class TestMonthlySubmitFlow:
         shortfall_path = tmp_path / "monthly_shortfall.json"
         submitted_path = tmp_path / "monthly_submitted.json"
 
-        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path), \
-             patch("tempo_automation.SUBMITTED_FILE", submitted_path), \
-             patch("tempo_automation.date") as mock_date:
+        with (
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+            patch("tempo_automation.SUBMITTED_FILE", submitted_path),
+            patch("tempo_automation.date") as mock_date,
+        ):
             mock_date.today.return_value = date(2026, 2, 28)
             mock_date.fromisoformat = date.fromisoformat
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
@@ -234,13 +236,9 @@ class TestMonthlySubmitFlow:
 
         # Shortfall file should exist with gap data
         assert shortfall_path.exists()
-        shortfall = json.loads(
-            shortfall_path.read_text(encoding="utf-8")
-        )
+        shortfall = json.loads(shortfall_path.read_text(encoding="utf-8"))
         assert shortfall["period"] == "2026-02"
-        assert len(shortfall["gaps"]) == 2, (
-            f"Expected 2 gap days, got {len(shortfall['gaps'])}"
-        )
+        assert len(shortfall["gaps"]) == 2, f"Expected 2 gap days, got {len(shortfall['gaps'])}"
 
         # Submitted marker should NOT exist
         assert not submitted_path.exists()
@@ -255,9 +253,7 @@ class TestMonthlySubmitFlow:
 
         ta.schedule_mgr.is_working_day.side_effect = _weekday_schedule
 
-        feb_worklogs = _build_tempo_worklogs_for_month(
-            2026, 2, 8.0, _weekday_schedule, end_day=28
-        )
+        feb_worklogs = _build_tempo_worklogs_for_month(2026, 2, 8.0, _weekday_schedule, end_day=28)
         for wl in feb_worklogs:
             if wl["startDate"] == "2026-02-10":
                 wl["timeSpentSeconds"] = int(6 * 3600)
@@ -289,9 +285,7 @@ class TestMonthlySubmitFlow:
         assert gap_data["expected"] == gap_data["working_days"] * 8.0
 
         # Actual = expected - 6h shortfall
-        assert abs(
-            gap_data["actual"] - (gap_data["expected"] - 6.0)
-        ) < 0.1
+        assert abs(gap_data["actual"] - (gap_data["expected"] - 6.0)) < 0.1
 
     def test_notification_on_shortfall(self, dev_config, tmp_path):
         """Shortfall notification is sent when gaps are found."""
@@ -300,9 +294,7 @@ class TestMonthlySubmitFlow:
         ta.schedule_mgr.is_working_day.side_effect = _weekday_schedule
 
         # Only one day with a gap (Feb 10 at 4h)
-        feb_worklogs = _build_tempo_worklogs_for_month(
-            2026, 2, 8.0, _weekday_schedule, end_day=28
-        )
+        feb_worklogs = _build_tempo_worklogs_for_month(2026, 2, 8.0, _weekday_schedule, end_day=28)
         for wl in feb_worklogs:
             if wl["startDate"] == "2026-02-10":
                 wl["timeSpentSeconds"] = int(4 * 3600)
@@ -311,9 +303,11 @@ class TestMonthlySubmitFlow:
         shortfall_path = tmp_path / "monthly_shortfall.json"
         submitted_path = tmp_path / "monthly_submitted.json"
 
-        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path), \
-             patch("tempo_automation.SUBMITTED_FILE", submitted_path), \
-             patch("tempo_automation.date") as mock_date:
+        with (
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+            patch("tempo_automation.SUBMITTED_FILE", submitted_path),
+            patch("tempo_automation.date") as mock_date,
+        ):
             mock_date.today.return_value = date(2026, 2, 28)
             mock_date.fromisoformat = date.fromisoformat
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
@@ -335,18 +329,17 @@ class TestMonthlySubmitFlow:
         # Create submitted marker for Feb 2026
         submitted_path = tmp_path / "monthly_submitted.json"
         submitted_path.write_text(
-            json.dumps({
-                "period": "2026-02",
-                "submitted_at": "2026-02-28T18:00:00"
-            }),
+            json.dumps({"period": "2026-02", "submitted_at": "2026-02-28T18:00:00"}),
             encoding="utf-8",
         )
 
         shortfall_path = tmp_path / "monthly_shortfall.json"
 
-        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path), \
-             patch("tempo_automation.SUBMITTED_FILE", submitted_path), \
-             patch("tempo_automation.date") as mock_date:
+        with (
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+            patch("tempo_automation.SUBMITTED_FILE", submitted_path),
+            patch("tempo_automation.date") as mock_date,
+        ):
             mock_date.today.return_value = date(2026, 2, 28)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
 
@@ -361,6 +354,7 @@ class TestMonthlySubmitFlow:
 # ===========================================================================
 # Weekly verification flow
 # ===========================================================================
+
 
 @pytest.mark.integration
 class TestVerifyWeekFlow:
@@ -384,14 +378,14 @@ class TestVerifyWeekFlow:
         ta.schedule_mgr.is_working_day.side_effect = _weekday_schedule
 
         # All days have 8h
-        ta._check_day_hours = MagicMock(return_value={
-            "existing_hours": 8.0,
-            "gap_hours": 0.0,
-            "worklogs": [
-                {"issue_key": "PROJ-1", "time_spent_seconds": 28800}
-            ],
-            "existing_keys": {"PROJ-1"},
-        })
+        ta._check_day_hours = MagicMock(
+            return_value={
+                "existing_hours": 8.0,
+                "gap_hours": 0.0,
+                "worklogs": [{"issue_key": "PROJ-1", "time_spent_seconds": 28800}],
+                "existing_keys": {"PROJ-1"},
+            }
+        )
         ta._backfill_day = MagicMock()
 
         with patch("tempo_automation.date") as mock_date:
@@ -448,11 +442,13 @@ class TestVerifyWeekFlow:
             }
 
         ta._check_day_hours = MagicMock(side_effect=check_day_hours)
-        ta._backfill_day = MagicMock(return_value={
-            "created_count": 1,
-            "hours_added": 4.0,
-            "method": "historical",
-        })
+        ta._backfill_day = MagicMock(
+            return_value={
+                "created_count": 1,
+                "hours_added": 4.0,
+                "method": "historical",
+            }
+        )
 
         with patch("tempo_automation.date") as mock_date:
             mock_date.today.return_value = date(2026, 2, 13)  # Friday
@@ -486,22 +482,20 @@ class TestVerifyWeekFlow:
                 return (False, "PTO")
             return (True, "")
 
-        ta.schedule_mgr.is_working_day.side_effect = (
-            schedule_with_friday_pto
-        )
+        ta.schedule_mgr.is_working_day.side_effect = schedule_with_friday_pto
 
         # _is_overhead_configured returns False so PTO branch
         # does not attempt overhead check via _check_day_hours
         ta._is_overhead_configured = MagicMock(return_value=False)
 
-        ta._check_day_hours = MagicMock(return_value={
-            "existing_hours": 8.0,
-            "gap_hours": 0.0,
-            "worklogs": [
-                {"issue_key": "PROJ-1", "time_spent_seconds": 28800}
-            ],
-            "existing_keys": {"PROJ-1"},
-        })
+        ta._check_day_hours = MagicMock(
+            return_value={
+                "existing_hours": 8.0,
+                "gap_hours": 0.0,
+                "worklogs": [{"issue_key": "PROJ-1", "time_spent_seconds": 28800}],
+                "existing_keys": {"PROJ-1"},
+            }
+        )
         ta._backfill_day = MagicMock()
 
         with patch("tempo_automation.date") as mock_date:
@@ -516,11 +510,7 @@ class TestVerifyWeekFlow:
         ta._backfill_day.assert_not_called()
 
         # Verify the dates that were checked are Mon-Thu
-        checked_dates = [
-            c.args[0] for c in ta._check_day_hours.call_args_list
-        ]
+        checked_dates = [c.args[0] for c in ta._check_day_hours.call_args_list]
         for ds in checked_dates:
             d = date.fromisoformat(ds)
-            assert d.weekday() < 4, (
-                f"Day {ds} (weekday={d.weekday()}) should not be checked"
-            )
+            assert d.weekday() < 4, f"Day {ds} (weekday={d.weekday()}) should not be checked"

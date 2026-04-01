@@ -33,7 +33,7 @@ Coverage (~10 tests)
 import sys
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -46,10 +46,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from tempo_automation import TempoAutomation  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Helper: build a TempoAutomation without triggering __init__
 # ---------------------------------------------------------------------------
+
 
 def _make_automation(config: dict) -> TempoAutomation:
     """
@@ -98,6 +98,7 @@ def _make_automation(config: dict) -> TempoAutomation:
 # Developer daily sync flow
 # ===========================================================================
 
+
 @pytest.mark.integration
 class TestDeveloperDailySyncFlow:
     """Full developer daily sync from start to finish."""
@@ -135,8 +136,7 @@ class TestDeveloperDailySyncFlow:
         # Verify overhead was logged (2h = 7200s)
         create_calls = ta.jira_client.create_worklog.call_args_list
         assert len(create_calls) == 3, (
-            f"Expected 3 create_worklog calls (1 overhead + 2 tickets), "
-            f"got {len(create_calls)}"
+            f"Expected 3 create_worklog calls (1 overhead + 2 tickets), got {len(create_calls)}"
         )
 
         # First call should be overhead (OVERHEAD-10, 7200s)
@@ -145,17 +145,13 @@ class TestDeveloperDailySyncFlow:
         assert oh_call.kwargs["time_spent_seconds"] == 7200
 
         # Remaining 6h = 21600s across 2 tickets = 10800s each
-        ticket_seconds = [
-            c.kwargs["time_spent_seconds"] for c in create_calls[1:]
-        ]
+        ticket_seconds = [c.kwargs["time_spent_seconds"] for c in create_calls[1:]]
         assert ticket_seconds == [10800, 10800]
         assert sum(ticket_seconds) + 7200 == 28800  # 8h total
 
         # Notification sent
         ta.notifier.send_daily_summary.assert_called_once()
-        summary_worklogs = (
-            ta.notifier.send_daily_summary.call_args.args[0]
-        )
+        summary_worklogs = ta.notifier.send_daily_summary.call_args.args[0]
         assert len(summary_worklogs) == 3
 
     def test_pto_day_flow(self, dev_config):
@@ -181,8 +177,7 @@ class TestDeveloperDailySyncFlow:
         # create_worklog should be called with pto_story_key
         create_calls = ta.jira_client.create_worklog.call_args_list
         assert len(create_calls) == 1, (
-            f"Expected 1 create_worklog call for PTO overhead, "
-            f"got {len(create_calls)}"
+            f"Expected 1 create_worklog call for PTO overhead, got {len(create_calls)}"
         )
         assert create_calls[0].kwargs["issue_key"] == "OVERHEAD-2"
         assert create_calls[0].kwargs["time_spent_seconds"] == 28800
@@ -200,9 +195,7 @@ class TestDeveloperDailySyncFlow:
         """
         ta = _make_automation(dev_config)
 
-        ta.schedule_mgr.is_working_day.return_value = (
-            False, "Organization Holiday"
-        )
+        ta.schedule_mgr.is_working_day.return_value = (False, "Organization Holiday")
 
         ta.jira_client.get_my_worklogs.return_value = []
         ta.tempo_client.get_user_worklogs.return_value = []
@@ -248,12 +241,8 @@ class TestDeveloperDailySyncFlow:
 
         # All create_worklog calls should target OVERHEAD stories
         create_calls = ta.jira_client.create_worklog.call_args_list
-        total_seconds = sum(
-            c.kwargs["time_spent_seconds"] for c in create_calls
-        )
-        assert total_seconds == 28800, (
-            f"Expected 28800s (8h) total overhead, got {total_seconds}"
-        )
+        total_seconds = sum(c.kwargs["time_spent_seconds"] for c in create_calls)
+        assert total_seconds == 28800, f"Expected 28800s (8h) total overhead, got {total_seconds}"
 
         for c in create_calls:
             key = c.kwargs["issue_key"]
@@ -283,9 +272,7 @@ class TestDeveloperDailySyncFlow:
         ta.sync_daily("2026-02-10")
 
         create_calls = ta.jira_client.create_worklog.call_args_list
-        ticket_seconds = [
-            c.kwargs["time_spent_seconds"] for c in create_calls
-        ]
+        ticket_seconds = [c.kwargs["time_spent_seconds"] for c in create_calls]
         # Full 8h = 28800s across 2 tickets: 14400s each
         assert ticket_seconds == [14400, 14400]
         assert sum(ticket_seconds) == 28800
@@ -318,9 +305,7 @@ class TestDeveloperDailySyncFlow:
         ta.jira_client.delete_worklog.side_effect = (
             lambda *a, **kw: call_order.append("delete") or True
         )
-        ta.jira_client.create_worklog.side_effect = (
-            lambda **kw: call_order.append("create") or "99"
-        )
+        ta.jira_client.create_worklog.side_effect = lambda **kw: call_order.append("create") or "99"
 
         ta.sync_daily("2026-02-10")
 
@@ -330,8 +315,7 @@ class TestDeveloperDailySyncFlow:
         first_delete = call_order.index("delete")
         first_create = call_order.index("create")
         assert first_create < first_delete, (
-            f"Create at index {first_create} should precede "
-            f"delete at index {first_delete}"
+            f"Create at index {first_create} should precede delete at index {first_delete}"
         )
 
     def test_notification_sent_on_working_day(self, dev_config):
@@ -360,6 +344,7 @@ class TestDeveloperDailySyncFlow:
 # ===========================================================================
 # Product Owner daily sync flow
 # ===========================================================================
+
 
 @pytest.mark.integration
 class TestProductOwnerDailySyncFlow:
@@ -397,19 +382,19 @@ class TestProductOwnerDailySyncFlow:
         # Verify activities and hours
         activities_logged = []
         for c in tempo_calls:
-            activities_logged.append({
-                "description": c.kwargs.get(
-                    "description", c.args[3] if len(c.args) > 3 else ""
-                ),
-                "time_seconds": c.kwargs.get(
-                    "time_seconds", c.args[1] if len(c.args) > 1 else 0
-                ),
-            })
+            activities_logged.append(
+                {
+                    "description": c.kwargs.get(
+                        "description", c.args[3] if len(c.args) > 3 else ""
+                    ),
+                    "time_seconds": c.kwargs.get(
+                        "time_seconds", c.args[1] if len(c.args) > 1 else 0
+                    ),
+                }
+            )
 
         total_seconds = sum(a["time_seconds"] for a in activities_logged)
-        assert total_seconds == 28800, (
-            f"Expected 28800s (8h) total, got {total_seconds}"
-        )
+        assert total_seconds == 28800, f"Expected 28800s (8h) total, got {total_seconds}"
 
         # Jira client should NOT be used for worklog creation
         ta.jira_client.create_worklog.assert_not_called()
@@ -430,6 +415,7 @@ class TestProductOwnerDailySyncFlow:
 # ===========================================================================
 # Overhead Cases (integration)
 # ===========================================================================
+
 
 @pytest.mark.integration
 class TestOverheadCases:
@@ -465,9 +451,7 @@ class TestOverheadCases:
         assert create_calls[0].kwargs["time_spent_seconds"] == 7200
 
         # Remaining: 6h / 2 = 3h each
-        ticket_seconds = [
-            c.kwargs["time_spent_seconds"] for c in create_calls[1:]
-        ]
+        ticket_seconds = [c.kwargs["time_spent_seconds"] for c in create_calls[1:]]
         assert ticket_seconds == [10800, 10800]
         total = sum(c.kwargs["time_spent_seconds"] for c in create_calls)
         assert total == 28800  # 8h
@@ -550,8 +534,7 @@ class TestOverheadCases:
             "pi_identifier": "PI.26.2.APR.17",
             "pi_end_date": "2026-04-17",
             "stories": [
-                {"issue_key": "OVERHEAD-20", "summary": "PI Planning",
-                 "hours": 8},
+                {"issue_key": "OVERHEAD-20", "summary": "PI Planning", "hours": 8},
             ],
             "distribution": "single",
         }
@@ -575,6 +558,7 @@ class TestOverheadCases:
 # ===========================================================================
 # PO/Sales Role Tests (integration)
 # ===========================================================================
+
 
 @pytest.mark.integration
 class TestPOSalesRoles:
@@ -615,9 +599,7 @@ class TestPOSalesRoles:
         tempo_calls = ta.tempo_client.create_worklog.call_args_list
         assert len(tempo_calls) == 3
 
-        total_seconds = sum(
-            c.kwargs.get("time_seconds", 0) for c in tempo_calls
-        )
+        total_seconds = sum(c.kwargs.get("time_seconds", 0) for c in tempo_calls)
         assert total_seconds == 28800  # 8h
 
         # Jira should not be used
@@ -649,30 +631,35 @@ class TestPOSalesRoles:
 
         # Build worklogs for full month (8h every weekday)
         import calendar as cal
+
         worklogs = []
         last_day = cal.monthrange(2026, 2)[1]
         for d in range(1, last_day + 1):
             day = date(2026, 2, d)
             if day.weekday() < 5:
-                worklogs.append({
-                    "startDate": day.strftime("%Y-%m-%d"),
-                    "timeSpentSeconds": 28800,
-                })
+                worklogs.append(
+                    {
+                        "startDate": day.strftime("%Y-%m-%d"),
+                        "timeSpentSeconds": 28800,
+                    }
+                )
         ta.tempo_client.get_user_worklogs.return_value = worklogs
 
         shortfall_path = tmp_path / "monthly_shortfall.json"
         submitted_path = tmp_path / "monthly_submitted.json"
 
-        with patch("tempo_automation.SHORTFALL_FILE", shortfall_path), \
-             patch("tempo_automation.SUBMITTED_FILE", submitted_path), \
-             patch("tempo_automation.date") as mock_date:
+        with (
+            patch("tempo_automation.SHORTFALL_FILE", shortfall_path),
+            patch("tempo_automation.SUBMITTED_FILE", submitted_path),
+            patch("tempo_automation.date") as mock_date,
+        ):
             mock_date.today.return_value = date(2026, 2, 28)
             mock_date.fromisoformat = date.fromisoformat
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
 
             ta.submit_timesheet()
 
-        ta.tempo_client.submit_timesheet.assert_called_once_with("2026-02")
+        ta.tempo_client.submit_timesheet.assert_called_once_with()
 
     def test_sales_role_manual_activities(self, sales_config):
         """Sales role uses manual activities same as PO.
@@ -689,9 +676,7 @@ class TestPOSalesRoles:
         tempo_calls = ta.tempo_client.create_worklog.call_args_list
         assert len(tempo_calls) == 2
 
-        total_seconds = sum(
-            c.kwargs.get("time_seconds", 0) for c in tempo_calls
-        )
+        total_seconds = sum(c.kwargs.get("time_seconds", 0) for c in tempo_calls)
         assert total_seconds == 28800  # 8h
 
         ta.jira_client.create_worklog.assert_not_called()

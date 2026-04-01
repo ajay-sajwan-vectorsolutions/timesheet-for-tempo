@@ -2,7 +2,7 @@
 
 **Automate your daily Tempo timesheet entry and monthly submission -- save 15+ minutes every day.**
 
-Version 4.0 | Python 3.7+ | Windows + macOS
+Version 4.0.1 | Python 3.7+ | Windows + macOS
 
 <a href="https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/" target="_blank">View Presentation (Dark Theme)</a> | <a href="https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/case-study.html" target="_blank">View Case Study (Light Theme)</a>
 
@@ -433,6 +433,7 @@ examples/                    # Example configs for each role
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.0.1 | Mar 31, 2026 | Fix timesheet submission: correct Tempo API v4 endpoints (submit, approval status, reviewer lookup), response body error logging, 528 tests |
 | 4.0 | Mar 13, 2026 | Data safety (create-before-delete with rollback), pre-sync health check, retry logic (429/502/503/504), config validation, --dry-run mode, --backfill --from-date --to-date, --approval-status, --log-format json, weighted distribution, holiday cache with TTL, parallel worklog creation, 500 tests (71% coverage), CI/CD (GitHub Actions), ruff+pre-commit, keyring credentials (Mac/Linux) |
 | 3.9 | Feb 23, 2026 | Early timesheet submission: bypasses 7-day window when all remaining days are non-working (PTO/holidays/weekends), tray Submit menu visible mid-month when eligible |
 | 3.8 | Feb 22, 2026 | Distribution zips: build_dist.bat (Win+Python, Win Lite, Mac), install.bat auto-detects Python (embedded or system), run_*.bat regenerated with correct paths |

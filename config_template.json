@@ -19,7 +19,8 @@
 
   "tempo": {
     "api_token": "your_tempo_api_token_here",
-    "account_id": ""
+    "account_id": "",
+    "forge_sync_delay_seconds": 0
   },
 
   "organization": {
