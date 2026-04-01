@@ -328,18 +328,28 @@ class TestShowYesnoDialog:
 
     def test_windows_yes_returns_true(self, app):
         """MessageBoxW returning 6 (IDYES) -> True."""
-        with patch("sys.platform", "win32"):
-            with patch("tray_app.ctypes") as mock_ctypes:
-                mock_ctypes.windll.user32.MessageBoxW.return_value = 6
-                result = app._show_yesno_dialog("Sync?", "Title")
+        import tray_app as _tray_mod
+
+        mock_ctypes = MagicMock()
+        mock_ctypes.windll.user32.MessageBoxW.return_value = 6
+        with (
+            patch("sys.platform", "win32"),
+            patch.object(_tray_mod, "ctypes", mock_ctypes, create=True),
+        ):
+            result = app._show_yesno_dialog("Sync?", "Title")
         assert result is True
 
     def test_windows_no_returns_false(self, app):
         """MessageBoxW returning 7 (IDNO) -> False."""
-        with patch("sys.platform", "win32"):
-            with patch("tray_app.ctypes") as mock_ctypes:
-                mock_ctypes.windll.user32.MessageBoxW.return_value = 7
-                result = app._show_yesno_dialog("Sync?", "Title")
+        import tray_app as _tray_mod
+
+        mock_ctypes = MagicMock()
+        mock_ctypes.windll.user32.MessageBoxW.return_value = 7
+        with (
+            patch("sys.platform", "win32"),
+            patch.object(_tray_mod, "ctypes", mock_ctypes, create=True),
+        ):
+            result = app._show_yesno_dialog("Sync?", "Title")
         assert result is False
 
     def test_mac_yes_returns_true(self, app):
