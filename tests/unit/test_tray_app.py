@@ -31,6 +31,7 @@ Coverage targets (~32 tests)
 import json
 import sys
 import threading
+import time
 from datetime import date, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -434,6 +435,55 @@ class TestShowYesnoDialog:
         with patch("sys.platform", "linux"):
             result = app._show_yesno_dialog("Sync?", "Title")
         assert result is False
+
+
+# ===========================================================================
+# TestSyncPtoDatesBackground
+# ===========================================================================
+
+
+class TestSyncPtoDatesBackground:
+    """Tests for TrayApp._sync_pto_dates_background()."""
+
+    def test_calls_sync_daily_for_each_date(self, app):
+        """sync_daily() is called once per date."""
+        app._automation = MagicMock()
+        app._automation.sync_daily = MagicMock()
+
+        with patch.object(app, "_show_toast"):
+            app._sync_pto_dates_background(["2026-04-07", "2026-04-08"])
+            # Allow daemon thread to complete
+            time.sleep(0.2)
+
+        assert app._automation.sync_daily.call_count == 2
+        app._automation.sync_daily.assert_any_call("2026-04-07")
+        app._automation.sync_daily.assert_any_call("2026-04-08")
+
+    def test_shows_success_toast_after_sync(self, app):
+        """A success toast is shown when all syncs complete."""
+        app._automation = MagicMock()
+        app._automation.sync_daily = MagicMock()
+
+        with patch.object(app, "_show_toast") as mock_toast:
+            app._sync_pto_dates_background(["2026-04-07"])
+            time.sleep(0.2)
+
+        mock_toast.assert_called_once()
+        title, _ = mock_toast.call_args[0]
+        assert "Synced" in title or "PTO" in title
+
+    def test_shows_error_toast_on_failure(self, app):
+        """If sync_daily raises, an error toast is shown."""
+        app._automation = MagicMock()
+        app._automation.sync_daily = MagicMock(side_effect=RuntimeError("API down"))
+
+        with patch.object(app, "_show_toast") as mock_toast:
+            app._sync_pto_dates_background(["2026-04-07"])
+            time.sleep(0.2)
+
+        mock_toast.assert_called_once()
+        title, _ = mock_toast.call_args[0]
+        assert "Error" in title or "error" in title.lower()
 
 
 # ===========================================================================

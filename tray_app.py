@@ -695,6 +695,24 @@ class TrayApp:
                 pass
         return False
 
+    def _sync_pto_dates_background(self, dates: list):
+        """Sync PTO overhead hours to Tempo for each date in a daemon thread."""
+
+        def _run():
+            synced = 0
+            for d in dates:
+                try:
+                    self._automation.sync_daily(d)
+                    synced += 1
+                except Exception as e:
+                    tray_logger.error(f"PTO sync failed for {d}: {e}", exc_info=True)
+                    self._show_toast("Sync Error", f"Failed to sync {d}: {e}")
+                    return
+            self._show_toast("PTO Synced", f"Synced {synced} day(s) to Tempo.")
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+
     def _process_pto_input(self, raw: str):
         """Sanitize PTO input and add dates via ScheduleManager."""
         import re
