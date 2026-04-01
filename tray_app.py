@@ -582,7 +582,11 @@ class TrayApp:
             msg = self._import_error or "Automation not loaded"
             self._show_toast("Error", msg)
             return
+        thread = threading.Thread(target=self._run_add_pto, daemon=True)
+        thread.start()
 
+    def _run_add_pto(self):
+        """Background thread for the Add PTO dialog flow."""
         try:
             use_range = self._show_yesno_dialog(
                 "Add PTO for a date range?\n\n"
