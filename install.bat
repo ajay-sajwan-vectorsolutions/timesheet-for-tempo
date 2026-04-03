@@ -447,10 +447,6 @@ powershell -Command "Start-Process -FilePath '!PYTHONW_EXE!' -ArgumentList ('\"!
 timeout /t 3 /nobreak >nul
 echo [OK] Tray app is running in the system tray
 echo.
-echo NOTE: The tray app and Task Scheduler can coexist safely.
-echo       The sync is idempotent (re-running overwrites previous entries).
-
-echo.
 
 REM ============================================================================
 REM Test run
