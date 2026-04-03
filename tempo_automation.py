@@ -706,7 +706,7 @@ class ConfigManager:
         teams_webhook = existing.get("notifications", {}).get("teams_webhook_url", "")
 
         # ------------------------------------------------------------------ #
-        # EMAIL NOTIFICATIONS                                                 #
+        # EMAIL NOTIFICATIONS (disabled by default -- future enhancement)     #
         # ------------------------------------------------------------------ #
         existing_notif = existing.get("notifications", {})
         if has_existing and "email_enabled" in existing_notif:
@@ -715,30 +715,12 @@ class ConfigManager:
             smtp_port = existing_notif.get("smtp_port", 587)
             smtp_user = existing_notif.get("smtp_user", user_email)
             smtp_password = existing_notif.get("smtp_password", "")
-            print(
-                f"\nEmail notifications: "
-                f"{'enabled' if enable_email else 'disabled'}"
-                f" (reusing existing)"
-            )
         else:
-            print("\n--- EMAIL NOTIFICATIONS ---")
-            print("SMTP server: smtp.office365.com (auto-configured)")
-            enable_email = (
-                input("Enable email notifications? (yes/no, default: no): ").strip().lower()
-            )
-            enable_email = enable_email in ["yes", "y"]
-
+            enable_email = False
             smtp_server = "smtp.office365.com"
             smtp_port = 587
             smtp_user = user_email
             smtp_password = ""
-            if enable_email:
-                print(f"\nSMTP login will use your email: {user_email}")
-                print("[INFO] If MFA is enabled, create an App Password at")
-                print("   https://mysignins.microsoft.com/security-info")
-                raw_password = input("Enter your email/app password: ").strip()
-                smtp_password = CredentialManager.encrypt(raw_password, key="smtp_password")
-                print("[OK] Password encrypted and saved securely")
 
         # ------------------------------------------------------------------ #
         # MANUAL ACTIVITIES (non-developers)                                  #
@@ -808,6 +790,13 @@ class ConfigManager:
         # Preserve overhead config if present
         if "overhead" in existing:
             config["overhead"] = existing["overhead"]
+            stories = existing.get("overhead", {}).get("current_pi", {}).get("stories", [])
+            if stories:
+                print(f"\nOverhead stories: {len(stories)} found (reusing from previous install)")
+                for s in stories:
+                    print(f"  [->] {s.get('issue_key', '?')} - {s.get('summary', '?')}")
+            else:
+                print("\nOverhead stories: skipping overhead story setup")
 
         # Preserve distribution_weights if present
         if "distribution_weights" in existing.get("schedule", {}):
@@ -2715,6 +2704,12 @@ class TempoAutomation:
         print()
         logger.info(f"PTO sync completed for {target_date}: {total_hours:.2f}h")
 
+        return {
+            "hours_logged": total_hours,
+            "target_hours": daily_hours,
+            "reason": "pto",
+        }
+
     def _forge_sync_wait(self):
         """Wait for Jira-to-Tempo sync if forge_sync_delay_seconds is set.
 
@@ -2835,8 +2830,7 @@ class TempoAutomation:
             is_off_day = reason != "Weekend"
             if is_off_day and self.config.get("user", {}).get("role") == "developer":
                 if self._is_overhead_configured():
-                    self._sync_pto_overhead(target_date)
-                    return
+                    return self._sync_pto_overhead(target_date)
                 else:
                     print(f"\n[SKIP] {target_date} is {reason}.")
                     self._warn_overhead_not_configured()

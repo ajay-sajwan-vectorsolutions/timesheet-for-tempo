@@ -34,7 +34,7 @@ import threading
 import time
 from datetime import date, datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -316,6 +316,35 @@ class TestOnSyncNow:
         with patch("tray_app.threading.Thread", return_value=MagicMock()):
             app._on_sync_now()
         assert app._pending_confirmation is False
+
+
+# ===========================================================================
+# TestRunSync
+# ===========================================================================
+
+
+class TestRunSync:
+    """Tests for _run_sync()."""
+
+    def test_shows_toast_on_skip(self, app):
+        """When sync_daily returns None (non-working day), a toast must still appear."""
+        mock_automation = MagicMock()
+        mock_automation.sync_daily.return_value = None
+        app._automation = mock_automation
+
+        with (
+            patch.object(app, "_show_toast") as mock_toast,
+            patch.object(app, "_set_icon_state"),
+            patch.object(app, "_start_sync_animation"),
+            patch("tray_app._monthly_log_file", return_value=Path("test.log")),
+            patch("builtins.open", mock_open()),
+            patch("tempo_automation.TempoAutomation", return_value=mock_automation),
+        ):
+            app._run_sync()
+
+        mock_toast.assert_called_once()
+        title = mock_toast.call_args[0][0]
+        assert "skip" in title.lower()
 
 
 # ===========================================================================
@@ -670,6 +699,67 @@ class TestScheduleNextSync:
             delay_seconds = MockTimer.call_args[0][0]
             assert delay_seconds > 18 * 3600  # more than 18 hours
             assert delay_seconds < 24 * 3600  # less than 24 hours
+
+    def test_schedules_for_today_when_at_exact_time(self, app):
+        """If current time equals configured sync time exactly, schedule for today (24h), not tomorrow.
+
+        With '<=', exact equality pushes to tomorrow (delay ~24h from next day).
+        With '<', exact equality keeps today (delay = 0, timer fires immediately).
+        """
+        app._config = {"schedule": {"daily_sync_time": "11:00"}}
+
+        # now = 11:00:00.000000 exactly, target after replace = 11:00:00.000000
+        # With '<': target (11:00:00) is NOT < now (11:00:00) -> stays today, delay = 0
+        # With '<=': target (11:00:00) IS <= now (11:00:00) -> pushes to tomorrow
+        fake_now = datetime(2026, 3, 15, 11, 0, 0, 0)
+        with patch.object(app, "_reload_config"):
+            with patch("tray_app.datetime") as mock_dt:
+                mock_dt.now.return_value = fake_now
+                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+
+                with patch("tray_app.threading.Timer") as MockTimer:
+                    mock_timer = MagicMock()
+                    MockTimer.return_value = mock_timer
+                    app._schedule_next_sync()
+
+            delay_seconds = MockTimer.call_args[0][0]
+            # With '<', delay should be 0 (fire immediately). With '<=', it would be ~86400.
+            assert delay_seconds < 60, (
+                f"Expected <60s delay, got {delay_seconds:.0f}s (scheduled for tomorrow?)"
+            )
+
+
+# ===========================================================================
+# TestReconcileTaskScheduler
+# ===========================================================================
+
+
+class TestReconcileTaskScheduler:
+    """Tests for _reconcile_task_scheduler()."""
+
+    def test_calls_update_with_config_time(self, app):
+        """Tray startup should update Task Scheduler to match config sync time."""
+        app._config = {"schedule": {"daily_sync_time": "11:00"}}
+
+        with (
+            patch("sys.platform", "win32"),
+            patch.object(app, "_update_task_scheduler_time") as mock_update,
+        ):
+            app._reconcile_task_scheduler()
+
+        mock_update.assert_called_once_with("11:00")
+
+    def test_skips_on_non_windows(self, app):
+        """On Mac/Linux, reconcile should be a no-op."""
+        app._config = {"schedule": {"daily_sync_time": "11:00"}}
+
+        with (
+            patch("sys.platform", "darwin"),
+            patch.object(app, "_update_task_scheduler_time") as mock_update,
+        ):
+            app._reconcile_task_scheduler()
+
+        mock_update.assert_not_called()
 
 
 # ===========================================================================
