@@ -360,7 +360,7 @@ class TestSetupWizard:
             # name auto-populated from Jira /myself mock
             "8",  # daily hours
             "1",  # location: US
-            "no",  # enable email: no
+            # email notifications skipped (disabled by default)
         ]
 
     def _register_jira_myself(self):
@@ -390,7 +390,7 @@ class TestSetupWizard:
             "Test PO",  # name
             "8",  # daily hours
             "1",  # location: US
-            "no",  # enable email: no
+            # email notifications skipped (disabled by default)
             "yes",  # add activity?
             "Stakeholder Meetings",  # activity name
             "3",  # activity hours

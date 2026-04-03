@@ -1983,6 +1983,27 @@ class TestTempoSourceOfTruth:
         # Since 28800s >= total_seconds, no new worklog created
         ta.jira_client.create_worklog.assert_not_called()
 
+    def test_sync_pto_overhead_returns_result_dict(self):
+        """_sync_pto_overhead must return a dict with hours_logged, target_hours, reason."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+
+        # Stub: no existing worklogs, _log_overhead_hours creates 8h
+        ta.jira_client.get_my_worklogs.return_value = []
+        ta.tempo_client.get_user_worklogs.return_value = []
+        ta._log_overhead_hours = MagicMock(
+            return_value=[
+                {"issue_key": "OVERHEAD-2", "issue_summary": "PTO", "time_spent_seconds": 28800}
+            ]
+        )
+
+        result = ta._sync_pto_overhead("2026-04-03")
+
+        assert result is not None
+        assert result["hours_logged"] == 8.0
+        assert result["target_hours"] == 8
+        assert result["reason"] == "pto"
+
     def test_verify_week_uses_tempo(self):
         """verify_week should call _check_day_hours which reads Tempo."""
         cfg = _dev_config()

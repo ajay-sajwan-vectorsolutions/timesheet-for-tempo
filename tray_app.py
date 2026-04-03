@@ -292,7 +292,7 @@ class TrayApp:
         target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
         # If today's time has passed, schedule for tomorrow
-        if target <= now:
+        if target < now:
             target += timedelta(days=1)
 
         delay = (target - now).total_seconds()
@@ -514,13 +514,17 @@ class TrayApp:
             if result is None:
                 # Non-working day / health check abort / early exit
                 self._set_icon_state("green", "Tempo Automation")
+                self._show_toast(
+                    "Sync Skipped",
+                    "No hours logged -- today is not a working day.",
+                )
                 tray_logger.info("Sync skipped (non-working day or early exit)")
                 sync_succeeded = True
             elif result["hours_logged"] >= result["target_hours"]:
                 self._set_icon_state("green", "Tempo - Sync complete")
                 self._show_toast(
                     "Sync Complete",
-                    f"Daily timesheet synced: {result['hours_logged']:.1f}h logged.",
+                    f"Daily timesheet synced: {result['hours_logged']:.1f} hrs logged.",
                 )
                 tray_logger.info("Sync completed successfully")
                 sync_succeeded = True
@@ -530,26 +534,26 @@ class TrayApp:
                 reason = result.get("reason", "partial")
                 if reason == "no_overhead":
                     tooltip = (
-                        f"Tempo - Incomplete: {hours:.1f}h of {target:.1f}h logged. "
+                        f"Tempo - Incomplete: {hours:.1f} hrs of {target:.1f} hrs logged. "
                         f"No overhead stories configured. "
                         f"Right-click > Configure > Select Overhead."
                     )
                     body = (
-                        "0.0h logged - no overhead stories configured.\n"
+                        "0.0 hrs logged - no overhead stories configured.\n"
                         "Right-click the tray icon > Configure > Select Overhead."
                     )
                 elif reason == "no_tickets":
                     tooltip = (
-                        f"Tempo - Incomplete: {hours:.1f}h of {target:.1f}h logged. "
+                        f"Tempo - Incomplete: {hours:.1f} hrs of {target:.1f} hrs logged. "
                         f"No active Jira tickets found."
                     )
                     body = (
-                        "0.0h logged - no active Jira tickets found.\n"
+                        "0.0 hrs logged - no active Jira tickets found.\n"
                         "Ensure tickets are IN DEVELOPMENT or CODE REVIEW."
                     )
                 else:
-                    tooltip = f"Tempo - Incomplete: {hours:.1f}h of {target:.1f}h logged."
-                    body = f"Only {hours:.1f}h of {target:.1f}h logged."
+                    tooltip = f"Tempo - Incomplete: {hours:.1f} hrs of {target:.1f} hrs logged."
+                    body = f"Only {hours:.1f} hrs of {target:.1f} hrs logged."
                 self._set_icon_state("red", tooltip)
                 self._show_toast("Sync Incomplete", body)
                 tray_logger.warning(f"Sync incomplete: {hours:.1f}h/{target:.1f}h reason={reason}")
@@ -588,6 +592,12 @@ class TrayApp:
     def _run_add_pto(self):
         """Background thread for the Add PTO dialog flow."""
         try:
+            # Reload automation from disk so pto_days reflects any manual config edits
+            from tempo_automation import TempoAutomation
+
+            with self._automation_lock:
+                self._automation = TempoAutomation(CONFIG_FILE)
+
             use_range = self._show_yesno_dialog(
                 "Add PTO for a date range?\n\n"
                 "Yes = enter start and end date\n"
@@ -870,6 +880,18 @@ class TrayApp:
                 )
         except Exception as e:
             tray_logger.warning(f"Could not update Task Scheduler time: {e}")
+
+    def _reconcile_task_scheduler(self):
+        """Ensure Windows Task Scheduler time matches config on startup.
+
+        Covers the case where config was edited directly (e.g. --setup)
+        but the Task Scheduler task still has the old/default time.
+        """
+        if sys.platform != "win32":
+            return
+        sync_time = self._get_sync_time()
+        self._update_task_scheduler_time(sync_time)
+        tray_logger.info(f"Task Scheduler reconciled to config sync time: {sync_time}")
 
     def _on_select_overhead(self, icon=None, item=None):
         """Open a terminal window for overhead story selection."""
@@ -1287,7 +1309,7 @@ class TrayApp:
         if should_warn:
             msg = (
                 f"You haven't logged hours for today "
-                f"({hours_logged:.1f}h / {daily_hours:.1f}h).\n\n"
+                f"({hours_logged:.1f} hrs / {daily_hours:.1f} hrs).\n\n"
                 f"The app will remind you at "
                 f"{self._get_sync_time()}.\n\n"
                 f"Exit anyway?"
@@ -1503,6 +1525,7 @@ class TrayApp:
             initial_tooltip = "Tempo Automation"
             # Schedule the notification timer
             self._schedule_next_sync()
+            self._reconcile_task_scheduler()
             if sync_on_start:
                 self._maybe_sync_on_start()
 
@@ -1630,7 +1653,7 @@ def register_autostart():
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_KEY, 0, winreg.KEY_SET_VALUE)
             winreg.SetValueEx(key, REG_VALUE, 0, winreg.REG_SZ, command)
             winreg.CloseKey(key)
-            print(f"[OK] Auto-start registered: {command}")
+            print("[OK] Auto-start registered")
             tray_logger.info(f"Auto-start registered: {command}")
         except Exception as e:
             print(f"[FAIL] Could not register auto-start: {e}")

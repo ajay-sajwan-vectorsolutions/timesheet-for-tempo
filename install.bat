@@ -320,13 +320,13 @@ echo PTO days, holidays, and days with no active tickets.
 echo.
 set /p SELECT_OH="Configure overhead stories now? (y/n, default: y): "
 if /i "%SELECT_OH%"=="n" (
-    echo Skipped. You can configure later: python tempo_automation.py --select-overhead
+    echo Skipping overhead story setup
 ) else (
     "%PYTHON_EXE%" tempo_automation.py --select-overhead
     if !errorlevel! neq 0 (
         echo.
         echo [!] Overhead selection skipped or failed
-        echo     You can configure later: python tempo_automation.py --select-overhead
+        echo     Skipping overhead story setup
     )
 )
 echo.
@@ -340,7 +340,6 @@ echo.
 
 REM -- Generate run_daily.bat with detected Python path --
 REM    Log file rotates monthly: daily-timesheet-YYYY-MM.log
-echo Generating run_daily.bat...
 (
     echo @echo off
     echo setlocal enabledelayedexpansion
@@ -354,7 +353,6 @@ echo Generating run_daily.bat...
 ) > "%SCRIPT_DIR%run_daily.bat"
 
 REM -- Generate run_weekly.bat with detected Python path --
-echo Generating run_weekly.bat...
 (
     echo @echo off
     echo setlocal enabledelayedexpansion
@@ -368,7 +366,6 @@ echo Generating run_weekly.bat...
 ) > "%SCRIPT_DIR%run_weekly.bat"
 
 REM -- Generate run_monthly.bat with detected Python path --
-echo Generating run_monthly.bat...
 (
     echo @echo off
     echo setlocal enabledelayedexpansion
@@ -384,9 +381,15 @@ echo Generating run_monthly.bat...
 echo [OK] Wrapper scripts generated with detected Python path
 echo.
 
-REM Daily sync task (weekdays only at 6:00 PM, uses OK/Cancel dialog wrapper)
-echo Creating daily sync task ^(Mon-Fri at 6:00 PM^)...
-schtasks /Create /TN "TempoAutomation-DailySync" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 18:00 /TR "\"%SCRIPT_DIR%run_daily.bat\"" /F >nul 2>&1
+REM Read sync time from config if it exists, otherwise default to 18:00
+set SYNC_TIME=18:00
+if exist "%SCRIPT_DIR%config.json" (
+    for /f "usebackq delims=" %%T in (`powershell -Command "try { $c = Get-Content '%SCRIPT_DIR%config.json' -Raw | ConvertFrom-Json; if ($c.schedule.daily_sync_time) { Write-Output $c.schedule.daily_sync_time } } catch {}"`) do (
+        set "SYNC_TIME=%%T"
+    )
+)
+echo Creating daily sync task ^(Mon-Fri at !SYNC_TIME!^)...
+schtasks /Create /TN "TempoAutomation-DailySync" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST !SYNC_TIME! /TR "\"%SCRIPT_DIR%run_daily.bat\"" /F >nul 2>&1
 
 if %errorlevel% equ 0 (
     echo [OK] Daily sync task created ^(weekdays only^)
@@ -484,11 +487,11 @@ echo   Python: %PYTHON_EXE%
 echo.
 echo   Tray App:
 echo     - Starts on Windows login (system tray icon)
-echo     - Notifies at your configured sync time (default 6:00 PM)
+echo     - Notifies at your configured sync time (!SYNC_TIME!)
 echo     - Right-click for menu: Sync Now, Add PTO, View Schedule, etc.
 echo.
 echo   Task Scheduler:
-echo     - Daily:   Mon-Fri at 6:00 PM (sync via OK/Cancel dialog)
+echo     - Daily:   Mon-Fri at !SYNC_TIME! (sync via OK/Cancel dialog)
 echo     - Weekly:  Fridays at 4:00 PM (verify hours, backfill gaps)
 echo     - Monthly: Last day at 11:00 PM (verify + submit timesheet)
 echo.
@@ -497,26 +500,8 @@ echo   Config:  %INSTALL_DIR%\config.json
 echo   Log:     %INSTALL_DIR%\daily-timesheet-YYYY-MM.log  (rotates monthly)
 echo   Runtime: %INSTALL_DIR%\tempo_automation.log
 echo.
-echo Manual commands:
-echo   python tempo_automation.py              (sync today)
-echo   python tempo_automation.py --date DATE  (sync specific date)
-echo   python tempo_automation.py --verify-week (verify this week)
-echo   python tempo_automation.py --submit     (submit monthly)
-echo   python tempo_automation.py --show-schedule (view calendar)
-echo   python tempo_automation.py --manage     (schedule menu)
-echo.
-echo Uninstall:
-echo   python tray_app.py --unregister
-echo   schtasks /Delete /TN "TempoAutomation-DailySync" /F
-echo   schtasks /Delete /TN "TempoAutomation-WeeklyVerify" /F
-echo   schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F
-echo   Then delete this folder.
-echo.
 echo ============================================================
 echo.
-echo This window will close in:
-for /l %%i in (10,-1,1) do (
-    echo   %%i...
-    timeout /t 1 /nobreak >nul
-)
+echo Press any key to exit...
+pause >nul
 endlocal
