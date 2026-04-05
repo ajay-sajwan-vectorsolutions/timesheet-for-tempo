@@ -680,7 +680,7 @@ class TrayApp:
     def _show_input_dialog(self, prompt: str, title: str) -> str:
         """
         Show a text input dialog and return user input.
-        Windows: VBScript InputBox.
+        Windows: PowerShell InputBox (hidden console).
         Mac: AppleScript dialog.
         Returns empty string if user cancelled.
         """
@@ -691,40 +691,36 @@ class TrayApp:
         return ""
 
     def _show_input_dialog_win(self, prompt: str, title: str) -> str:
-        """Windows VBScript InputBox dialog."""
-        tmp_file = SCRIPT_DIR / "_pto_input.tmp"
-        vbs_file = SCRIPT_DIR / "_pto_input.vbs"
-        tmp_path_escaped = str(tmp_file).replace("\\", "\\\\")
+        """Windows text input dialog via PowerShell .NET InputBox (no temp files).
 
-        # Escape double-quotes and convert newlines for VBScript
-        vbs_prompt = prompt.replace('"', '""').replace("\n", '" & vbCrLf & "')
-        vbs_title = title.replace('"', '""')
-        vbs_content = (
-            f'result = InputBox("{vbs_prompt}", "{vbs_title}")\n'
-            'If result <> "" Then\n'
-            "  Dim fso, f\n"
-            '  Set fso = CreateObject("Scripting.FileSystemObject")\n'
-            f'  Set f = fso.CreateTextFile("{tmp_path_escaped}", True)\n'
-            "  f.Write result\n"
-            "  f.Close\n"
-            "End If\n"
-        )
-
-        if tmp_file.exists():
-            tmp_file.unlink()
+        Uses CREATE_NO_WINDOW to suppress the PowerShell console flash.
+        Tkinter is not available in the embedded Python distribution.
+        """
+        ps_prompt = prompt.replace("'", "''").replace("\n", "`n")
+        ps_title = title.replace("'", "''")
+        cmd = [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            (
+                "Add-Type -AssemblyName Microsoft.VisualBasic; "
+                "[Microsoft.VisualBasic.Interaction]::InputBox("
+                f"'{ps_prompt}', '{ps_title}', '')"
+            ),
+        ]
         try:
-            with open(vbs_file, "w") as f:
-                f.write(vbs_content)
-            subprocess.run(["wscript.exe", str(vbs_file)], timeout=120)
-            if tmp_file.exists():
-                return tmp_file.read_text().strip()
+            CREATE_NO_WINDOW = 0x08000000
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            if proc.returncode == 0:
+                return proc.stdout.strip()
         except subprocess.TimeoutExpired:
             pass
-        finally:
-            if vbs_file.exists():
-                vbs_file.unlink()
-            if tmp_file.exists():
-                tmp_file.unlink()
         return ""
 
     def _show_input_dialog_mac(self, prompt: str, title: str) -> str:
@@ -935,19 +931,10 @@ class TrayApp:
             self._show_text_dialog_mac(output, title)
 
     def _show_text_dialog_win(self, text: str, title: str):
-        """Display multi-line text in a VBScript MsgBox (same mechanism as Add PTO)."""
-        vbs_text = text.replace('"', '""').replace("\n", '" & vbCrLf & "')
-        vbs_title = title.replace('"', '""')
-        vbs_content = f'MsgBox "{vbs_text}", 0, "{vbs_title}"\n'
-        vbs_file = SCRIPT_DIR / "_tempo_output.vbs"
-        try:
-            vbs_file.write_text(vbs_content)
-            subprocess.run(["wscript.exe", str(vbs_file)], timeout=300)
-        except subprocess.TimeoutExpired:
-            pass
-        finally:
-            if vbs_file.exists():
-                vbs_file.unlink()
+        """Display multi-line text in a MessageBoxW dialog (ctypes)."""
+        MB_OK = 0x00000000
+        MB_SETFOREGROUND = 0x00010000
+        ctypes.windll.user32.MessageBoxW(0, text, title, MB_OK | MB_SETFOREGROUND)
 
     def _show_text_dialog_mac(self, text: str, title: str):
         """Display text in an AppleScript dialog (same mechanism as Add PTO)."""
