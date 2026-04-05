@@ -483,14 +483,32 @@ class TestOnAddPto:
         mock_toast.assert_called_once()
         assert "Error" in mock_toast.call_args[0][0]
 
+    def _run_sync_thread(self, target_method, mock_auto):
+        """Helper: patch Thread + TempoAutomation so _run_add_pto runs synchronously."""
+
+        class _SyncThread:
+            def __init__(self, target, daemon=None):
+                self._target = target
+
+            def start(self):
+                self._target()
+
+        return (
+            patch("tray_app.threading.Thread", _SyncThread),
+            patch("tempo_automation.TempoAutomation", return_value=mock_auto),
+        )
+
     def test_range_flow_calls_expand_date_range(self):
         """When user picks Yes (range), expand_date_range is called."""
-        app, mock_schedule, _ = self._make_app_with_schedule(
+        app, mock_schedule, mock_auto = self._make_app_with_schedule(
             add_pto_return=(["2026-04-07", "2026-04-08"], [])
         )
         mock_schedule.expand_date_range.return_value = ["2026-04-07", "2026-04-08"]
 
+        sync_patches = self._run_sync_thread("_run_add_pto", mock_auto)
         with (
+            sync_patches[0],
+            sync_patches[1],
             patch.object(app, "_show_yesno_dialog", side_effect=[True, False]),
             patch.object(app, "_show_input_dialog", side_effect=["2026-04-07", "2026-04-08"]),
             patch.object(app, "_show_toast"),
@@ -502,9 +520,14 @@ class TestOnAddPto:
 
     def test_single_day_flow_skips_expand(self):
         """When user picks No (single day), expand_date_range is NOT called."""
-        app, mock_schedule, _ = self._make_app_with_schedule(add_pto_return=(["2026-04-07"], []))
+        app, mock_schedule, mock_auto = self._make_app_with_schedule(
+            add_pto_return=(["2026-04-07"], [])
+        )
 
+        sync_patches = self._run_sync_thread("_run_add_pto", mock_auto)
         with (
+            sync_patches[0],
+            sync_patches[1],
             patch.object(app, "_show_yesno_dialog", side_effect=[False, False]),
             patch.object(app, "_show_input_dialog", return_value="2026-04-07"),
             patch.object(app, "_show_toast"),
@@ -534,7 +557,10 @@ class TestOnAddPto:
             add_pto_return=(["2026-04-10"], [])
         )
 
+        sync_patches = self._run_sync_thread("_run_add_pto", mock_auto)
         with (
+            sync_patches[0],
+            sync_patches[1],
             patch.object(app, "_show_yesno_dialog", side_effect=[False, False]) as mock_yn,
             patch.object(app, "_show_input_dialog", return_value="2026-04-10"),
             patch.object(app, "_show_toast"),
@@ -551,7 +577,10 @@ class TestOnAddPto:
             add_pto_return=(["2026-04-10"], [])
         )
 
+        sync_patches = self._run_sync_thread("_run_add_pto", mock_auto)
         with (
+            sync_patches[0],
+            sync_patches[1],
             patch.object(app, "_show_yesno_dialog", side_effect=[False, True]),
             patch.object(app, "_show_input_dialog", return_value="2026-04-10"),
             patch.object(app, "_show_toast"),

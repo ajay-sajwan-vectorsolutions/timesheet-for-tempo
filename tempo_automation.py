@@ -3834,11 +3834,9 @@ class TempoAutomation:
                 "created."
             )
 
-        # --- Fallback ---
+        # --- Fallback (skipped in setup, reuse existing if any) ---
         existing_fallback = self._get_overhead_config().get("fallback_issue_key", "")
-        print("\n--- Fallback ---")
-        fb_raw = input(f"Fallback issue key (Enter for '{existing_fallback or 'none'}'): ").strip()
-        fallback_key = fb_raw if fb_raw else existing_fallback
+        fallback_key = existing_fallback
 
         # --- Default daily overhead hours ---
         existing_doh = self._get_overhead_config().get("daily_overhead_hours", 2)
