@@ -45,33 +45,71 @@ REM ============================================================================
 set IS_UPGRADE=0
 set OLD_INSTALL_DIR=
 
-REM --- Method 1: Registry (pure PowerShell -- no Python dependency) ---
-REM Note: detection runs in an elevated admin context where user-level Python is not in PATH.
-REM       All detection methods use PowerShell (always available) instead of python.
-powershell -Command "try { $v=(Get-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -ErrorAction Stop).TempoTrayApp; $m=[regex]::Match($v,'[A-Za-z]:[^\x22]+tray_app\.py','IgnoreCase'); if ($m.Success) { Write-Output (Split-Path $m.Value) } } catch {}" > "%TEMP%\_tempo_det1.txt" 2>nul
-for /f "delims=" %%i in ('type "%TEMP%\_tempo_det1.txt" 2^>nul') do (
-    if exist "%%i\tray_app.py" set "OLD_INSTALL_DIR=%%i"
+REM --- Method 1: Registry (reg.exe -- batch native, no PowerShell) ---
+for /f "tokens=2,*" %%A in ('reg query "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v TempoTrayApp 2^>nul ^| findstr "TempoTrayApp"') do (
+    set "REG_VAL=%%B"
 )
-del "%TEMP%\_tempo_det1.txt" >nul 2>&1
-
-REM --- Method 2: Scheduled task XML (pure PowerShell) ---
-if "!OLD_INSTALL_DIR!"=="" (
-    schtasks /Query /TN "TempoAutomation-DailySync" /XML ONE > "%TEMP%\_tempo_det2.xml" 2>nul
-    powershell -Command "try { [xml]$x=Get-Content '%TEMP%\_tempo_det2.xml' -ErrorAction Stop; $c=$x.GetElementsByTagName('Command') | Select-Object -First 1; if ($c -and $c.InnerText) { $d=Split-Path ($c.InnerText.Trim([char]34)); if ($d -and (Test-Path $d)) { Write-Output $d } } } catch {}" > "%TEMP%\_tempo_det2.txt" 2>nul
-    for /f "delims=" %%i in ('type "%TEMP%\_tempo_det2.txt" 2^>nul') do (
-        if exist "%%i\tray_app.py" set "OLD_INSTALL_DIR=%%i"
+if defined REG_VAL (
+    REM Extract the directory containing tray_app.py from the registry value
+    for /f "tokens=*" %%i in ('echo !REG_VAL! ^| findstr /r /c:"tray_app\.py"') do (
+        for %%p in ("!REG_VAL:tray_app.py=!") do (
+            set "CAND=%%~p"
+            REM Strip trailing quotes and spaces
+            set "CAND=!CAND:"=!"
+        )
     )
-    del "%TEMP%\_tempo_det2.xml" >nul 2>&1
-    del "%TEMP%\_tempo_det2.txt" >nul 2>&1
+    if defined CAND if exist "!CAND!tray_app.py" (
+        set "OLD_INSTALL_DIR=!CAND!"
+        REM Strip trailing backslash
+        if "!OLD_INSTALL_DIR:~-1!"=="\" set "OLD_INSTALL_DIR=!OLD_INSTALL_DIR:~0,-1!"
+    )
+)
+set REG_VAL=
+set CAND=
+
+REM --- Method 2: Scheduled task query (batch native via findstr) ---
+if "!OLD_INSTALL_DIR!"=="" (
+    for /f "tokens=*" %%i in ('schtasks /Query /TN "TempoAutomation-DailySync" /FO LIST /V 2^>nul ^| findstr /C:"Task To Run"') do (
+        set "TASK_LINE=%%i"
+    )
+    if defined TASK_LINE (
+        REM Extract path before run_daily.bat (format: "Task To Run: <path>\run_daily.bat")
+        for /f "tokens=1* delims=:" %%a in ("!TASK_LINE!") do set "TASK_CMD=%%b"
+        if defined TASK_CMD (
+            set "TASK_CMD=!TASK_CMD:run_daily.bat=!"
+            set "TASK_CMD=!TASK_CMD:"=!"
+            REM Trim leading space and trailing backslash
+            for /f "tokens=* delims= " %%x in ("!TASK_CMD!") do set "TASK_CMD=%%x"
+            if "!TASK_CMD:~-1!"=="\" set "TASK_CMD=!TASK_CMD:~0,-1!"
+            if exist "!TASK_CMD!\tray_app.py" set "OLD_INSTALL_DIR=!TASK_CMD!"
+        )
+    )
+    set TASK_LINE=
+    set TASK_CMD=
 )
 
-REM --- Method 3: Running pythonw.exe process (pure PowerShell) ---
+REM --- Method 3: Running pythonw.exe process (wmic -- batch native) ---
 if "!OLD_INSTALL_DIR!"=="" (
-    powershell -Command "try { $procs=(Get-CimInstance Win32_Process -Filter 'name=''pythonw.exe''').CommandLine; foreach ($cl in $procs) { if ($cl) { $m=[regex]::Match($cl,'[A-Za-z]:[^\x22]+tray_app\.py','IgnoreCase'); if ($m.Success) { $d=Split-Path $m.Value; if ($d -and (Test-Path $d)) { Write-Output $d; break } } } } } catch {}" > "%TEMP%\_tempo_det3_dir.txt" 2>nul
-    for /f "delims=" %%i in ('type "%TEMP%\_tempo_det3_dir.txt" 2^>nul') do (
-        if exist "%%i\tray_app.py" set "OLD_INSTALL_DIR=%%i"
+    for /f "usebackq tokens=*" %%i in (`wmic process where "name='pythonw.exe'" get CommandLine /value 2^>nul ^| findstr "tray_app.py"`) do (
+        set "PROC_CMD=%%i"
     )
-    del "%TEMP%\_tempo_det3_dir.txt" >nul 2>&1
+    if defined PROC_CMD (
+        REM Remove CommandLine= prefix
+        set "PROC_CMD=!PROC_CMD:CommandLine=!"
+        set "PROC_CMD=!PROC_CMD:~1!"
+        REM Find everything before tray_app.py in the command line
+        for /f "tokens=1 delims=," %%p in ("!PROC_CMD!") do set "PROC_PART=%%p"
+        if defined PROC_PART (
+            set "PROC_PART=!PROC_PART:tray_app.py=!"
+            set "PROC_PART=!PROC_PART:"=!"
+            REM Get the last quoted path segment
+            for /f "tokens=* delims= " %%x in ("!PROC_PART!") do set "PROC_PART=%%x"
+            if "!PROC_PART:~-1!"=="\" set "PROC_PART=!PROC_PART:~0,-1!"
+            if exist "!PROC_PART!\tray_app.py" set "OLD_INSTALL_DIR=!PROC_PART!"
+        )
+    )
+    set PROC_CMD=
+    set PROC_PART=
 )
 
 REM --- Method 5: Named-folder fallback scan ---
@@ -111,15 +149,29 @@ if "!IS_UPGRADE!"=="1" (
     echo Stopping previous tray app instance...
     echo stop > "!OLD_INSTALL_DIR!\_tray_stop.signal"
     timeout /t 5 /nobreak >nul
-    REM Hard-kill fallback: kill pythonw.exe still running tray_app.py from old dir (pure PowerShell)
-    powershell -Command "$old='!OLD_INSTALL_DIR!'; $procs=Get-CimInstance Win32_Process -Filter 'name=''pythonw.exe'''; $tgt=$procs | Where-Object { $_.CommandLine -and ($_.CommandLine -like ('*' + $old + '*')) -and ($_.CommandLine -match 'tray_app\.py') }; if ($tgt) { $tgt | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Write-Output 'force-stopped' } else { Write-Output 'graceful' }" > "%TEMP%\_tempo_chk_result.txt" 2>nul
-    findstr /i "force-stopped" "%TEMP%\_tempo_chk_result.txt" >nul 2>&1
-    if !errorlevel! equ 0 (
+    REM Hard-kill fallback: find pythonw.exe running from old dir via wmic, kill via taskkill
+    set FORCE_KILLED=0
+    for /f "usebackq tokens=*" %%i in (`wmic process where "name='pythonw.exe'" get ProcessId^,CommandLine /format:csv 2^>nul ^| findstr /i "tray_app.py"`) do (
+        set "LINE=%%i"
+        REM Check if this process command line contains the old install dir
+        echo !LINE! | findstr /i /c:"!OLD_INSTALL_DIR!" >nul 2>&1
+        if !errorlevel! equ 0 (
+            for /f "tokens=1 delims=" %%p in ("!LINE!") do (
+                REM Extract PID from the last CSV field
+                for %%x in (!LINE!) do set "LAST_FIELD=%%x"
+                taskkill /F /PID !LAST_FIELD! >nul 2>&1
+                if !errorlevel! equ 0 set FORCE_KILLED=1
+            )
+        )
+    )
+    if !FORCE_KILLED! equ 1 (
         echo [OK] Old tray process force-stopped
     ) else (
         echo [OK] Old tray instance stopped gracefully
     )
-    del "%TEMP%\_tempo_chk_result.txt" >nul 2>&1
+    set LINE=
+    set LAST_FIELD=
+    set FORCE_KILLED=
     echo.
 )
 
@@ -130,7 +182,7 @@ if "!IS_UPGRADE!"=="1" (
     echo Removing previous installation traces...
 
     REM C1: Remove registry autostart entry
-    powershell -Command "try { Remove-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name 'TempoTrayApp' -ErrorAction Stop } catch {}" >nul 2>&1
+    reg delete "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v TempoTrayApp /f >nul 2>&1
     echo   [OK] Registry autostart entry removed
 
     REM C2: Delete scheduled tasks
@@ -343,7 +395,8 @@ REM    Log file rotates monthly: daily-timesheet-YYYY-MM.log
 (
     echo @echo off
     echo setlocal enabledelayedexpansion
-    echo for /f %%%%I in ^('powershell -Command "Get-Date -Format yyyy-MM"'^) do set MONTH=%%%%I
+    echo for /f "tokens=2 delims==" %%%%I in ^('wmic os get localdatetime /value ^^^| findstr "="'^) do set DT=%%%%I
+    echo set MONTH=^^!DT:~0,4^^!-^^!DT:~4,2^^!
     echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
     echo echo ============================================ ^>^> "^!LOGFILE^!"
     echo echo Run: %%date%% %%time%% ^>^> "^!LOGFILE^!"
@@ -356,7 +409,8 @@ REM -- Generate run_weekly.bat with detected Python path --
 (
     echo @echo off
     echo setlocal enabledelayedexpansion
-    echo for /f %%%%I in ^('powershell -Command "Get-Date -Format yyyy-MM"'^) do set MONTH=%%%%I
+    echo for /f "tokens=2 delims==" %%%%I in ^('wmic os get localdatetime /value ^^^| findstr "="'^) do set DT=%%%%I
+    echo set MONTH=^^!DT:~0,4^^!-^^!DT:~4,2^^!
     echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
     echo echo ============================================ ^>^> "^!LOGFILE^!"
     echo echo Weekly Verify Run: %%date%% %%time%% ^>^> "^!LOGFILE^!"
@@ -369,7 +423,8 @@ REM -- Generate run_monthly.bat with detected Python path --
 (
     echo @echo off
     echo setlocal enabledelayedexpansion
-    echo for /f %%%%I in ^('powershell -Command "Get-Date -Format yyyy-MM"'^) do set MONTH=%%%%I
+    echo for /f "tokens=2 delims==" %%%%I in ^('wmic os get localdatetime /value ^^^| findstr "="'^) do set DT=%%%%I
+    echo set MONTH=^^!DT:~0,4^^!-^^!DT:~4,2^^!
     echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
     echo echo ============================================ ^>^> "^!LOGFILE^!"
     echo echo Run: %%date%% %%time%% ^(Monthly Submit^) ^>^> "^!LOGFILE^!"
@@ -443,7 +498,7 @@ REM Start the tray app now (detached -- no console window, no terminal tab)
 echo Starting tray app...
 set TRAY_EXTRA=
 if "!IS_UPGRADE!"=="1" set TRAY_EXTRA= --upgraded
-powershell -Command "Start-Process -FilePath '!PYTHONW_EXE!' -ArgumentList ('\"!SCRIPT_DIR!tray_app.py\"!TRAY_EXTRA!') -WindowStyle Hidden"
+start "" /B "!PYTHONW_EXE!" "!SCRIPT_DIR!tray_app.py"!TRAY_EXTRA!
 timeout /t 3 /nobreak >nul
 echo [OK] Tray app is running in the system tray
 echo.
