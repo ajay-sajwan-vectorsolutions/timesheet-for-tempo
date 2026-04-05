@@ -390,47 +390,46 @@ REM ============================================================================
 echo [5/7] Setting up scheduled tasks...
 echo.
 
+REM -- Generate _get_month.py helper: returns current YYYY-MM --
+REM    Used by wrapper scripts to reliably name log files (no wmic, no delayed expansion)
+(
+    echo from datetime import date
+    echo d = date.today^(^)
+    echo print^(f"{d.year}-{d.month:02d}"^)
+) > "%SCRIPT_DIR%_get_month.py"
+
 REM -- Generate run_daily.bat with detected Python path --
 REM    Log file rotates monthly: daily-timesheet-YYYY-MM.log
 (
     echo @echo off
-    echo setlocal enabledelayedexpansion
-    echo for /f "tokens=2 delims==" %%%%I in ^('wmic os get localdatetime /value ^^^| findstr "="'^) do set DT=%%%%I
-    echo set MONTH=^^!DT:~0,4^^!-^^!DT:~4,2^^!
-    echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
-    echo echo ============================================ ^>^> "^!LOGFILE^!"
-    echo echo Run: %%date%% %%time%% ^>^> "^!LOGFILE^!"
-    echo echo ============================================ ^>^> "^!LOGFILE^!"
+    echo for /f "tokens=*" %%%%i in ^('""%PYTHON_EXE%" "%SCRIPT_DIR%_get_month.py""'^) do set YYYYMM=%%%%i
+    echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-%%YYYYMM%%.log
+    echo echo ============================================ ^>^> "%%LOGFILE%%"
+    echo echo Run: %%date%% %%time%% ^>^> "%%LOGFILE%%"
+    echo echo ============================================ ^>^> "%%LOGFILE%%"
     echo "%PYTHONW_EXE%" "%SCRIPT_DIR%confirm_and_run.py"
-    echo endlocal
 ) > "%SCRIPT_DIR%run_daily.bat"
 
 REM -- Generate run_weekly.bat with detected Python path --
 (
     echo @echo off
-    echo setlocal enabledelayedexpansion
-    echo for /f "tokens=2 delims==" %%%%I in ^('wmic os get localdatetime /value ^^^| findstr "="'^) do set DT=%%%%I
-    echo set MONTH=^^!DT:~0,4^^!-^^!DT:~4,2^^!
-    echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
-    echo echo ============================================ ^>^> "^!LOGFILE^!"
-    echo echo Weekly Verify Run: %%date%% %%time%% ^>^> "^!LOGFILE^!"
-    echo echo ============================================ ^>^> "^!LOGFILE^!"
-    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --verify-week --logfile "^!LOGFILE^!"
-    echo endlocal
+    echo for /f "tokens=*" %%%%i in ^('""%PYTHON_EXE%" "%SCRIPT_DIR%_get_month.py""'^) do set YYYYMM=%%%%i
+    echo set LOGFILE=%SCRIPT_DIR%weekly-log-%%YYYYMM%%.log
+    echo echo ============================================ ^>^> "%%LOGFILE%%"
+    echo echo Weekly Verify Run: %%date%% %%time%% ^>^> "%%LOGFILE%%"
+    echo echo ============================================ ^>^> "%%LOGFILE%%"
+    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --verify-week --logfile "%%LOGFILE%%"
 ) > "%SCRIPT_DIR%run_weekly.bat"
 
 REM -- Generate run_monthly.bat with detected Python path --
 (
     echo @echo off
-    echo setlocal enabledelayedexpansion
-    echo for /f "tokens=2 delims==" %%%%I in ^('wmic os get localdatetime /value ^^^| findstr "="'^) do set DT=%%%%I
-    echo set MONTH=^^!DT:~0,4^^!-^^!DT:~4,2^^!
-    echo set LOGFILE=%SCRIPT_DIR%daily-timesheet-^!MONTH^!.log
-    echo echo ============================================ ^>^> "^!LOGFILE^!"
-    echo echo Run: %%date%% %%time%% ^(Monthly Submit^) ^>^> "^!LOGFILE^!"
-    echo echo ============================================ ^>^> "^!LOGFILE^!"
-    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --submit --logfile "^!LOGFILE^!"
-    echo endlocal
+    echo for /f "tokens=*" %%%%i in ^('""%PYTHON_EXE%" "%SCRIPT_DIR%_get_month.py""'^) do set YYYYMM=%%%%i
+    echo set LOGFILE=%SCRIPT_DIR%monthly-log-%%YYYYMM%%.log
+    echo echo ============================================ ^>^> "%%LOGFILE%%"
+    echo echo Run: %%date%% %%time%% ^(Monthly Submit^) ^>^> "%%LOGFILE%%"
+    echo echo ============================================ ^>^> "%%LOGFILE%%"
+    echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --submit --logfile "%%LOGFILE%%"
 ) > "%SCRIPT_DIR%run_monthly.bat"
 
 echo [OK] Wrapper scripts generated with detected Python path
