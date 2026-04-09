@@ -97,9 +97,7 @@ class TestPostInstallCheckWithGaps:
 
     def test_user_accepts_calls_backfill(self, automation, capsys):
         """User entering 'y' should trigger backfill_range."""
-        # First call returns gaps, second call (re-check) returns clean
-        no_gaps = {**self.GAP_DATA, "gaps": [], "actual": 72.0}
-        automation._detect_monthly_gaps = MagicMock(side_effect=[self.GAP_DATA, no_gaps])
+        automation._detect_monthly_gaps = MagicMock(return_value=self.GAP_DATA)
         automation.backfill_range = MagicMock()
 
         with (
@@ -112,9 +110,8 @@ class TestPostInstallCheckWithGaps:
         automation.backfill_range.assert_called_once_with("2026-04-06", "2026-04-08")
 
     def test_user_accepts_cleans_shortfall_file(self, automation, capsys):
-        """After successful backfill, shortfall file should be removed."""
-        no_gaps = {**self.GAP_DATA, "gaps": [], "actual": 72.0}
-        automation._detect_monthly_gaps = MagicMock(side_effect=[self.GAP_DATA, no_gaps])
+        """After successful backfill, shortfall file should be removed immediately."""
+        automation._detect_monthly_gaps = MagicMock(return_value=self.GAP_DATA)
         automation.backfill_range = MagicMock()
 
         with (
@@ -138,7 +135,7 @@ class TestPostInstallCheckWithGaps:
             automation.post_install_check()
 
         output = capsys.readouterr().out
-        assert "--fix-shortfall" in output
+        assert "Fix Monthly Shortfall" in output
         automation.backfill_range.assert_not_called()
         automation._save_shortfall_data.assert_called_once()
 
@@ -160,8 +157,7 @@ class TestPostInstallCheckWithGaps:
             "working_days": 9,
             "day_details": [],
         }
-        no_gaps = {**single_gap, "gaps": [], "actual": 72.0}
-        automation._detect_monthly_gaps = MagicMock(side_effect=[single_gap, no_gaps])
+        automation._detect_monthly_gaps = MagicMock(return_value=single_gap)
         automation.backfill_range = MagicMock()
 
         with (

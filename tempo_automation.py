@@ -134,6 +134,26 @@ def _styled_header(title: str, width: int = 60) -> None:
     print(f"{Style.DIM}{border}{Style.RESET}\n")
 
 
+def _color_prefix(text: str) -> str:
+    """Auto-colorize [OK], [FAIL], [!], [INFO], [ERROR], [->] prefixes in text.
+
+    Skips text that already contains ANSI reset codes (already colored).
+    """
+    if Style.RESET and Style.RESET in text:
+        return text
+    for prefix, color in (
+        ("[OK]", Style.OK),
+        ("[FAIL]", Style.FAIL),
+        ("[ERROR]", Style.FAIL),
+        ("[!]", Style.WARN),
+        ("[INFO]", Style.INFO),
+        ("[->]", Style.INFO),
+    ):
+        if prefix in text:
+            return text.replace(prefix, f"{color}{prefix}{Style.RESET}", 1)
+    return text
+
+
 class JsonLogFormatter(logging.Formatter):
     """JSON log formatter for structured logging."""
 
@@ -160,6 +180,7 @@ CONFIG_FILE = SCRIPT_DIR / "config.json"
 LOG_FILE = SCRIPT_DIR / "tempo_automation.log"
 SHORTFALL_FILE = SCRIPT_DIR / "monthly_shortfall.json"
 SUBMITTED_FILE = SCRIPT_DIR / "monthly_submitted.json"
+MENU_REFRESH_SIGNAL = SCRIPT_DIR / "_menu_refresh.signal"
 
 
 # Persistent backup location for config -- survives re-installation to a new folder
@@ -362,7 +383,7 @@ class ConfigManager:
             with open(self.config_path) as f:
                 content = f.read()
             if not content.strip():
-                print("[FAIL] Config file is empty. Run --setup to configure.")
+                print(_color_prefix("[FAIL] Config file is empty. Run --setup to configure."))
                 raise SystemExit(1)
             config = json.loads(content)
             logger.info("Configuration loaded successfully")
@@ -370,7 +391,9 @@ class ConfigManager:
                 raise SystemExit(1)
             return config
         except json.JSONDecodeError as e:
-            print(f"[FAIL] Config file is corrupted: {e}. Run --setup to reconfigure.")
+            print(
+                _color_prefix(f"[FAIL] Config file is corrupted: {e}. Run --setup to reconfigure.")
+            )
             raise SystemExit(1)
         except SystemExit:
             raise
@@ -389,7 +412,7 @@ class ConfigManager:
         # user.email must exist and not be empty
         user_email = config.get("user", {}).get("email", "")
         if not user_email:
-            print("[FAIL] Config validation: Missing required field 'user.email'")
+            print(_color_prefix("[FAIL] Config validation: Missing required field 'user.email'"))
             valid = False
 
         # user.role must be one of the allowed values
@@ -397,16 +420,20 @@ class ConfigManager:
         allowed_roles = ("developer", "qa", "product_owner", "sales")
         if user_role not in allowed_roles:
             print(
-                f"[FAIL] Config validation: Invalid 'user.role' "
-                f"'{user_role}'. Must be one of: "
-                f"{', '.join(allowed_roles)}"
+                _color_prefix(
+                    f"[FAIL] Config validation: Invalid 'user.role' "
+                    f"'{user_role}'. Must be one of: "
+                    f"{', '.join(allowed_roles)}"
+                )
             )
             valid = False
 
         # tempo.api_token must exist and not be empty
         tempo_token = config.get("tempo", {}).get("api_token", "")
         if not tempo_token:
-            print("[FAIL] Config validation: Missing required field 'tempo.api_token'")
+            print(
+                _color_prefix("[FAIL] Config validation: Missing required field 'tempo.api_token'")
+            )
             valid = False
 
         # jira.api_token required for developer and qa roles
@@ -414,30 +441,40 @@ class ConfigManager:
             jira_token = config.get("jira", {}).get("api_token", "")
             if not jira_token:
                 print(
-                    "[FAIL] Config validation: Missing required "
-                    f"field 'jira.api_token' (required for "
-                    f"{user_role} role)"
+                    _color_prefix(
+                        "[FAIL] Config validation: Missing required "
+                        f"field 'jira.api_token' (required for "
+                        f"{user_role} role)"
+                    )
                 )
                 valid = False
 
         # schedule.daily_hours must be between 0.5 and 24
         daily_hours = config.get("schedule", {}).get("daily_hours", None)
         if daily_hours is None:
-            print("[FAIL] Config validation: Missing required field 'schedule.daily_hours'")
+            print(
+                _color_prefix(
+                    "[FAIL] Config validation: Missing required field 'schedule.daily_hours'"
+                )
+            )
             valid = False
         elif not isinstance(daily_hours, int | float):
-            print("[FAIL] Config validation: 'schedule.daily_hours' must be a number")
+            print(
+                _color_prefix("[FAIL] Config validation: 'schedule.daily_hours' must be a number")
+            )
             valid = False
         elif daily_hours < 0.5 or daily_hours > 24:
             print(
-                f"[FAIL] Config validation: "
-                f"'schedule.daily_hours' must be between "
-                f"0.5 and 24 (got {daily_hours})"
+                _color_prefix(
+                    f"[FAIL] Config validation: "
+                    f"'schedule.daily_hours' must be between "
+                    f"0.5 and 24 (got {daily_hours})"
+                )
             )
             valid = False
 
         if not valid:
-            print("\n[INFO] Run --setup to reconfigure.")
+            print(_color_prefix("\n[INFO] Run --setup to reconfigure."))
 
         return valid
 
@@ -487,7 +524,7 @@ class ConfigManager:
         # ------------------------------------------------------------------ #
         # USER INFORMATION                                                     #
         # ------------------------------------------------------------------ #
-        print("--- USER INFORMATION ---")
+        print(f"{Style.BOLD}--- USER INFORMATION ---{Style.RESET}")
 
         # Email
         existing_email = existing.get("user", {}).get("email", "")
@@ -515,7 +552,7 @@ class ConfigManager:
         # ------------------------------------------------------------------ #
         # JIRA/TEMPO CONFIGURATION                                            #
         # ------------------------------------------------------------------ #
-        print("\n--- JIRA/TEMPO CONFIGURATION ---")
+        print(f"\n{Style.BOLD}--- JIRA/TEMPO CONFIGURATION ---{Style.RESET}")
         jira_url = "lmsportal.atlassian.net"
         print(f"Jira URL: {jira_url} (organization default)")
 
@@ -739,10 +776,13 @@ class ConfigManager:
             if not user_name:
                 user_name = input("Enter your full name: ").strip()
 
+        # -- Welcome banner after credentials verified ----------------------
+        _styled_header(f"Welcome, {user_name}!")
+
         # ------------------------------------------------------------------ #
         # WORK SCHEDULE & LOCATION                                            #
         # ------------------------------------------------------------------ #
-        print("\n--- WORK SCHEDULE & LOCATION ---")
+        print(f"{Style.BOLD}--- WORK SCHEDULE & LOCATION ---{Style.RESET}")
 
         existing_daily_hours = existing.get("schedule", {}).get("daily_hours", None)
         if existing_daily_hours is not None:
@@ -756,7 +796,7 @@ class ConfigManager:
                     )
                     break
                 except ValueError:
-                    print("  [ERROR] Please enter a valid number.")
+                    print(_color_prefix("  [ERROR] Please enter a valid number."))
 
         existing_country = existing.get("schedule", {}).get("country_code", "")
         existing_state = existing.get("schedule", {}).get("state", "")
@@ -805,7 +845,7 @@ class ConfigManager:
             manual_activities = existing_activities
         elif user_role in ["product_owner", "sales"]:
             manual_activities = []
-            print("\n--- DEFAULT ACTIVITIES ---")
+            print(f"\n{Style.BOLD}--- DEFAULT ACTIVITIES ---{Style.RESET}")
             print("Set up your typical daily activities (optional)")
             while True:
                 add_activity = input("\nAdd a default activity? (yes/no): ").strip().lower()
@@ -817,7 +857,7 @@ class ConfigManager:
                         hours = float(input("Typical hours per day: ").strip())
                         break
                     except ValueError:
-                        print("  [ERROR] Please enter a valid number.")
+                        print(_color_prefix("  [ERROR] Please enter a valid number."))
                 manual_activities.append({"activity": activity, "hours": hours})
         else:
             manual_activities = []
@@ -868,7 +908,9 @@ class ConfigManager:
             if stories:
                 print(f"\nOverhead stories: {len(stories)} found (reusing from previous install)")
                 for s in stories:
-                    print(f"  [->] {s.get('issue_key', '?')} - {s.get('summary', '?')}")
+                    print(
+                        _color_prefix(f"  [->] {s.get('issue_key', '?')} - {s.get('summary', '?')}")
+                    )
             else:
                 print("\nOverhead stories: skipping overhead story setup")
 
@@ -881,11 +923,9 @@ class ConfigManager:
         # Save configuration
         self.save_config(config)
 
-        print("\n" + "=" * 60)
-        print("[OK] SETUP COMPLETE!")
-        print("=" * 60)
-        print(f"\nConfiguration saved to: {self.config_path}")
-        print("You can edit this file manually if needed.\n")
+        _styled_header("[OK] SETUP COMPLETE!")
+        print(f"  Configuration saved to: {self.config_path}")
+        print("  You can edit this file manually if needed.\n")
 
         return config
 
@@ -1361,7 +1401,7 @@ class ScheduleManager:
                 if not (1 <= month <= 12):
                     raise ValueError(f"Month must be 1-12, got {month}")
             except (ValueError, IndexError):
-                print(f"[ERROR] Invalid month format: {month_str}")
+                print(_color_prefix(f"[ERROR] Invalid month format: {month_str}"))
                 print("        Use YYYY-MM (e.g., 2026-03)")
                 return
 
@@ -1486,7 +1526,7 @@ class ScheduleManager:
                 continue
             if d not in self.pto_days:
                 self.pto_days.add(d)
-                print(f"  [OK] {d} ({dt.strftime('%A')})")
+                print(_color_prefix(f"  [OK] {d} ({dt.strftime('%A')})"))
                 added.append(d)
             else:
                 msg = f"{d} already in PTO list"
@@ -1494,7 +1534,7 @@ class ScheduleManager:
                 skipped.append(msg)
         if added:
             self._save_schedule_to_config()
-            print(f"\n[OK] Added {len(added)} PTO day(s). Config saved.")
+            print(_color_prefix(f"\n[OK] Added {len(added)} PTO day(s). Config saved."))
         return added, skipped
 
     def expand_date_range(self, start_date: str, end_date: str) -> list[str]:
@@ -1529,13 +1569,13 @@ class ScheduleManager:
             d = d.strip()
             if d in self.pto_days:
                 self.pto_days.discard(d)
-                print(f"  [OK] Removed {d}")
+                print(_color_prefix(f"  [OK] Removed {d}"))
                 removed.append(d)
             else:
                 print(f"  [SKIP] {d} not in PTO list")
         if removed:
             self._save_schedule_to_config()
-            print(f"\n[OK] Removed {len(removed)} PTO day(s). Config saved.")
+            print(_color_prefix(f"\n[OK] Removed {len(removed)} PTO day(s). Config saved."))
         return removed
 
     def add_extra_holidays(self, dates: list[str]) -> list[str]:
@@ -1548,13 +1588,13 @@ class ScheduleManager:
             if d not in self.extra_holidays:
                 self.extra_holidays.add(d)
                 dt = datetime.strptime(d, "%Y-%m-%d").date()
-                print(f"  [OK] {d} ({dt.strftime('%A')})")
+                print(_color_prefix(f"  [OK] {d} ({dt.strftime('%A')})"))
                 added.append(d)
             else:
                 print(f"  [SKIP] {d} already in extra holidays")
         if added:
             self._save_schedule_to_config()
-            print(f"\n[OK] Added {len(added)} extra holiday(s). Config saved.")
+            print(_color_prefix(f"\n[OK] Added {len(added)} extra holiday(s). Config saved."))
         return added
 
     def remove_extra_holidays(self, dates: list[str]) -> list[str]:
@@ -1564,13 +1604,13 @@ class ScheduleManager:
             d = d.strip()
             if d in self.extra_holidays:
                 self.extra_holidays.discard(d)
-                print(f"  [OK] Removed {d}")
+                print(_color_prefix(f"  [OK] Removed {d}"))
                 removed.append(d)
             else:
                 print(f"  [SKIP] {d} not in extra holidays")
         if removed:
             self._save_schedule_to_config()
-            print(f"\n[OK] Removed {len(removed)} extra holiday(s). Config saved.")
+            print(_color_prefix(f"\n[OK] Removed {len(removed)} extra holiday(s). Config saved."))
         return removed
 
     def add_working_days(self, dates: list[str]) -> list[str]:
@@ -1583,13 +1623,13 @@ class ScheduleManager:
             if d not in self.working_days:
                 self.working_days.add(d)
                 dt = datetime.strptime(d, "%Y-%m-%d").date()
-                print(f"  [OK] {d} ({dt.strftime('%A')})")
+                print(_color_prefix(f"  [OK] {d} ({dt.strftime('%A')})"))
                 added.append(d)
             else:
                 print(f"  [SKIP] {d} already in working days")
         if added:
             self._save_schedule_to_config()
-            print(f"\n[OK] Added {len(added)} working day(s). Config saved.")
+            print(_color_prefix(f"\n[OK] Added {len(added)} working day(s). Config saved."))
         return added
 
     def remove_working_days(self, dates: list[str]) -> list[str]:
@@ -1599,13 +1639,13 @@ class ScheduleManager:
             d = d.strip()
             if d in self.working_days:
                 self.working_days.discard(d)
-                print(f"  [OK] Removed {d}")
+                print(_color_prefix(f"  [OK] Removed {d}"))
                 removed.append(d)
             else:
                 print(f"  [SKIP] {d} not in working days")
         if removed:
             self._save_schedule_to_config()
-            print(f"\n[OK] Removed {len(removed)} working day(s). Config saved.")
+            print(_color_prefix(f"\n[OK] Removed {len(removed)} working day(s). Config saved."))
         return removed
 
     def _save_schedule_to_config(self):
@@ -1628,13 +1668,17 @@ class ScheduleManager:
         import re
 
         if not re.match(r"^[\d\-]+$", date_str):
-            print(f"  [ERROR] Invalid characters in: {date_str} (only digits and '-' allowed)")
+            print(
+                _color_prefix(
+                    f"  [ERROR] Invalid characters in: {date_str} (only digits and '-' allowed)"
+                )
+            )
             return False
         try:
             datetime.strptime(date_str, "%Y-%m-%d")
             return True
         except ValueError:
-            print(f"  [ERROR] Invalid date: {date_str} (use YYYY-MM-DD format)")
+            print(_color_prefix(f"  [ERROR] Invalid date: {date_str} (use YYYY-MM-DD format)"))
             return False
 
     # ------------------------------------------------------------------
@@ -1697,7 +1741,7 @@ class ScheduleManager:
             elif choice == "10":
                 self._list_dates("Compensatory working days", self.working_days)
             else:
-                print("[ERROR] Invalid choice. Enter 0-10.")
+                print(_color_prefix("[ERROR] Invalid choice. Enter 0-10."))
 
     def _list_dates(self, label: str, date_set: set):
         """Print a sorted list of dates."""
@@ -2629,11 +2673,11 @@ class NotificationManager:
             response = requests.post(webhook_url, json=payload, timeout=30)
             response.raise_for_status()
             logger.info(f"Teams notification sent: {title}")
-            print("  [OK] Teams notification sent")
+            print(_color_prefix("  [OK] Teams notification sent"))
 
         except Exception as e:
             logger.error(f"Error sending Teams notification: {e}")
-            print(f"  [!] Teams notification failed: {e}")
+            print(_color_prefix(f"  [!] Teams notification failed: {e}"))
 
     def send_windows_notification(self, title: str, body: str):
         """Show a desktop notification (Windows toast or Mac osascript)."""
@@ -2647,7 +2691,7 @@ class NotificationManager:
                 toast.set_audio(audio.Default, loop=False)
                 toast.show()
                 logger.info(f"Toast notification shown: {title}")
-                print("  [OK] Desktop notification sent")
+                print(_color_prefix("  [OK] Desktop notification sent"))
             except ImportError:
                 # Fallback to MessageBox if winotify not installed
                 try:
@@ -2657,7 +2701,7 @@ class NotificationManager:
                         c_int(0), c_wchar_p(body), c_wchar_p(title), 0x00000030 | 0x00001000
                     )
                     logger.info(f"MessageBox notification shown: {title}")
-                    print("  [OK] Desktop notification shown")
+                    print(_color_prefix("  [OK] Desktop notification shown"))
                 except Exception as e2:
                     logger.warning(f"Notification failed: {e2}")
             except Exception as e:
@@ -2671,7 +2715,7 @@ class NotificationManager:
                 script = f'display notification "{safe_body}" with title "{safe_title}"'
                 sp.Popen(["osascript", "-e", script])
                 logger.info(f"Mac notification shown: {title}")
-                print("  [OK] Desktop notification sent")
+                print(_color_prefix("  [OK] Desktop notification sent"))
             except Exception as e:
                 logger.warning(f"Mac notification failed: {e}")
 
@@ -2729,11 +2773,17 @@ class TempoAutomation:
         # Check overhead story configuration
         if self.config.get("user", {}).get("role") in ("developer", "qa"):
             if not self._is_overhead_configured():
-                print("[INFO] Overhead stories not configured. Run --select-overhead when ready.")
+                print(
+                    _color_prefix(
+                        "[INFO] Overhead stories not configured. Run --select-overhead when ready."
+                    )
+                )
             elif not self._check_overhead_pi_current():
                 print(
-                    "[!] Overhead stories may be from a previous PI. "
-                    "Run --select-overhead to update."
+                    _color_prefix(
+                        "[!] Overhead stories may be from a previous PI. "
+                        "Run --select-overhead to update."
+                    )
                 )
 
     def _sync_pto_overhead(self, target_date: str):
@@ -2754,7 +2804,7 @@ class TempoAutomation:
         if self.dry_run:
             print("[DRY RUN] Preview mode -- no changes will be made\n")
 
-        print("[INFO] PTO day -- logging hours to overhead story")
+        print(_color_prefix("[INFO] PTO day -- logging hours to overhead story"))
 
         oh = self._get_overhead_config()
         pto_key = oh.get("pto_story_key", "")
@@ -2772,7 +2822,7 @@ class TempoAutomation:
         existing_seconds = max(jira_seconds, tempo_seconds)
 
         if existing_seconds >= total_seconds:
-            print(f"[OK] PTO hours already logged ({existing_seconds / 3600:.2f}h)")
+            print(_color_prefix(f"[OK] PTO hours already logged ({existing_seconds / 3600:.2f}h)"))
             worklogs_created = [
                 {
                     "issue_key": wl["issue_key"],
@@ -2800,7 +2850,7 @@ class TempoAutomation:
         self.notifier.send_daily_summary(worklogs_created, total_hours)
         done_ts = datetime.now().strftime("%H:%M:%S")
         print(f"\n{'=' * 60}")
-        print(f"[OK] PTO SYNC COMPLETE ({done_ts})")
+        print(_color_prefix(f"[OK] PTO SYNC COMPLETE ({done_ts})"))
         print(f"{'=' * 60}")
         print(f"Total hours: {total_hours:.2f} / {daily_hours}")
         print()
@@ -2824,7 +2874,11 @@ class TempoAutomation:
             import time as _time
 
             logger.info(f"Forge sync delay: waiting {delay}s for Jira->Tempo sync")
-            print(f"  [INFO] Waiting {delay}s for Jira->Tempo sync (Forge migration)...")
+            print(
+                _color_prefix(
+                    f"  [INFO] Waiting {delay}s for Jira->Tempo sync (Forge migration)..."
+                )
+            )
             _time.sleep(delay)
 
     def _pre_sync_health_check(self) -> bool:
@@ -2948,7 +3002,7 @@ class TempoAutomation:
 
         # Pre-sync health check
         if not self._pre_sync_health_check():
-            print("[FAIL] Aborting daily sync due to API health check failure.")
+            print(_color_prefix("[FAIL] Aborting daily sync due to API health check failure."))
             return
 
         now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2977,15 +3031,15 @@ class TempoAutomation:
         # Print summary
         done_ts = datetime.now().strftime("%H:%M:%S")
         print(f"\n{'=' * 60}")
-        print(f"[OK] SYNC COMPLETE ({done_ts})")
+        print(_color_prefix(f"[OK] SYNC COMPLETE ({done_ts})"))
         print(f"{'=' * 60}")
         print(f"Total entries: {len(worklogs_created)}")
         print(f"Total hours: {total_hours:.2f} / {self.schedule_mgr.daily_hours}")
 
         if total_hours >= self.schedule_mgr.daily_hours:
-            print("Status: [OK] Complete")
+            print(_color_prefix("Status: [OK] Complete"))
         else:
-            print(f"Status: [!] Incomplete ({total_hours:.2f}h logged)")
+            print(_color_prefix(f"Status: [!] Incomplete ({total_hours:.2f}h logged)"))
         print()
 
         logger.info(f"Daily sync completed: {len(worklogs_created)} entries, {total_hours:.2f}h")
@@ -3037,11 +3091,13 @@ class TempoAutomation:
 
                 if success:
                     print(
-                        f"  [OK] Created: {wl['issue_key']} - {wl['time_spent_seconds'] / 3600:.2f}h"
+                        _color_prefix(
+                            f"  [OK] Created: {wl['issue_key']} - {wl['time_spent_seconds'] / 3600:.2f}h"
+                        )
                     )
                     created.append(wl)
                 else:
-                    print(f"  [FAIL] {wl['issue_key']}")
+                    print(_color_prefix(f"  [FAIL] {wl['issue_key']}"))
             else:
                 print(f"  [SKIP] Exists: {wl['issue_key']}")
 
@@ -3056,14 +3112,14 @@ class TempoAutomation:
         """
         if not created_worklogs:
             return
-        print(f"\n[!] Rolling back {len(created_worklogs)} created worklog(s)...")
+        print(_color_prefix(f"\n[!] Rolling back {len(created_worklogs)} created worklog(s)..."))
         for wl in created_worklogs:
             deleted = self.jira_client.delete_worklog(wl["issue_key"], wl.get("worklog_id", ""))
             if deleted:
-                print(f"  [OK] Rolled back {wl['issue_key']}")
+                print(_color_prefix(f"  [OK] Rolled back {wl['issue_key']}"))
             else:
-                print(f"  [FAIL] Could not roll back {wl['issue_key']}")
-        print("[!] Rollback complete. Original worklogs preserved.\n")
+                print(_color_prefix(f"  [FAIL] Could not roll back {wl['issue_key']}"))
+        print(_color_prefix("[!] Rollback complete. Original worklogs preserved.\n"))
 
     def _auto_log_jira_worklogs(self, target_date: str) -> list[dict]:
         """
@@ -3196,14 +3252,18 @@ class TempoAutomation:
 
         # Case 4: Check for planning week
         if self._is_planning_week(target_date):
-            print("[INFO] PI planning week detected -- logging to overhead stories")
+            print(_color_prefix("[INFO] PI planning week detected -- logging to overhead stories"))
             oh = self._get_overhead_config()
             planning = oh.get("planning_pi", {})
             p_stories = planning.get("stories")
             p_dist = planning.get("distribution")
             if not p_stories:
                 # Fall back to current PI stories
-                print("  [INFO] No planning PI stories configured, using current PI stories")
+                print(
+                    _color_prefix(
+                        "  [INFO] No planning PI stories configured, using current PI stories"
+                    )
+                )
                 p_stories = None
                 p_dist = None
             created = self._log_overhead_hours(target_date, remaining_seconds, p_stories, p_dist)
@@ -3217,12 +3277,12 @@ class TempoAutomation:
             status_label = " / ".join(self._get_active_statuses())
             logger.warning(f"No active issues found ({status_label})")
             if self._is_overhead_configured():
-                print("[INFO] No active tickets found. Logging to overhead stories.")
+                print(_color_prefix("[INFO] No active tickets found. Logging to overhead stories."))
                 created = self._log_overhead_hours(target_date, remaining_seconds)
                 return overhead_result + created
             else:
                 self._warn_overhead_not_configured()
-                print("[!] No active tickets found and no overhead configured.")
+                print(_color_prefix("[!] No active tickets found and no overhead configured."))
                 return overhead_result
 
         # Normal flow: distribute remaining hours across active tickets
@@ -3322,7 +3382,7 @@ class TempoAutomation:
                         }
                     )
                 else:
-                    print(f"  [{i + 1}/{num_tickets}] [FAIL] {issue['issue_key']}")
+                    print(_color_prefix(f"  [{i + 1}/{num_tickets}] [FAIL] {issue['issue_key']}"))
                     creation_failed = True
                     break
 
@@ -3338,12 +3398,16 @@ class TempoAutomation:
                 deleted = self.jira_client.delete_worklog(wl["issue_key"], wl["worklog_id"])
                 if deleted:
                     print(
-                        f"  [OK] Removed "
-                        f"{wl['time_spent_seconds'] / 3600:.2f}h "
-                        f"from {wl['issue_key']}"
+                        _color_prefix(
+                            f"  [OK] Removed "
+                            f"{wl['time_spent_seconds'] / 3600:.2f}h "
+                            f"from {wl['issue_key']}"
+                        )
                     )
                 else:
-                    print(f"  [FAIL] Could not remove worklog from {wl['issue_key']}")
+                    print(
+                        _color_prefix(f"  [FAIL] Could not remove worklog from {wl['issue_key']}")
+                    )
             print()
 
         return overhead_result + created
@@ -3426,7 +3490,7 @@ class TempoAutomation:
                     }
                 )
             else:
-                print(f"  [{i + 1}/{num_tickets}] [FAIL] {r['issue']['issue_key']}")
+                print(_color_prefix(f"  [{i + 1}/{num_tickets}] [FAIL] {r['issue']['issue_key']}"))
                 creation_failed = True
 
         return created, creation_failed
@@ -3614,11 +3678,13 @@ class TempoAutomation:
             if fallback:
                 stories = [{"issue_key": fallback, "summary": fallback}]
                 distribution = "single"
-                print(f"  [INFO] Using fallback overhead: {fallback}")
+                print(_color_prefix(f"  [INFO] Using fallback overhead: {fallback}"))
             else:
                 print(
-                    "[!] No overhead stories configured. "
-                    "Run: python tempo_automation.py --select-overhead"
+                    _color_prefix(
+                        "[!] No overhead stories configured. "
+                        "Run: python tempo_automation.py --select-overhead"
+                    )
                 )
                 return []
 
@@ -3671,12 +3737,16 @@ class TempoAutomation:
                 issue_key=key, time_spent_seconds=seconds, started=target_date, comment=comment
             )
             if success:
-                print(f"  [{idx + 1}/{num_alloc}] [OK] Logged {hours:.2f}h on {key} (overhead)")
+                print(
+                    _color_prefix(
+                        f"  [{idx + 1}/{num_alloc}] [OK] Logged {hours:.2f}h on {key} (overhead)"
+                    )
+                )
                 created.append(
                     {"issue_key": key, "issue_summary": summary, "time_spent_seconds": seconds}
                 )
             else:
-                print(f"  [{idx + 1}/{num_alloc}] [FAIL] {key}")
+                print(_color_prefix(f"  [{idx + 1}/{num_alloc}] [FAIL] {key}"))
 
         return created
 
@@ -3754,7 +3824,7 @@ class TempoAutomation:
             True if selection saved, False if cancelled/failed
         """
         if not self.jira_client:
-            print("[ERROR] Jira client not available (developer role required)")
+            print(_color_prefix("[ERROR] Jira client not available (developer role required)"))
             return False
 
         print(f"\n{'=' * 60}")
@@ -3763,14 +3833,14 @@ class TempoAutomation:
 
         stories = self.jira_client.get_overhead_stories()
         if not stories:
-            print("\n[!] No active overhead stories found in Jira.")
+            print(_color_prefix("\n[!] No active overhead stories found in Jira."))
             print("    (project = OVERHEAD, status = In Progress)")
             fallback = input("\nEnter a fallback issue key (or Enter to skip): ").strip()
             if fallback:
                 self.config.setdefault("overhead", {})
                 self.config["overhead"]["fallback_issue_key"] = fallback
                 self._save_config()
-                print(f"[OK] Fallback set to {fallback}")
+                print(_color_prefix(f"[OK] Fallback set to {fallback}"))
             return False
 
         # Group stories by PI
@@ -3803,17 +3873,17 @@ class TempoAutomation:
                 display_list.append(s)
 
         # --- Current PI selection ---
-        print("\n--- Current PI Stories ---")
+        print(f"\n{Style.BOLD}--- Current PI Stories ---{Style.RESET}")
         print("Select stories for normal days (no active tickets):")
         raw = input("Enter numbers (comma-separated), 'all', or Enter to skip: ").strip()
 
         if not raw:
-            print("[!] No stories selected.")
+            print(_color_prefix("[!] No stories selected."))
             return False
 
         selected = self._parse_story_selection(raw, display_list)
         if not selected:
-            print("[!] Invalid selection.")
+            print(_color_prefix("[!] Invalid selection."))
             return False
 
         print(f"\nSelected {len(selected)} story(ies):")
@@ -3856,7 +3926,7 @@ class TempoAutomation:
         pi_end = self._parse_pi_end_date(current_pi_id) or ""
 
         # --- PTO story selection ---
-        print("\n--- PTO Story ---")
+        print(f"\n{Style.BOLD}--- PTO Story ---{Style.RESET}")
         print("Which story for PTO/Holiday days?")
         print("(Use the numbered list above)")
         pto_raw = input("Choice (enter number): ").strip()
@@ -3878,7 +3948,7 @@ class TempoAutomation:
         # Find PIs different from current
         other_pis = [p for p in sorted_pis if p != current_pi_id]
         if other_pis:
-            print("\n--- Planning Week Stories ---")
+            print(f"\n{Style.BOLD}--- Planning Week Stories ---{Style.RESET}")
             print("Planning week uses UPCOMING PI stories.")
             upcoming_pi = other_pis[0]  # Latest non-current PI
             upcoming_stories = pi_groups.get(upcoming_pi, [])
@@ -3931,9 +4001,11 @@ class TempoAutomation:
                     }
         else:
             print(
-                "\n[INFO] Only one PI found. Planning week stories "
-                "can be configured later when the next PI is "
-                "created."
+                _color_prefix(
+                    "\n[INFO] Only one PI found. Planning week stories "
+                    "can be configured later when the next PI is "
+                    "created."
+                )
             )
 
         # --- Fallback (skipped in setup, reuse existing if any) ---
@@ -3942,7 +4014,7 @@ class TempoAutomation:
 
         # --- Default daily overhead hours ---
         existing_doh = self._get_overhead_config().get("daily_overhead_hours", 2)
-        print("\n--- Default Daily Overhead ---")
+        print(f"\n{Style.BOLD}--- Default Daily Overhead ---{Style.RESET}")
         print(
             "Hours logged to overhead EVERY working day "
             "(before distributing remaining to active tickets)."
@@ -3975,7 +4047,7 @@ class TempoAutomation:
 
         # --- Summary ---
         print(f"\n{'=' * 60}")
-        print("[OK] Overhead stories saved")
+        print(_color_prefix("[OK] Overhead stories saved"))
         print(f"{'=' * 60}")
         print(f"  Current PI: {current_pi_id}")
         if pi_end:
@@ -4027,7 +4099,7 @@ class TempoAutomation:
         oh = self._get_overhead_config()
         current_pi = oh.get("current_pi", {})
         if not current_pi or not current_pi.get("stories"):
-            print("\n[INFO] No overhead stories configured.")
+            print(_color_prefix("\n[INFO] No overhead stories configured."))
             print("  Run: python tempo_automation.py --select-overhead")
             return
 
@@ -4091,7 +4163,7 @@ class TempoAutomation:
 
         if not manual_activities:
             logger.warning("No manual activities configured")
-            print("[!] No manual activities configured. Please edit config.json")
+            print(_color_prefix("[!] No manual activities configured. Please edit config.json"))
             return []
 
         # Check existing entries
@@ -4136,7 +4208,9 @@ class TempoAutomation:
             )
 
             if success:
-                print(f"  [OK] Created: {activity['activity']} - {activity['hours']}h")
+                print(
+                    _color_prefix(f"  [OK] Created: {activity['activity']} - {activity['hours']}h")
+                )
                 created.append(
                     {
                         "issue_key": issue_key,
@@ -4159,7 +4233,11 @@ class TempoAutomation:
         """
         # Pre-sync health check
         if not self._pre_sync_health_check():
-            print("[FAIL] Aborting timesheet submission due to API health check failure.")
+            print(
+                _color_prefix(
+                    "[FAIL] Aborting timesheet submission due to API health check failure."
+                )
+            )
             return
 
         today = date.today()
@@ -4169,7 +4247,7 @@ class TempoAutomation:
 
         # Guard: already submitted this month (skipped in dry-run)
         if not self.dry_run and self._is_already_submitted(period):
-            print(f"[OK] Timesheet for {period} was already submitted.")
+            print(_color_prefix(f"[OK] Timesheet for {period} was already submitted."))
             logger.info(f"Skipping submission: {period} already submitted")
             return
 
@@ -4200,7 +4278,9 @@ class TempoAutomation:
             return
 
         if early_submit_eligible and today.day < submission_start:
-            print("[INFO] All remaining days are non-working (PTO/holidays/weekends).")
+            print(
+                _color_prefix("[INFO] All remaining days are non-working (PTO/holidays/weekends).")
+            )
             print("       Submitting timesheet early.\n")
             logger.info("Early submission: no working days remain in month after today")
 
@@ -4223,7 +4303,9 @@ class TempoAutomation:
         if gap_data["gaps"]:
             total_gap = sum(g["gap"] for g in gap_data["gaps"])
             print(
-                f"  [!] SHORTFALL: {total_gap:.1f}h missing across {len(gap_data['gaps'])} day(s)\n"
+                _color_prefix(
+                    f"  [!] SHORTFALL: {total_gap:.1f}h missing across {len(gap_data['gaps'])} day(s)\n"
+                )
             )
             print(f"  {'Date':<12} {'Day':<10} {'Logged':>7} {'Expected':>8} {'Gap':>6}")
             print(f"  {'-' * 46}")
@@ -4238,7 +4320,7 @@ class TempoAutomation:
 
             # Save shortfall data for tray app
             self._save_shortfall_data(gap_data)
-            print(f"  [INFO] Shortfall saved to {SHORTFALL_FILE.name}")
+            print(_color_prefix(f"  [INFO] Shortfall saved to {SHORTFALL_FILE.name}"))
 
             # Send notification
             first_day_str = today.replace(day=1).strftime("%Y-%m-%d")
@@ -4251,7 +4333,7 @@ class TempoAutomation:
             )
 
             # DO NOT submit
-            print("\n  [!] Timesheet NOT submitted due to shortfall.")
+            print(_color_prefix("\n  [!] Timesheet NOT submitted due to shortfall."))
             print("      Fix gaps via tray menu or --fix-shortfall, then --submit again.")
             logger.info(
                 f"Submission blocked: {len(gap_data['gaps'])} "
@@ -4260,17 +4342,18 @@ class TempoAutomation:
             return
 
         # --- No shortfall ---
-        print("  [OK] Hours complete -- no shortfalls detected\n")
+        print(_color_prefix("  [OK] Hours complete -- no shortfalls detected\n"))
 
         # Clean up stale shortfall file
-        if SHORTFALL_FILE.exists():
-            SHORTFALL_FILE.unlink(missing_ok=True)
-            logger.info("Stale shortfall file removed")
+        self._clear_shortfall_file()
+        logger.info("Stale shortfall file removed")
 
         if not is_last_day and not early_submit_eligible:
             print(
-                f"  [INFO] No shortfalls. Auto-submission will "
-                f"happen on {today.replace(day=last_day_num)}."
+                _color_prefix(
+                    f"  [INFO] No shortfalls. Auto-submission will "
+                    f"happen on {today.replace(day=last_day_num)}."
+                )
             )
             return
 
@@ -4284,13 +4367,12 @@ class TempoAutomation:
         success = self.tempo_client.submit_timesheet()
 
         if success:
-            print(f"[OK] Timesheet submitted successfully for {period}")
+            print(_color_prefix(f"[OK] Timesheet submitted successfully for {period}"))
             self._save_submitted_marker(period)
             self.notifier.send_submission_confirmation(period)
-            if SHORTFALL_FILE.exists():
-                SHORTFALL_FILE.unlink(missing_ok=True)
+            self._clear_shortfall_file()
         else:
-            print(f"[FAIL] Failed to submit timesheet for {period}")
+            print(_color_prefix(f"[FAIL] Failed to submit timesheet for {period}"))
 
         print()
         logger.info(f"Timesheet submission {'successful' if success else 'failed'}")
@@ -4390,6 +4472,24 @@ class TempoAutomation:
             "day_details": day_details,
         }
 
+    @staticmethod
+    def _signal_tray_menu_refresh():
+        """Create a signal file so the tray app refreshes its menu.
+
+        Used after shortfall state changes from CLI commands that run
+        in a separate process from the tray app.
+        """
+        try:
+            MENU_REFRESH_SIGNAL.touch()
+        except OSError:
+            pass
+
+    def _clear_shortfall_file(self):
+        """Remove shortfall file and signal tray to refresh menu."""
+        if SHORTFALL_FILE.exists():
+            SHORTFALL_FILE.unlink(missing_ok=True)
+        self._signal_tray_menu_refresh()
+
     def _save_shortfall_data(self, gap_data: dict) -> None:
         """Save monthly shortfall data to JSON file."""
         payload = {
@@ -4404,6 +4504,7 @@ class TempoAutomation:
         logger.info(
             f"Shortfall data saved: {len(gap_data['gaps'])} gap days for {gap_data['period']}"
         )
+        self._signal_tray_menu_refresh()
 
     def _save_submitted_marker(self, period: str) -> None:
         """Record that the timesheet was successfully submitted."""
@@ -4439,7 +4540,7 @@ class TempoAutomation:
                 if not (1 <= month <= 12):
                     raise ValueError(f"Month must be 1-12, got {month}")
             except (ValueError, IndexError):
-                print(f"[ERROR] Invalid month format: {month_str}")
+                print(_color_prefix(f"[ERROR] Invalid month format: {month_str}"))
                 print("        Use YYYY-MM (e.g., 2026-03)")
                 return
 
@@ -4492,11 +4593,12 @@ class TempoAutomation:
                 "\n           -> Fix Monthly Shortfall"
             )
         else:
-            print(f"\n  {Style.OK}[OK] All hours accounted for{Style.RESET}")
+            print(
+                f"\n  {Style.OK}[OK] All hours accounted for {month_name} {year} until today{Style.RESET}"
+            )
             # Clean up stale shortfall file if no gaps remain
-            if SHORTFALL_FILE.exists():
-                SHORTFALL_FILE.unlink(missing_ok=True)
-                logger.info("Stale shortfall file removed by view_monthly")
+            self._clear_shortfall_file()
+            logger.info("Stale shortfall file removed by view_monthly")
         print()
 
     def fix_shortfall(self):
@@ -4509,9 +4611,8 @@ class TempoAutomation:
         if not gaps:
             print(f"\n{Style.OK}[OK] No shortfall detected. All hours accounted for.{Style.RESET}")
             # Clean up stale shortfall file if it exists
-            if SHORTFALL_FILE.exists():
-                SHORTFALL_FILE.unlink(missing_ok=True)
-                logger.info("Stale shortfall file removed")
+            self._clear_shortfall_file()
+            logger.info("Stale shortfall file removed")
             return
 
         period = gap_data.get("period", "unknown")
@@ -4562,9 +4663,9 @@ class TempoAutomation:
                     if 1 <= idx <= len(gaps):
                         to_fix.append(gaps[idx - 1])
                     else:
-                        print(f"  [!] Ignoring invalid index: {idx}")
+                        print(_color_prefix(f"  [!] Ignoring invalid index: {idx}"))
             except ValueError:
-                print("[ERROR] Invalid input. Use A, Q, or numbers like 1,3,5")
+                print(_color_prefix("[ERROR] Invalid input. Use A, Q, or numbers like 1,3,5"))
                 return
 
         if not to_fix:
@@ -4575,13 +4676,13 @@ class TempoAutomation:
 
         fixed_count = 0
         for g in to_fix:
-            print(f"  --- Syncing {g['date']} ({g['day']}) ---")
+            print(f"  {Style.BOLD}--- Syncing {g['date']} ({g['day']}) ---{Style.RESET}")
             try:
                 self.sync_daily(g["date"])
                 fixed_count += 1
-                print(f"  [OK] {g['date']} synced\n")
+                print(_color_prefix(f"  [OK] {g['date']} synced\n"))
             except Exception as e:
-                print(f"  [FAIL] Error syncing {g['date']}: {e}\n")
+                print(_color_prefix(f"  [FAIL] Error syncing {g['date']}: {e}\n"))
                 logger.error(f"Fix shortfall failed for {g['date']}: {e}", exc_info=True)
 
         print(f"{'=' * 60}")
@@ -4589,9 +4690,8 @@ class TempoAutomation:
 
         # Update or remove shortfall file
         if fixed_count == len(gaps):
-            if SHORTFALL_FILE.exists():
-                SHORTFALL_FILE.unlink(missing_ok=True)
-            print("  [OK] All gaps fixed. Shortfall file removed.")
+            self._clear_shortfall_file()
+            print(_color_prefix("  [OK] All gaps fixed. Shortfall file removed."))
             print("\n  You can now submit your timesheet from the tray menu.")
         elif fixed_count > 0:
             # Partial fix -- re-detect and update
@@ -4600,10 +4700,12 @@ class TempoAutomation:
             if updated["gaps"]:
                 self._save_shortfall_data(updated)
                 remaining = len(updated["gaps"])
-                print(f"  [INFO] {remaining} gap(s) remaining. Shortfall file updated.")
+                print(
+                    _color_prefix(f"  [INFO] {remaining} gap(s) remaining. Shortfall file updated.")
+                )
             else:
-                SHORTFALL_FILE.unlink(missing_ok=True)
-                print("  [OK] All gaps now fixed. Shortfall file removed.")
+                self._clear_shortfall_file()
+                print(_color_prefix("  [OK] All gaps now fixed. Shortfall file removed."))
                 print("\n  You can now submit your timesheet from the tray menu.")
 
         print(f"{'=' * 60}\n")
@@ -4634,7 +4736,7 @@ class TempoAutomation:
         gap_data = self._detect_monthly_gaps(year, month)
 
         if not gap_data["gaps"]:
-            print(f"[OK] All hours are up to date for {month_name} {year}.")
+            print(_color_prefix(f"[OK] All hours are up to date for {month_name} {year}."))
             print()
             return
 
@@ -4669,23 +4771,22 @@ class TempoAutomation:
             print()
             self.backfill_range(first_gap, last_gap)
 
-            # Re-check and clean up shortfall file so tray menu updates
-            updated = self._detect_monthly_gaps(year, month)
-            if not updated["gaps"]:
-                if SHORTFALL_FILE.exists():
-                    SHORTFALL_FILE.unlink(missing_ok=True)
-                print("  [OK] All gaps fixed. You can submit your timesheet from the tray menu.")
-            else:
-                self._save_shortfall_data(updated)
-                remaining = len(updated["gaps"])
-                print(f"  [INFO] {remaining} gap(s) still remaining.")
+            # backfill_range -> sync_daily already confirmed each day
+            # was logged via Jira (hours_logged >= target_hours).
+            # No need to re-query Tempo (slow due to Jira->Tempo sync delay).
+            self._clear_shortfall_file()
+            print(
+                _color_prefix(
+                    "  [OK] All gaps fixed. You can submit your timesheet from the tray menu."
+                )
+            )
             print()
         else:
             # Save shortfall so tray shows Fix option
             self._save_shortfall_data(gap_data)
             print()
-            print("  You can fix this later with:")
-            print("    python tempo_automation.py --fix-shortfall")
+            print("  You can fix this later from the tray menu:")
+            print("    Right-click tray icon -> Log and Reports -> Fix Monthly Shortfall")
             print()
 
     # ------------------------------------------------------------------
@@ -4706,12 +4807,12 @@ class TempoAutomation:
         end = datetime.strptime(to_date, "%Y-%m-%d").date()
 
         if start > end:
-            print("[FAIL] --from-date must be before --to-date")
+            print(_color_prefix("[FAIL] --from-date must be before --to-date"))
             return
 
         # Pre-sync health check
         if not self._pre_sync_health_check():
-            print("[FAIL] Aborting backfill due to API health check failure.")
+            print(_color_prefix("[FAIL] Aborting backfill due to API health check failure."))
             return
 
         print(f"\n{'=' * 60}")
@@ -4789,7 +4890,7 @@ class TempoAutomation:
                 for k, v in forge_status["headers"].items():
                     print(f"    {k}: {v}")
         else:
-            print("  [FAIL] Could not reach Tempo API")
+            print(_color_prefix("  [FAIL] Could not reach Tempo API"))
             print("  Check your API token and network connectivity.")
 
         # 2. Endpoint tests
@@ -4840,11 +4941,11 @@ class TempoAutomation:
                 elapsed = int((_time.monotonic() - start) * 1000)
                 status = response.status_code
                 if status < 400:
-                    print(f"  [OK]   {name} -> {status} ({elapsed}ms)")
+                    print(_color_prefix(f"  [OK]   {name} -> {status} ({elapsed}ms)"))
                 else:
-                    print(f"  [FAIL] {name} -> {status} ({elapsed}ms)")
+                    print(_color_prefix(f"  [FAIL] {name} -> {status} ({elapsed}ms)"))
             except requests.exceptions.RequestException as e:
-                print(f"  [FAIL] {name} -> {e}")
+                print(_color_prefix(f"  [FAIL] {name} -> {e}"))
 
         # 3. Network connectivity
         print("\n[3/4] Checking network connectivity...")
@@ -4861,9 +4962,9 @@ class TempoAutomation:
                 sock = socket.create_connection((host, port), timeout=5)
                 elapsed = int((_time.monotonic() - start) * 1000)
                 sock.close()
-                print(f"  [OK]   {host}:{port} ({elapsed}ms)")
+                print(_color_prefix(f"  [OK]   {host}:{port} ({elapsed}ms)"))
             except (TimeoutError, OSError) as e:
-                print(f"  [FAIL] {host}:{port} -> {e}")
+                print(_color_prefix(f"  [FAIL] {host}:{port} -> {e}"))
 
         # 4. Jira->Tempo sync check (read-only)
         print("\n[4/4] Checking Jira->Tempo sync consistency...")
@@ -4876,7 +4977,7 @@ class TempoAutomation:
                 jira_count = len(jira_wls)
                 print(f"  Jira worklogs today:  {jira_count}")
             except Exception as e:
-                print(f"  [FAIL] Jira worklog fetch: {e}")
+                print(_color_prefix(f"  [FAIL] Jira worklog fetch: {e}"))
         else:
             print("  [SKIP] No Jira client (non-developer role)")
 
@@ -4886,18 +4987,24 @@ class TempoAutomation:
                 tempo_count = len(tempo_wls)
                 print(f"  Tempo worklogs today: {tempo_count}")
             except Exception as e:
-                print(f"  [FAIL] Tempo worklog fetch: {e}")
+                print(_color_prefix(f"  [FAIL] Tempo worklog fetch: {e}"))
 
         if self.jira_client and self.tempo_client.account_id:
             if jira_count == tempo_count:
-                print("  [OK] Jira and Tempo worklog counts match")
+                print(_color_prefix("  [OK] Jira and Tempo worklog counts match"))
             elif tempo_count >= jira_count:
-                print("  [OK] Tempo has >= Jira worklogs (Tempo may include manual entries)")
+                print(
+                    _color_prefix(
+                        "  [OK] Tempo has >= Jira worklogs (Tempo may include manual entries)"
+                    )
+                )
             else:
                 print(
-                    f"  [!] Tempo has fewer worklogs than Jira "
-                    f"({tempo_count} vs {jira_count}). "
-                    "Sync may be delayed."
+                    _color_prefix(
+                        f"  [!] Tempo has fewer worklogs than Jira "
+                        f"({tempo_count} vs {jira_count}). "
+                        "Sync may be delayed."
+                    )
                 )
 
         # Summary
@@ -4905,7 +5012,10 @@ class TempoAutomation:
         print("SUMMARY")
         print(f"{'=' * 60}")
         print(f"  Platform:   {platform.upper()}")
-        print(f"  API health: {'[OK]' if healthy else '[FAIL]'}")
+        health_str = (
+            f"{Style.OK}[OK]{Style.RESET}" if healthy else f"{Style.FAIL}[FAIL]{Style.RESET}"
+        )
+        print(f"  API health: {health_str}")
 
         delay = self.config.get("tempo", {}).get("forge_sync_delay_seconds", 0)
         if delay:
@@ -4915,19 +5025,27 @@ class TempoAutomation:
 
         if platform == "forge":
             print(
-                "\n  [INFO] Tempo is running on Forge. "
-                "If you experience issues,\n"
-                "  regenerate your API token and check "
-                "firewall settings."
+                _color_prefix(
+                    "\n  [INFO] Tempo is running on Forge. "
+                    "If you experience issues,\n"
+                    "  regenerate your API token and check "
+                    "firewall settings."
+                )
             )
         elif platform == "connect":
             print(
-                "\n  [INFO] Tempo is still on Connect (legacy). "
-                "Migration has not\n"
-                "  reached this instance yet. No action needed."
+                _color_prefix(
+                    "\n  [INFO] Tempo is still on Connect (legacy). "
+                    "Migration has not\n"
+                    "  reached this instance yet. No action needed."
+                )
             )
         else:
-            print("\n  [!] Could not determine platform. Check API token and connectivity.")
+            print(
+                _color_prefix(
+                    "\n  [!] Could not determine platform. Check API token and connectivity."
+                )
+            )
         print()
 
     def check_approval_status(self, month_str: str = "current"):
@@ -4945,7 +5063,7 @@ class TempoAutomation:
                 parts = month_str.split("-")
                 year, month = int(parts[0]), int(parts[1])
             except (ValueError, IndexError):
-                print(f"[FAIL] Invalid month format: '{month_str}'. Use YYYY-MM.")
+                print(_color_prefix(f"[FAIL] Invalid month format: '{month_str}'. Use YYYY-MM."))
                 return
 
         from_date = f"{year}-{month:02d}-01"
@@ -5000,7 +5118,11 @@ class TempoAutomation:
         """Verify and backfill current week (Mon-Fri)."""
         # Pre-sync health check
         if not self._pre_sync_health_check():
-            print("[FAIL] Aborting weekly verification due to API health check failure.")
+            print(
+                _color_prefix(
+                    "[FAIL] Aborting weekly verification due to API health check failure."
+                )
+            )
             return
 
         today = date.today()
@@ -5022,7 +5144,7 @@ class TempoAutomation:
             day_str = day.strftime("%Y-%m-%d")
             day_name = day.strftime("%A")
 
-            print(f"\n--- [Day {i + 1}/5] {day_name} ({day_str}) ---")
+            print(f"\n{Style.BOLD}--- [Day {i + 1}/5] {day_name} ({day_str}) ---{Style.RESET}")
 
             # Skip future dates
             if day > today:
@@ -5047,7 +5169,7 @@ class TempoAutomation:
                     result = self._check_day_hours(day_str)
                     daily_secs = int(self.schedule_mgr.daily_hours * 3600)
                     if result["gap_hours"] > 0:
-                        print(f"  [INFO] {reason} -- logging overhead hours")
+                        print(_color_prefix(f"  [INFO] {reason} -- logging overhead hours"))
                         oh = self._get_overhead_config()
                         pto_key = oh.get("pto_story_key", "")
                         # Delete partial entries and re-log
@@ -5105,9 +5227,11 @@ class TempoAutomation:
 
             if gap_h > 0:
                 print(
-                    f"  [!] Gap: {gap_h:.2f}h needed "
-                    f"(have {existing_h:.2f}h / "
-                    f"{self.schedule_mgr.daily_hours}h)"
+                    _color_prefix(
+                        f"  [!] Gap: {gap_h:.2f}h needed "
+                        f"(have {existing_h:.2f}h / "
+                        f"{self.schedule_mgr.daily_hours}h)"
+                    )
                 )
                 backfill = self._backfill_day(day_str, int(gap_h * 3600), result["existing_keys"])
                 added_h = backfill["hours_added"]
@@ -5118,7 +5242,11 @@ class TempoAutomation:
                 else:
                     status = "[!] Gap (no stories found)"
             else:
-                print(f"  [OK] Complete ({existing_h:.2f}h / {self.schedule_mgr.daily_hours}h)")
+                print(
+                    _color_prefix(
+                        f"  [OK] Complete ({existing_h:.2f}h / {self.schedule_mgr.daily_hours}h)"
+                    )
+                )
 
             day_results.append(
                 {
@@ -5164,7 +5292,7 @@ class TempoAutomation:
 
         shortfall = total_expected - total_actual
         if shortfall > 0.5:
-            print(f"Status: [!] SHORTFALL {shortfall:.2f}h")
+            print(_color_prefix(f"Status: [!] SHORTFALL {shortfall:.2f}h"))
             self._send_shortfall_notification(
                 "weekly",
                 monday.strftime("%Y-%m-%d"),
@@ -5173,7 +5301,7 @@ class TempoAutomation:
                 total_actual,
             )
         else:
-            print("Status: [OK] All hours accounted for")
+            print(_color_prefix("Status: [OK] All hours accounted for"))
 
         print(f"{'=' * 60}\n")
 
@@ -5263,12 +5391,14 @@ class TempoAutomation:
 
             if success:
                 print(
-                    f"  [{i + 1}/{num}] [OK] Backfilled {ticket_hours:.2f}h on {issue['issue_key']}"
+                    _color_prefix(
+                        f"  [{i + 1}/{num}] [OK] Backfilled {ticket_hours:.2f}h on {issue['issue_key']}"
+                    )
                 )
                 result["created_count"] += 1
                 result["hours_added"] += ticket_hours
             else:
-                print(f"  [{i + 1}/{num}] [FAIL] {issue['issue_key']}")
+                print(_color_prefix(f"  [{i + 1}/{num}] [FAIL] {issue['issue_key']}"))
 
         result["method"] = "stories"
         return result
@@ -5580,7 +5710,7 @@ Examples:
         # Backfill date range
         elif args.backfill:
             if not args.from_date or not args.to_date:
-                print("[FAIL] --backfill requires both --from-date and --to-date")
+                print(_color_prefix("[FAIL] --backfill requires both --from-date and --to-date"))
                 sys.exit(1)
             automation.backfill_range(args.from_date, args.to_date)
         # Approval status
@@ -5604,7 +5734,7 @@ Examples:
         sys.exit(1)
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
-        print(f"\n[ERROR] {e}")
+        print(_color_prefix(f"\n[ERROR] {e}"))
         print(f"See {LOG_FILE} for details")
         sys.exit(1)
 

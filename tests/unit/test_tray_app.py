@@ -757,6 +757,127 @@ class TestScheduleNextSync:
                 f"Expected <60s delay, got {delay_seconds:.0f}s (scheduled for tomorrow?)"
             )
 
+    def test_stores_next_sync_target(self, app):
+        """_schedule_next_sync should store target datetime for sleep detection."""
+        app._config = {"schedule": {"daily_sync_time": "15:15"}}
+
+        fake_now = datetime(2026, 4, 7, 8, 0, 0)
+        with patch.object(app, "_reload_config"):
+            with patch("tray_app.datetime") as mock_dt:
+                mock_dt.now.return_value = fake_now
+                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+
+                with patch("tray_app.threading.Timer") as MockTimer:
+                    MockTimer.return_value = MagicMock()
+                    app._schedule_next_sync()
+
+        assert app._next_sync_target == datetime(2026, 4, 7, 15, 15, 0)
+
+
+# ===========================================================================
+# TestOnTimerFiredDriftDetection
+# ===========================================================================
+
+
+class TestOnTimerFiredDriftDetection:
+    """Tests for sleep-drift guard in _on_timer_fired()."""
+
+    def test_fires_sync_when_on_time(self, app):
+        """Timer firing within 5 minutes of configured time should trigger sync."""
+        app._config = {"schedule": {"daily_sync_time": "15:15"}}
+
+        # Now is 15:17 -- within 5 min tolerance
+        fake_now = datetime(2026, 4, 7, 15, 17, 0)
+        with (
+            patch.object(app, "_reload_config"),
+            patch.object(app, "_schedule_next_sync"),
+            patch.object(app, "_on_sync_now") as mock_sync,
+            patch("tray_app.datetime") as mock_dt,
+        ):
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            app._on_timer_fired()
+
+        mock_sync.assert_called_once()
+
+    def test_reschedules_when_drifted(self, app):
+        """Timer firing >5 min from configured time should re-schedule, not sync."""
+        app._config = {"schedule": {"daily_sync_time": "15:15"}}
+
+        # Now is 09:40 -- before configured time, so no catchup needed
+        fake_now = datetime(2026, 4, 7, 9, 40, 0)
+        with (
+            patch.object(app, "_reload_config"),
+            patch.object(app, "_schedule_next_sync") as mock_resched,
+            patch.object(app, "_on_sync_now") as mock_sync,
+            patch.object(app, "_catchup_backfill") as mock_backfill,
+            patch("tray_app.datetime") as mock_dt,
+        ):
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            app._on_timer_fired()
+
+        mock_resched.assert_called_once()
+        mock_sync.assert_not_called()
+        mock_backfill.assert_not_called()
+
+    def test_drift_boundary_at_5_minutes(self, app):
+        """Timer at exactly 5 minutes drift should still fire (not exceed threshold)."""
+        app._config = {"schedule": {"daily_sync_time": "15:15"}}
+
+        # 5 minutes after -> drift = 300s, not > 300 so should fire
+        fake_now = datetime(2026, 4, 7, 15, 20, 0)
+        with (
+            patch.object(app, "_reload_config"),
+            patch.object(app, "_schedule_next_sync"),
+            patch.object(app, "_on_sync_now") as mock_sync,
+            patch("tray_app.datetime") as mock_dt,
+        ):
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            app._on_timer_fired()
+
+        mock_sync.assert_called_once()
+
+    def test_drift_before_configured_time_no_catchup(self, app):
+        """Timer drifted to before configured time should re-schedule without catchup."""
+        app._config = {"schedule": {"daily_sync_time": "15:15"}}
+
+        fake_now = datetime(2026, 4, 7, 9, 40, 0)
+        with (
+            patch.object(app, "_reload_config"),
+            patch.object(app, "_schedule_next_sync") as mock_resched,
+            patch.object(app, "_catchup_backfill") as mock_backfill,
+            patch("tray_app.datetime") as mock_dt,
+        ):
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            app._on_timer_fired()
+
+        mock_resched.assert_called_once()
+        mock_backfill.assert_not_called()
+
+    def test_drift_after_configured_time_triggers_backfill(self, app):
+        """Timer drifted to after configured time should re-schedule AND backfill."""
+        app._config = {"schedule": {"daily_sync_time": "15:15"}}
+        # Simulate stale target from 2 days ago
+        app._next_sync_target = datetime(2026, 4, 5, 15, 15, 0)
+
+        fake_now = datetime(2026, 4, 7, 17, 0, 0)
+        with (
+            patch.object(app, "_reload_config"),
+            patch.object(app, "_schedule_next_sync") as mock_resched,
+            patch.object(app, "_catchup_backfill") as mock_backfill,
+            patch("tray_app.datetime") as mock_dt,
+        ):
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            app._on_timer_fired()
+
+        mock_resched.assert_called_once()
+        # Should backfill from the stale target date (Apr 5)
+        mock_backfill.assert_called_once_with(date(2026, 4, 5))
+
 
 # ===========================================================================
 # TestReconcileTaskScheduler
