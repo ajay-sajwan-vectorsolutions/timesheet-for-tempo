@@ -41,6 +41,14 @@ try:
 except ImportError:
     _keyring_mod = None
 
+# Optional colorama for colored terminal output (cross-platform)
+try:
+    import colorama
+
+    colorama.init()
+except ImportError:
+    colorama = None
+
 # Force UTF-8 output to avoid UnicodeEncodeError on Windows when redirecting to file.
 # Under pythonw.exe (no console), sys.stdout/stderr are None -- redirect to devnull.
 if sys.stdout is None:
@@ -56,13 +64,15 @@ elif sys.stderr.encoding != "utf-8":
 class DualWriter:
     """Writes to both the console (original stdout) and an external log file."""
 
+    _ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+
     def __init__(self, console, logfile_path: str):
         self.console = console
         self.logfile = open(logfile_path, "a", encoding="utf-8")
 
     def write(self, text):
         self.console.write(text)
-        self.logfile.write(text)
+        self.logfile.write(self._ansi_re.sub("", text))
         self.logfile.flush()
 
     def flush(self):
@@ -71,6 +81,57 @@ class DualWriter:
 
     def close(self):
         self.logfile.close()
+
+
+class Style:
+    """Terminal formatting constants using colorama (ASCII-safe ANSI sequences).
+
+    Falls back to empty strings when colorama is not installed.
+    """
+
+    if colorama is not None:
+        HEADER = colorama.Fore.CYAN + colorama.Style.BRIGHT
+        OK = colorama.Fore.GREEN
+        FAIL = colorama.Fore.RED
+        WARN = colorama.Fore.YELLOW
+        INFO = colorama.Fore.BLUE
+        DIM = colorama.Style.DIM
+        BOLD = colorama.Style.BRIGHT
+        MAGENTA = colorama.Fore.MAGENTA
+        RESET = colorama.Style.RESET_ALL
+    else:
+        HEADER = OK = FAIL = WARN = INFO = DIM = BOLD = MAGENTA = RESET = ""
+
+
+# ANSI code regex for visible-length calculations
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _visible_len(text: str) -> int:
+    """Return the visible length of text, excluding ANSI escape codes."""
+    return len(_ANSI_RE.sub("", text))
+
+
+def _pad_styled(text: str, width: int, align: str = ">") -> str:
+    """Pad styled text to a fixed visible width, ignoring ANSI codes.
+
+    Args:
+        text: Text possibly containing ANSI codes.
+        width: Desired visible width.
+        align: '>' for right-align, '<' for left-align.
+    """
+    padding = max(0, width - _visible_len(text))
+    if align == ">":
+        return " " * padding + text
+    return text + " " * padding
+
+
+def _styled_header(title: str, width: int = 60) -> None:
+    """Print a boxed header with colored title."""
+    border = "=" * width
+    print(f"\n{Style.DIM}{border}{Style.RESET}")
+    print(f"{Style.HEADER}{title}{Style.RESET}")
+    print(f"{Style.DIM}{border}{Style.RESET}\n")
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -472,12 +533,12 @@ class ConfigManager:
                     timeout=30,
                 )
                 resp.raise_for_status()
-                print("[OK] Existing Tempo token is still valid - reusing")
+                print(f"{Style.OK}[OK]{Style.RESET} Existing Tempo token is still valid - reusing")
                 tempo_needs_input = False
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code in (401, 403):
                     print(
-                        "[FAIL] Existing Tempo token is invalid or "
+                        f"{Style.FAIL}[FAIL]{Style.RESET} Existing Tempo token is invalid or "
                         "expired. A new token is required."
                     )
                     tempo_token = ""
@@ -485,16 +546,19 @@ class ConfigManager:
                     # Non-auth HTTP error (e.g. 500) -- reuse token
                     logger.warning(f"Could not fully verify Tempo token: {e}")
                     print(
-                        "[!] Could not verify Tempo token (network/server issue) - reusing existing"
+                        f"{Style.WARN}[!]{Style.RESET} Could not verify Tempo token"
+                        " (network/server issue) - reusing existing"
                     )
                     tempo_needs_input = False
             except Exception as e:
                 logger.warning(f"Could not verify Tempo token: {e}")
-                print("[!] Could not verify Tempo token (network issue) - reusing existing")
+                print(
+                    f"{Style.WARN}[!]{Style.RESET} Could not verify Tempo token (network issue) - reusing existing"
+                )
                 tempo_needs_input = False
 
         if tempo_needs_input:
-            print("\n[INFO] To get your Tempo API token:")
+            print(f"\n{Style.INFO}[INFO]{Style.RESET} To get your Tempo API token:")
             print(
                 "   1. Go to https://lmsportal.atlassian.net/plugins/"
                 "servlet/ac/io.tempo.jira/tempo-app#!/configuration/"
@@ -513,12 +577,12 @@ class ConfigManager:
                         timeout=30,
                     )
                     resp.raise_for_status()
-                    print("[OK] Tempo API token verified")
+                    print(f"{Style.OK}[OK]{Style.RESET} Tempo API token verified")
                     break
                 except requests.exceptions.HTTPError as e:
                     if e.response is not None and e.response.status_code in (401, 403, 404):
                         print(
-                            "\n[FAIL] Authentication failed. "
+                            f"\n{Style.FAIL}[FAIL]{Style.RESET} Authentication failed. "
                             "The Tempo API token is invalid or expired."
                         )
                         if attempt < max_retries - 1:
@@ -527,7 +591,9 @@ class ConfigManager:
                             )
                             tempo_token = input("Tempo API token: ").strip()
                         else:
-                            print("\n[FAIL] Could not verify Tempo token after 3 attempts.")
+                            print(
+                                f"\n{Style.FAIL}[FAIL]{Style.RESET} Could not verify Tempo token after 3 attempts."
+                            )
                             print()
                             print(
                                 "***********   Setup cannot "
@@ -571,31 +637,37 @@ class ConfigManager:
                     jira_name = resp.json().get("displayName", "")
                     if jira_name:
                         user_name = jira_name
-                        print(f"[OK] Existing Jira token is still valid - Welcome, {user_name}!")
+                        print(
+                            f"{Style.OK}[OK]{Style.RESET} Existing Jira token is still valid - {Style.BOLD}Welcome, {user_name}!{Style.RESET}"
+                        )
                     else:
-                        print("[OK] Existing Jira token is still valid - reusing")
+                        print(
+                            f"{Style.OK}[OK]{Style.RESET} Existing Jira token is still valid - reusing"
+                        )
                     jira_needs_input = False
                 except requests.exceptions.HTTPError as e:
                     if e.response is not None and e.response.status_code == 401:
                         print(
-                            "[FAIL] Existing Jira token is invalid or "
+                            f"{Style.FAIL}[FAIL]{Style.RESET} Existing Jira token is invalid or "
                             "expired. A new token is required."
                         )
                         jira_token = ""
                     else:
                         logger.warning(f"Could not fully verify Jira token: {e}")
                         print(
-                            "[!] Could not verify Jira token "
+                            f"{Style.WARN}[!]{Style.RESET} Could not verify Jira token "
                             "(network/server issue) - reusing existing"
                         )
                         jira_needs_input = False
                 except Exception as e:
                     logger.warning(f"Could not verify Jira token: {e}")
-                    print("[!] Could not verify Jira token (network issue) - reusing existing")
+                    print(
+                        f"{Style.WARN}[!]{Style.RESET} Could not verify Jira token (network issue) - reusing existing"
+                    )
                     jira_needs_input = False
 
             if jira_needs_input:
-                print("\n[INFO] To get your Jira API token:")
+                print(f"\n{Style.INFO}[INFO]{Style.RESET} To get your Jira API token:")
                 print("   1. Go to https://id.atlassian.com/manage-profile/security/api-tokens")
                 print("   2. Click 'Create API token'")
                 jira_token = input("\nEnter your Jira API token: ").strip()
@@ -613,12 +685,14 @@ class ConfigManager:
                         jira_name = resp.json().get("displayName", "")
                         if jira_name:
                             user_name = jira_name
-                            print(f"[OK] Welcome, {user_name}!")
+                            print(
+                                f"{Style.OK}[OK]{Style.RESET} {Style.BOLD}Welcome, {user_name}!{Style.RESET}"
+                            )
                         break
                     except requests.exceptions.HTTPError as e:
                         if e.response is not None and e.response.status_code == 401:
                             print(
-                                "\n[FAIL] Authentication failed. "
+                                f"\n{Style.FAIL}[FAIL]{Style.RESET} Authentication failed. "
                                 "Either the email or Jira API token "
                                 "is incorrect."
                             )
@@ -635,7 +709,7 @@ class ConfigManager:
                                 jira_token = input("Jira API token: ").strip()
                             else:
                                 print(
-                                    "\n[FAIL] Could not verify Jira credentials after 3 attempts."
+                                    f"\n{Style.FAIL}[FAIL]{Style.RESET} Could not verify Jira credentials after 3 attempts."
                                 )
                                 print()
                                 print(
@@ -1294,9 +1368,19 @@ class ScheduleManager:
         days = self.get_month_calendar(year, month)
         month_name = calendar.month_name[month]
 
-        print(f"\n{month_name} {year}")
-        print("=" * 48)
-        print("Mon  Tue  Wed  Thu  Fri  | Sat  Sun")
+        print(f"\n{Style.HEADER}{month_name} {year}{Style.RESET}")
+        print(f"{Style.DIM}{'=' * 48}{Style.RESET}")
+        print(
+            f"{Style.BOLD}Mon  Tue  Wed  Thu  Fri  {Style.DIM}|{Style.RESET}{Style.BOLD}  Sat  Sun{Style.RESET}"
+        )
+
+        # Color map for day labels
+        _label_colors = {
+            "H": Style.INFO,
+            "P": Style.WARN,
+            "CW": Style.MAGENTA,
+            ".": Style.DIM,
+        }
 
         # Pad first week
         first_weekday = days[0]["weekday"]
@@ -1315,11 +1399,17 @@ class ScheduleManager:
 
             # Separator before Sat column
             if wd == 5:
-                line_dates += "| "
-                line_labels += "| "
+                line_dates += f"{Style.DIM}|{Style.RESET} "
+                line_labels += f"{Style.DIM}|{Style.RESET} "
 
             line_dates += f"{day_num:>2}   "
-            line_labels += f"{label:>2}   "
+            # Colorize label after width formatting
+            formatted_label = f"{label:>2}"
+            color = _label_colors.get(label, "")
+            if color:
+                line_labels += f"{color}{formatted_label}{Style.RESET}   "
+            else:
+                line_labels += f"{formatted_label}   "
 
             # Track stats
             if day_info["status"] == "working":
@@ -1340,23 +1430,35 @@ class ScheduleManager:
                 line_labels = ""
 
         print()
-        print("Legend: W=Working  H=Holiday  PTO=PTO  CW=Comp. Working  .=Weekend")
+        print(
+            f"Legend: W=Working  "
+            f"{Style.INFO}H{Style.RESET}=Holiday  "
+            f"{Style.WARN}PTO{Style.RESET}=PTO  "
+            f"{Style.MAGENTA}CW{Style.RESET}=Comp. Working  "
+            f"{Style.DIM}.{Style.RESET}=Weekend"
+        )
         print()
         expected = working_count * self.daily_hours
-        print("Summary:")
-        print(f"  Working days: {working_count}  |  Expected hours: {expected:.1f}h")
+        print(f"{Style.BOLD}Summary:{Style.RESET}")
+        print(
+            f"  Working days: {Style.BOLD}{working_count}{Style.RESET}  |  Expected hours: {Style.BOLD}{expected:.1f}h{Style.RESET}"
+        )
         if holidays_list:
             names = [
                 f"{h['reason'].replace('Holiday: ', '')} - {month_name[:3]} {h['day']}"
                 for h in holidays_list
             ]
-            print(f"  Holidays: {len(holidays_list)} ({', '.join(names)})")
+            print(f"  {Style.INFO}Holidays:{Style.RESET} {len(holidays_list)} ({', '.join(names)})")
         if pto_list:
             pto_dates = [str(p["day"]) for p in pto_list]
-            print(f"  PTO days: {len(pto_list)} ({month_name[:3]} {', '.join(pto_dates)})")
+            print(
+                f"  {Style.WARN}PTO days:{Style.RESET} {len(pto_list)} ({month_name[:3]} {', '.join(pto_dates)})"
+            )
         if cw_list:
             cw_dates = [str(c["day"]) for c in cw_list]
-            print(f"  Comp. working days: {len(cw_list)} ({month_name[:3]} {', '.join(cw_dates)})")
+            print(
+                f"  {Style.MAGENTA}Comp. working days:{Style.RESET} {len(cw_list)} ({month_name[:3]} {', '.join(cw_dates)})"
+            )
         print()
 
     # ------------------------------------------------------------------
@@ -4344,44 +4446,53 @@ class TempoAutomation:
         gap_data = self._detect_monthly_gaps(year, month)
         month_name = calendar.month_name[month]
 
-        print(f"\n{'=' * 60}")
-        print(f"MONTHLY HOURS REPORT - {month_name} {year}")
-        print(f"{'=' * 60}\n")
+        _styled_header(f"MONTHLY HOURS REPORT - {month_name} {year}")
 
-        print(f"  {'Date':<12} {'Day':<10} {'Logged':>7} {'Expected':>8} {'Status':>10}")
-        print(f"  {'-' * 50}")
+        print(
+            f"  {Style.BOLD}{'Date':<12} {'Day':<10} {'Logged':>7} {'Expected':>8} {'Status':>10}{Style.RESET}"
+        )
+        print(f"  {Style.DIM}{'-' * 50}{Style.RESET}")
 
         for d in gap_data["day_details"]:
             if d["gap"] > 0.5:
-                status = f"-{d['gap']:.1f}h"
+                raw_status = f"-{d['gap']:.1f}h"
+                status = f"{Style.FAIL}{raw_status}{Style.RESET}"
             elif d["logged"] > d["expected"]:
                 over = d["logged"] - d["expected"]
-                status = f"+{over:.1f}h"
+                raw_status = f"+{over:.1f}h"
+                status = f"{Style.OK}{raw_status}{Style.RESET}"
             else:
-                status = "[OK]"
+                raw_status = "[OK]"
+                status = f"{Style.OK}{raw_status}{Style.RESET}"
             print(
                 f"  {d['date']:<12} {d['day']:<10} "
                 f"{d['logged']:>6.1f}h "
                 f"{d['expected']:>7.1f}h "
-                f"{status:>10}"
+                f"{_pad_styled(status, 10)}"
             )
 
-        print(f"  {'-' * 50}")
-        print(f"  {'TOTAL':<12} {'':10} {gap_data['actual']:>6.1f}h {gap_data['expected']:>7.1f}h")
+        print(f"  {Style.DIM}{'-' * 50}{Style.RESET}")
+        print(
+            f"  {Style.BOLD}{'TOTAL':<12} {'':10} {gap_data['actual']:>6.1f}h {gap_data['expected']:>7.1f}h{Style.RESET}"
+        )
 
         shortfall = gap_data["expected"] - gap_data["actual"]
         if shortfall > 0.5:
-            print(f"\n  [!] Shortfall: {shortfall:.1f}h across {len(gap_data['gaps'])} day(s)")
+            print(
+                f"\n  {Style.WARN}[!]{Style.RESET} Shortfall: {Style.FAIL}{shortfall:.1f}h{Style.RESET} across {len(gap_data['gaps'])} day(s)"
+            )
             # Save shortfall file so tray app can show Fix option
             self._save_shortfall_data(gap_data)
-            print("\n  [->] To fix gaps, close this window and use the tray menu:")
+            print(
+                f"\n  {Style.INFO}[->]{Style.RESET} To fix gaps, close this window and use the tray menu:"
+            )
             print(
                 "\n       Right-click tray icon"
                 "\n         -> Log and Reports"
                 "\n           -> Fix Monthly Shortfall"
             )
         else:
-            print("\n  [OK] All hours accounted for")
+            print(f"\n  {Style.OK}[OK] All hours accounted for{Style.RESET}")
             # Clean up stale shortfall file if no gaps remain
             if SHORTFALL_FILE.exists():
                 SHORTFALL_FILE.unlink(missing_ok=True)
@@ -4396,7 +4507,7 @@ class TempoAutomation:
         gaps = gap_data.get("gaps", [])
 
         if not gaps:
-            print("\n[OK] No shortfall detected. All hours accounted for.")
+            print(f"\n{Style.OK}[OK] No shortfall detected. All hours accounted for.{Style.RESET}")
             # Clean up stale shortfall file if it exists
             if SHORTFALL_FILE.exists():
                 SHORTFALL_FILE.unlink(missing_ok=True)
@@ -4406,19 +4517,21 @@ class TempoAutomation:
         period = gap_data.get("period", "unknown")
         total_gap = sum(g["gap"] for g in gaps)
 
-        print(f"\n{'=' * 60}")
-        print(f"FIX MONTHLY SHORTFALL - {period}")
-        print(f"{'=' * 60}\n")
-        print(f"  Total shortfall: {total_gap:.1f}h across {len(gaps)} day(s)")
+        _styled_header(f"FIX MONTHLY SHORTFALL - {period}")
+        print(
+            f"  Total shortfall: {Style.FAIL}{total_gap:.1f}h{Style.RESET} across {len(gaps)} day(s)"
+        )
         print()
-        print(f"  #   {'Date':<12} {'Day':<10} {'Logged':>7} {'Expected':>8} {'Gap':>6}")
-        print(f"  {'-' * 48}")
+        print(
+            f"  {Style.BOLD}#   {'Date':<12} {'Day':<10} {'Logged':>7} {'Expected':>8} {'Gap':>6}{Style.RESET}"
+        )
+        print(f"  {Style.DIM}{'-' * 48}{Style.RESET}")
         for i, g in enumerate(gaps, 1):
             print(
                 f"  {i:<3} {g['date']:<12} {g['day']:<10} "
                 f"{g['logged']:>6.1f}h "
                 f"{g['expected']:>7.1f}h "
-                f"{g['gap']:>5.1f}h"
+                f"{Style.FAIL}{g['gap']:>5.1f}h{Style.RESET}"
             )
 
         print()
@@ -4555,7 +4668,21 @@ class TempoAutomation:
             last_gap = gap_data["gaps"][-1]["date"]
             print()
             self.backfill_range(first_gap, last_gap)
+
+            # Re-check and clean up shortfall file so tray menu updates
+            updated = self._detect_monthly_gaps(year, month)
+            if not updated["gaps"]:
+                if SHORTFALL_FILE.exists():
+                    SHORTFALL_FILE.unlink(missing_ok=True)
+                print("  [OK] All gaps fixed. You can submit your timesheet from the tray menu.")
+            else:
+                self._save_shortfall_data(updated)
+                remaining = len(updated["gaps"])
+                print(f"  [INFO] {remaining} gap(s) still remaining.")
+            print()
         else:
+            # Save shortfall so tray shows Fix option
+            self._save_shortfall_data(gap_data)
             print()
             print("  You can fix this later with:")
             print("    python tempo_automation.py --fix-shortfall")
