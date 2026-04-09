@@ -15,6 +15,74 @@
 
 # Note: not using 'set -e' because we have explicit error checks below
 
+# ============================================================================
+# macOS Security: Quarantine check and guided fix
+# ============================================================================
+# Files downloaded from the internet (email, browser, Teams, etc.) get tagged
+# with a quarantine attribute by macOS. This can block script execution even
+# after chmod +x. Detect and guide the user through the fix.
+# ============================================================================
+
+_check_quarantine() {
+    # Only relevant on macOS
+    [ "$(uname)" != "Darwin" ] && return 0
+
+    SCRIPT_DIR_TMP="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+    # Check if this script itself has the quarantine flag
+    if xattr -l "$SCRIPT_DIR_TMP/install.sh" 2>/dev/null | grep -q "com.apple.quarantine"; then
+        echo ""
+        echo "============================================================"
+        echo "[!] macOS SECURITY BLOCK DETECTED"
+        echo "============================================================"
+        echo ""
+        echo "This folder was downloaded from the internet and macOS has"
+        echo "applied a quarantine flag. Scripts may fail to run until"
+        echo "this is removed."
+        echo ""
+        echo "To fix this, we need to remove the quarantine attribute"
+        echo "from all files in this folder."
+        echo ""
+        echo "Command that will run:"
+        echo "  xattr -dr com.apple.quarantine \"$SCRIPT_DIR_TMP\""
+        echo ""
+        read -p "Remove quarantine and continue? (y/n): " FIX_QUARANTINE
+
+        if [ "$FIX_QUARANTINE" = "y" ] || [ "$FIX_QUARANTINE" = "Y" ] || [ -z "$FIX_QUARANTINE" ]; then
+            xattr -dr com.apple.quarantine "$SCRIPT_DIR_TMP" 2>/dev/null
+            if [ $? -eq 0 ]; then
+                echo "[OK] Quarantine removed successfully"
+                echo ""
+            else
+                echo "[!] Could not remove quarantine automatically."
+                echo ""
+                echo "Please run this command manually, then re-run install.sh:"
+                echo ""
+                echo "  xattr -dr com.apple.quarantine \"$SCRIPT_DIR_TMP\""
+                echo ""
+                echo "If that also fails, go to:"
+                echo "  System Settings > Privacy & Security > scroll down"
+                echo "  Look for a message about install.sh being blocked"
+                echo "  Click 'Allow Anyway'"
+                echo ""
+                exit 1
+            fi
+        else
+            echo ""
+            echo "Installation cannot continue with quarantine active."
+            echo ""
+            echo "To fix manually, run:"
+            echo "  xattr -dr com.apple.quarantine \"$SCRIPT_DIR_TMP\""
+            echo ""
+            echo "Then re-run: bash install.sh"
+            echo ""
+            exit 1
+        fi
+    fi
+}
+
+_check_quarantine
+
 echo ""
 echo "============================================================"
 echo "TEMPO TIMESHEET AUTOMATION - MAC/LINUX INSTALLER"
