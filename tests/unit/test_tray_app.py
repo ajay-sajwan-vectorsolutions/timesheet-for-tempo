@@ -899,12 +899,24 @@ class TestReconcileTaskScheduler:
 
         mock_update.assert_called_once_with("11:00")
 
-    def test_skips_on_non_windows(self, app):
-        """On Mac/Linux, reconcile should be a no-op."""
+    def test_reconciles_on_mac(self, app):
+        """On Mac, reconcile should update crontab sync time."""
         app._config = {"schedule": {"daily_sync_time": "11:00"}}
 
         with (
             patch("sys.platform", "darwin"),
+            patch.object(app, "_update_task_scheduler_time") as mock_update,
+        ):
+            app._reconcile_task_scheduler()
+
+        mock_update.assert_called_once_with("11:00")
+
+    def test_skips_on_linux(self, app):
+        """On Linux, reconcile should be a no-op."""
+        app._config = {"schedule": {"daily_sync_time": "11:00"}}
+
+        with (
+            patch("sys.platform", "linux"),
             patch.object(app, "_update_task_scheduler_time") as mock_update,
         ):
             app._reconcile_task_scheduler()

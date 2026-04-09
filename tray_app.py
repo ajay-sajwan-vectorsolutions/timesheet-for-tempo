@@ -981,42 +981,92 @@ class TrayApp:
             tray_logger.error(f"Change sync time failed: {e}", exc_info=True)
 
     def _update_task_scheduler_time(self, new_time: str):
-        """Update the Windows Task Scheduler daily sync task to the new time.
+        """Update the scheduled sync task to the new time.
 
-        Keeps the Task Scheduler task in sync with the tray-configured time
+        Windows: updates the Task Scheduler daily sync task.
+        Mac: updates the crontab daily sync entry.
+        Keeps the scheduled task in sync with the tray-configured time
         so the fallback restart (confirm_and_run.py) fires at the right hour.
         """
-        if sys.platform != "win32":
-            return
+        if sys.platform == "win32":
+            try:
+                result = subprocess.run(
+                    ["schtasks", "/Change", "/TN", "TempoAutomation-DailySync", "/ST", new_time],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    tray_logger.info(
+                        f"Task Scheduler 'TempoAutomation-DailySync' updated to {new_time}"
+                    )
+                else:
+                    tray_logger.warning(
+                        f"Could not update Task Scheduler time: {result.stderr.strip()}"
+                    )
+            except Exception as e:
+                tray_logger.warning(f"Could not update Task Scheduler time: {e}")
+        elif sys.platform == "darwin":
+            self._update_crontab_sync_time(new_time)
+
+    def _update_crontab_sync_time(self, new_time: str):
+        """Update the crontab daily sync entry to the new time (Mac/Linux)."""
         try:
-            result = subprocess.run(
-                ["schtasks", "/Change", "/TN", "TempoAutomation-DailySync", "/ST", new_time],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode == 0:
-                tray_logger.info(
-                    f"Task Scheduler 'TempoAutomation-DailySync' updated to {new_time}"
+            parts = new_time.split(":")
+            new_hour = parts[0].lstrip("0") or "0"
+            new_min = parts[1] if len(parts) > 1 else "0"
+
+            result = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+            if result.returncode != 0:
+                tray_logger.warning("Could not read crontab")
+                return
+
+            lines = result.stdout.splitlines()
+            updated = False
+            new_lines = []
+            for line in lines:
+                # Match the daily sync cron line (contains run_daily.sh or confirm_and_run.py)
+                if "run_daily.sh" in line or (
+                    "tempo_automation.py" in line
+                    and "verify-week" not in line
+                    and "submit" not in line
+                ):
+                    # Replace the minute and hour fields (first two fields)
+                    cron_parts = line.split()
+                    if len(cron_parts) >= 5 and not line.strip().startswith("#"):
+                        cron_parts[0] = new_min
+                        cron_parts[1] = new_hour
+                        new_lines.append(" ".join(cron_parts))
+                        updated = True
+                        continue
+                new_lines.append(line)
+
+            if updated:
+                new_cron = "\n".join(new_lines) + "\n"
+                proc = subprocess.run(
+                    ["crontab", "-"], input=new_cron, capture_output=True, text=True, timeout=10
                 )
+                if proc.returncode == 0:
+                    tray_logger.info(f"Crontab daily sync updated to {new_time}")
+                else:
+                    tray_logger.warning(f"Could not update crontab: {proc.stderr.strip()}")
             else:
-                tray_logger.warning(
-                    f"Could not update Task Scheduler time: {result.stderr.strip()}"
-                )
+                tray_logger.info("No daily sync cron entry found to update")
         except Exception as e:
-            tray_logger.warning(f"Could not update Task Scheduler time: {e}")
+            tray_logger.warning(f"Could not update crontab sync time: {e}")
 
     def _reconcile_task_scheduler(self):
-        """Ensure Windows Task Scheduler time matches config on startup.
+        """Ensure scheduled task time matches config on startup.
 
         Covers the case where config was edited directly (e.g. --setup)
-        but the Task Scheduler task still has the old/default time.
+        but the scheduled task still has the old/default time.
+        Windows: reconciles Task Scheduler. Mac: reconciles crontab.
         """
-        if sys.platform != "win32":
+        if sys.platform not in ("win32", "darwin"):
             return
         sync_time = self._get_sync_time()
         self._update_task_scheduler_time(sync_time)
-        tray_logger.info(f"Task Scheduler reconciled to config sync time: {sync_time}")
+        tray_logger.info(f"Scheduled task reconciled to config sync time: {sync_time}")
 
     def _on_select_overhead(self, icon=None, item=None):
         """Open a terminal window for overhead story selection."""
@@ -1233,7 +1283,7 @@ class TrayApp:
             )
         elif sys.platform == "darwin":
             cmd = (
-                f'cd "{SCRIPT_DIR}" && python3 "{script}" {cli_arg}'
+                f'cd "{SCRIPT_DIR}" && "{sys.executable}" "{script}" {cli_arg}'
                 '; echo ""; echo "Press Enter to exit..."; read'
             )
             proc = subprocess.Popen(
@@ -1242,7 +1292,8 @@ class TrayApp:
         else:
             # Linux fallback
             proc = subprocess.Popen(
-                ["x-terminal-emulator", "-e", "python3", str(script), cli_arg], cwd=str(SCRIPT_DIR)
+                ["x-terminal-emulator", "-e", sys.executable, str(script), cli_arg],
+                cwd=str(SCRIPT_DIR),
             )
 
         # Wait for the terminal to close, then refresh dynamic menu items
@@ -1473,8 +1524,17 @@ class TrayApp:
         """
         Schedule tray app to relaunch at sync time.
         Windows: one-time Task Scheduler task.
-        Mac: log a reminder (launchd one-shot is too complex).
+        Mac: the cron job (run_daily.sh -> confirm_and_run.py) will restart
+             the tray at the next sync time if it is not running.
         """
+        if sys.platform == "darwin":
+            sync_time = self._get_sync_time()
+            tray_logger.info(
+                f"Tray app exiting. The cron job will restart it at "
+                f"{sync_time} via confirm_and_run.py. "
+                f"Or it will launch at next login via LaunchAgent."
+            )
+            return
         if sys.platform != "win32":
             sync_time = self._get_sync_time()
             tray_logger.info(
@@ -1818,7 +1878,10 @@ def register_autostart():
             f"        <string>{tray_script}</string>\n"
             "    </array>\n"
             "    <key>RunAtLoad</key><true/>\n"
-            "    <key>KeepAlive</key><false/>\n"
+            "    <key>KeepAlive</key>\n"
+            "    <dict>\n"
+            "        <key>SuccessfulExit</key><false/>\n"
+            "    </dict>\n"
             "</dict>\n"
             "</plist>\n"
         )
