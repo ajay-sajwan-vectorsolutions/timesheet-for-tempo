@@ -1,5 +1,17 @@
 @echo off
 setlocal enabledelayedexpansion
+
+REM -- ANSI color support (Windows 10+ CMD) --
+for /f %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
+set "C_OK=!ESC![32m"
+set "C_FAIL=!ESC![31m"
+set "C_WARN=!ESC![33m"
+set "C_INFO=!ESC![34m"
+set "C_HEAD=!ESC![36;1m"
+set "C_BOLD=!ESC![1m"
+set "C_DIM=!ESC![2m"
+set "C_R=!ESC![0m"
+
 REM ============================================================================
 REM Tempo Automation - Windows Installer
 REM ============================================================================
@@ -24,9 +36,9 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo ============================================================
-echo TEMPO TIMESHEET AUTOMATION - WINDOWS INSTALLER
-echo ============================================================
+echo !C_DIM!============================================================!C_R!
+echo !C_HEAD!TEMPO TIMESHEET AUTOMATION - WINDOWS INSTALLER!C_R!
+echo !C_DIM!============================================================!C_R!
 echo.
 
 REM Get script directory (source location of this installer)
@@ -133,10 +145,10 @@ REM ============================================================================
 REM Phase A: Save config to temp before touching anything
 REM ============================================================================
 if not "!OLD_INSTALL_DIR!"=="" (
-    echo [INFO] Found previous installation at: !OLD_INSTALL_DIR!
+    echo !C_INFO![INFO]!C_R! Found previous installation at: !OLD_INSTALL_DIR!
     if exist "!OLD_INSTALL_DIR!\config.json" (
         copy /Y "!OLD_INSTALL_DIR!\config.json" "%TEMP%\_tempo_migrated_config.json" >nul
-        echo [OK] Previous config saved - credentials will be carried over
+        echo !C_OK![OK]!C_R! Previous config saved - credentials will be carried over
     )
     set IS_UPGRADE=1
     echo.
@@ -165,9 +177,9 @@ if "!IS_UPGRADE!"=="1" (
         )
     )
     if !FORCE_KILLED! equ 1 (
-        echo [OK] Old tray process force-stopped
+        echo !C_OK![OK]!C_R! Old tray process force-stopped
     ) else (
-        echo [OK] Old tray instance stopped gracefully
+        echo !C_OK![OK]!C_R! Old tray instance stopped gracefully
     )
     set LINE=
     set LAST_FIELD=
@@ -183,13 +195,13 @@ if "!IS_UPGRADE!"=="1" (
 
     REM C1: Remove registry autostart entry
     reg delete "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v TempoTrayApp /f >nul 2>&1
-    echo   [OK] Registry autostart entry removed
+    echo   !C_OK![OK]!C_R! Registry autostart entry removed
 
     REM C2: Delete scheduled tasks
     schtasks /Delete /TN "TempoAutomation-DailySync"     /F >nul 2>&1
     schtasks /Delete /TN "TempoAutomation-WeeklyVerify"  /F >nul 2>&1
     schtasks /Delete /TN "TempoAutomation-MonthlySubmit" /F >nul 2>&1
-    echo   [OK] Scheduled tasks removed
+    echo   !C_OK![OK]!C_R! Scheduled tasks removed
 
     REM C3: Remove artefact files from old dir
     del /f /q "!OLD_INSTALL_DIR!\_tray_stop.signal" >nul 2>&1
@@ -197,15 +209,15 @@ if "!IS_UPGRADE!"=="1" (
 
     REM C4: Remove AppData backup (prevent stale config bleeding into future installs)
     del /f /q "%APPDATA%\TempoAutomation\config.json" >nul 2>&1
-    echo   [OK] AppData backup cleared
+    echo   !C_OK![OK]!C_R! AppData backup cleared
 
     REM C5: Delete old folder -- only if it is NOT the new install destination
     if /i not "!OLD_INSTALL_DIR!"=="C:\tempo-timesheet" (
         rmdir /s /q "!OLD_INSTALL_DIR!" >nul 2>&1
         if !errorlevel! equ 0 (
-            echo   [OK] Old installation folder removed: !OLD_INSTALL_DIR!
+            echo   !C_OK![OK]!C_R! Old installation folder removed: !OLD_INSTALL_DIR!
         ) else (
-            echo   [!] Could not fully remove old folder ^(files still in use^)
+            echo   !C_WARN![!]!C_R! Could not fully remove old folder ^(files still in use^)
             echo       Please delete manually: !OLD_INSTALL_DIR!
         )
     )
@@ -243,14 +255,14 @@ if exist "%SOURCE_DIR%lib"    xcopy /E /I /Y "%SOURCE_DIR%lib"    "%INSTALL_DIR%
 REM Redefine SCRIPT_DIR to install location; all subsequent steps use this
 set SCRIPT_DIR=%INSTALL_DIR%\
 cd /d "%INSTALL_DIR%"
-echo [OK] Files installed to %INSTALL_DIR%
+echo !C_OK![OK]!C_R! Files installed to %INSTALL_DIR%
 echo.
 
 REM ============================================================================
 REM Detect Python: embedded first, then system PATH
 REM ============================================================================
 
-echo [1/7] Detecting Python...
+echo !C_BOLD![1/7] Detecting Python...!C_R!
 
 set PYTHON_EXE=
 set PYTHONW_EXE=
@@ -259,7 +271,7 @@ REM Check 1: Embedded Python (shipped in zip)
 if exist "%SCRIPT_DIR%python\python.exe" (
     set "PYTHON_EXE=%SCRIPT_DIR%python\python.exe"
     set "PYTHONW_EXE=%SCRIPT_DIR%python\pythonw.exe"
-    echo [OK] Found embedded Python
+    echo !C_OK![OK]!C_R! Found embedded Python
     "%SCRIPT_DIR%python\python.exe" --version
     echo.
     goto :python_found
@@ -274,10 +286,10 @@ if %errorlevel% equ 0 (
     for %%i in (python.exe) do set "PYTHONW_DIR=%%~dp$PATH:i"
     set "PYTHONW_EXE=!PYTHONW_DIR!pythonw.exe"
     if not exist "!PYTHONW_EXE!" (
-        echo [!] pythonw.exe not found, falling back to python.exe
+        echo !C_WARN![!]!C_R! pythonw.exe not found, falling back to python.exe
         set "PYTHONW_EXE=!PYTHON_EXE!"
     )
-    echo [OK] Found system Python
+    echo !C_OK![OK]!C_R! Found system Python
     python --version
     echo.
     goto :python_found
@@ -303,11 +315,11 @@ REM ============================================================================
 REM Install dependencies (skip if lib/ exists from embedded zip)
 REM ============================================================================
 
-echo [2/7] Installing Python dependencies...
+echo !C_BOLD![2/7] Installing Python dependencies...!C_R!
 echo.
 
 if exist "%SCRIPT_DIR%lib" (
-    echo [OK] Pre-bundled lib\ directory found -- skipping pip install
+    echo !C_OK![OK]!C_R! Pre-bundled lib\ directory found -- skipping pip install
 ) else (
     "%PYTHON_EXE%" -m pip install --upgrade pip
     "%PYTHON_EXE%" -m pip install -r requirements.txt
@@ -318,7 +330,7 @@ if exist "%SCRIPT_DIR%lib" (
         pause
         exit /b 1
     )
-    echo [OK] Dependencies installed ^(requests, holidays, pystray, Pillow, winotify^)
+    echo !C_OK![OK]!C_R! Dependencies installed ^(requests, holidays, pystray, Pillow, winotify^)
 )
 echo.
 
@@ -331,12 +343,12 @@ if not exist "%SCRIPT_DIR%config.json" (
     if exist "%TEMP%\_tempo_migrated_config.json" (
         copy /Y "%TEMP%\_tempo_migrated_config.json" "%SCRIPT_DIR%config.json" >nul
         del "%TEMP%\_tempo_migrated_config.json" >nul 2>&1
-        echo [OK] Previous config restored from old installation - wizard will skip credential prompts
+        echo !C_OK![OK]!C_R! Previous config restored from old installation - wizard will skip credential prompts
         echo.
     ) else if "!IS_UPGRADE!"=="1" (
         if exist "%APPDATA%\TempoAutomation\config.json" (
             copy /Y "%APPDATA%\TempoAutomation\config.json" "%SCRIPT_DIR%config.json" >nul
-            echo [OK] Previous config restored from AppData backup - wizard will skip credential prompts
+            echo !C_OK![OK]!C_R! Previous config restored from AppData backup - wizard will skip credential prompts
             echo.
         )
     )
@@ -346,7 +358,7 @@ REM ============================================================================
 REM Run setup wizard
 REM ============================================================================
 
-echo [3/7] Running setup wizard...
+echo !C_BOLD![3/7] Running setup wizard...!C_R!
 echo.
 "%PYTHON_EXE%" tempo_automation.py --setup
 
@@ -358,14 +370,14 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [OK] Setup complete
+echo !C_OK![OK]!C_R! Setup complete
 echo.
 
 REM ============================================================================
 REM Select overhead stories (developers only)
 REM ============================================================================
 
-echo [4/7] Configuring overhead stories...
+echo !C_BOLD![4/7] Configuring overhead stories...!C_R!
 echo.
 echo Overhead stories are used for daily default hours (e.g., 2h/day),
 echo PTO days, holidays, and days with no active tickets.
@@ -377,7 +389,7 @@ if /i "%SELECT_OH%"=="n" (
     "%PYTHON_EXE%" tempo_automation.py --select-overhead
     if !errorlevel! neq 0 (
         echo.
-        echo [!] Overhead selection skipped or failed
+        echo !C_WARN![!]!C_R! Overhead selection skipped or failed
         echo     Skipping overhead story setup
     )
 )
@@ -387,7 +399,7 @@ REM ============================================================================
 REM Generate wrapper scripts and create scheduled tasks
 REM ============================================================================
 
-echo [5/7] Setting up scheduled tasks...
+echo !C_BOLD![5/7] Setting up scheduled tasks...!C_R!
 echo.
 
 REM -- Generate _get_month.py helper: returns current YYYY-MM --
@@ -432,7 +444,7 @@ REM -- Generate run_monthly.bat with detected Python path --
     echo "%PYTHON_EXE%" "%SCRIPT_DIR%tempo_automation.py" --submit --logfile "%%LOGFILE%%"
 ) > "%SCRIPT_DIR%run_monthly.bat"
 
-echo [OK] Wrapper scripts generated with detected Python path
+echo !C_OK![OK]!C_R! Wrapper scripts generated with detected Python path
 echo.
 
 REM Read sync time from config if it exists, otherwise default to 18:00
@@ -446,9 +458,9 @@ echo Creating daily sync task ^(Mon-Fri at !SYNC_TIME!^)...
 schtasks /Create /TN "TempoAutomation-DailySync" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST !SYNC_TIME! /TR "\"%SCRIPT_DIR%run_daily.bat\"" /F >nul 2>&1
 
 if %errorlevel% equ 0 (
-    echo [OK] Daily sync task created ^(weekdays only^)
+    echo !C_OK![OK]!C_R! Daily sync task created ^(weekdays only^)
 ) else (
-    echo [FAIL] Failed to create daily sync task
+    echo !C_FAIL![FAIL]!C_R! Failed to create daily sync task
     echo   You may need to run this as Administrator
 )
 
@@ -457,9 +469,9 @@ echo Creating weekly verification task ^(Fridays at 4:00 PM^)...
 schtasks /Create /TN "TempoAutomation-WeeklyVerify" /SC WEEKLY /D FRI /ST 16:00 /TR "\"%SCRIPT_DIR%run_weekly.bat\"" /F >nul 2>&1
 
 if %errorlevel% equ 0 (
-    echo [OK] Weekly verification task created
+    echo !C_OK![OK]!C_R! Weekly verification task created
 ) else (
-    echo [FAIL] Failed to create weekly verification task
+    echo !C_FAIL![FAIL]!C_R! Failed to create weekly verification task
     echo   You may need to run this as Administrator
 )
 
@@ -468,9 +480,9 @@ echo Creating monthly submission task ^(last day of month at 11:00 PM^)...
 schtasks /Create /TN "TempoAutomation-MonthlySubmit" /SC MONTHLY /MO LASTDAY /M * /ST 23:00 /TR "\"%SCRIPT_DIR%run_monthly.bat\"" /F >nul 2>&1
 
 if %errorlevel% equ 0 (
-    echo [OK] Monthly submission task created
+    echo !C_OK![OK]!C_R! Monthly submission task created
 ) else (
-    echo [FAIL] Failed to create monthly submission task
+    echo !C_FAIL![FAIL]!C_R! Failed to create monthly submission task
     echo   You may need to run this as Administrator
 )
 
@@ -480,7 +492,7 @@ REM ============================================================================
 REM Tray App Setup (recommended)
 REM ============================================================================
 
-echo [6/7] Setting up System Tray App...
+echo !C_BOLD![6/7] Setting up System Tray App...!C_R!
 echo.
 echo The tray app lives in your system tray, shows a notification at your
 echo configured sync time, and lets you sync with one click.
@@ -499,14 +511,14 @@ set TRAY_EXTRA=
 if "!IS_UPGRADE!"=="1" set TRAY_EXTRA= --upgraded
 start "" /B "!PYTHONW_EXE!" "!SCRIPT_DIR!tray_app.py"!TRAY_EXTRA!
 timeout /t 3 /nobreak >nul
-echo [OK] Tray app is running in the system tray
+echo !C_OK![OK]!C_R! Tray app is running in the system tray
 echo.
 
 REM ============================================================================
 REM Test run
 REM ============================================================================
 
-echo [7/8] Test sync (optional)
+echo !C_BOLD![7/8] Test sync (optional)!C_R!
 echo.
 echo Would you like to test the automation now?
 echo This will sync today's timesheet to verify everything works.
@@ -526,7 +538,7 @@ REM ============================================================================
 REM Post-install shortfall check
 REM ============================================================================
 
-echo [8/8] Checking for missing hours this month...
+echo !C_BOLD![8/8] Checking for missing hours this month...!C_R!
 echo.
 "%PYTHON_EXE%" tempo_automation.py --post-install-check
 echo.
@@ -536,9 +548,9 @@ REM Installation complete
 REM ============================================================================
 
 echo.
-echo ============================================================
-echo [OK] INSTALLATION COMPLETE!
-echo ============================================================
+echo !C_DIM!============================================================!C_R!
+echo !C_HEAD![OK] INSTALLATION COMPLETE!!C_R!
+echo !C_DIM!============================================================!C_R!
 echo.
 echo Your automation is now set up and will run automatically:
 echo.
