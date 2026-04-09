@@ -10,6 +10,7 @@ __pycache__/
 
 # Claude Code user settings (machine-specific permissions)
 .claude/settings.local.json
+.claude/settings.json
 
 # Deprecated files
 archive/
@@ -19,6 +20,7 @@ Claude Prompt.txt
 
 # Tray app temp files
 _tray_stop.signal
+_menu_refresh.signal
 _pto_input.tmp
 _pto_input.vbs
 monthly_shortfall.json
@@ -35,6 +37,7 @@ dist/
 
 # Stray pip output
 =0.40
+=0.4.6
 
 # Test coverage
 .coverage
