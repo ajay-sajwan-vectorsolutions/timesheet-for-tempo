@@ -238,7 +238,11 @@ mkdir "%STAGE%"
 echo [1/2] Copying distribution files...
 call :copy_common_files "%STAGE%"
 copy "%SCRIPT_DIR%install.sh" "%STAGE%\" >nul
-echo [OK] Files copied (no .bat files, no confirm_and_run.py)
+copy "%SCRIPT_DIR%confirm_and_run.py" "%STAGE%\" >nul
+copy "%SCRIPT_DIR%run_daily.sh" "%STAGE%\" >nul
+copy "%SCRIPT_DIR%run_weekly.sh" "%STAGE%\" >nul
+copy "%SCRIPT_DIR%run_monthly.sh" "%STAGE%\" >nul
+echo [OK] Files copied (install.sh, confirm_and_run.py, shell wrappers)
 
 echo [2/2] Creating zip...
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
