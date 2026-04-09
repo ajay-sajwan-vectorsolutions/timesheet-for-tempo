@@ -4501,6 +4501,67 @@ class TempoAutomation:
             pass
 
     # ------------------------------------------------------------------
+    # Post-install shortfall check
+    # ------------------------------------------------------------------
+
+    def post_install_check(self):
+        """Detect and offer to fix monthly shortfall after installation.
+
+        Called by install.bat as the final step.  Checks the current month
+        for working days with missing hours and offers a Y/N backfill.
+        """
+        today = date.today()
+        year, month = today.year, today.month
+        month_name = calendar.month_name[month]
+
+        print(f"\n{'=' * 60}")
+        print(f"POST-INSTALL CHECK - {month_name} {year}")
+        print(f"{'=' * 60}\n")
+
+        gap_data = self._detect_monthly_gaps(year, month)
+
+        if not gap_data["gaps"]:
+            print(f"[OK] All hours are up to date for {month_name} {year}.")
+            print()
+            return
+
+        shortfall = gap_data["expected"] - gap_data["actual"]
+        gap_count = len(gap_data["gaps"])
+
+        print(f"  SHORTFALL DETECTED FOR {month_name.upper()} {year}")
+        print(f"  {'=' * 50}")
+        print(f"  {'Date':<12} {'Day':<12} {'Logged':>7} {'Expected':>9} {'Gap':>6}")
+        print(f"  {'-' * 50}")
+
+        for g in gap_data["gaps"]:
+            print(
+                f"  {g['date']:<12} {g['day']:<12} "
+                f"{g['logged']:>6.1f}h "
+                f"{g['expected']:>8.1f}h "
+                f"{g['gap']:>5.1f}h"
+            )
+
+        print(f"  {'=' * 50}")
+        print(f"  Total: {shortfall:.1f}h missing across {gap_count} day(s)")
+        print()
+
+        try:
+            answer = input("  Would you like to sync hours for these days now? (Y/N): ")
+        except (EOFError, KeyboardInterrupt):
+            answer = "n"
+
+        if answer.strip().lower() == "y":
+            first_gap = gap_data["gaps"][0]["date"]
+            last_gap = gap_data["gaps"][-1]["date"]
+            print()
+            self.backfill_range(first_gap, last_gap)
+        else:
+            print()
+            print("  You can fix this later with:")
+            print("    python tempo_automation.py --fix-shortfall")
+            print()
+
+    # ------------------------------------------------------------------
     # Date-range backfill
     # ------------------------------------------------------------------
 
@@ -5243,6 +5304,11 @@ Examples:
     parser.add_argument(
         "--fix-shortfall", action="store_true", help="Interactive fix for monthly hour shortfalls"
     )
+    parser.add_argument(
+        "--post-install-check",
+        action="store_true",
+        help="Check for monthly shortfall after installation and offer to backfill",
+    )
 
     # Date-range backfill
     parser.add_argument(
@@ -5295,6 +5361,7 @@ Examples:
         or args.show_overhead
         or args.select_overhead
         or args.fix_shortfall
+        or args.post_install_check
         or args.add_pto
         or args.remove_pto
         or args.add_holiday
@@ -5381,6 +5448,8 @@ Examples:
             automation.view_monthly_hours(args.view_monthly)
         elif args.fix_shortfall:
             automation.fix_shortfall()
+        elif args.post_install_check:
+            automation.post_install_check()
         # Backfill date range
         elif args.backfill:
             if not args.from_date or not args.to_date:
