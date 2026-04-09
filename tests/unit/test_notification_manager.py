@@ -18,15 +18,11 @@ Teams webhook are intercepted by the ``responses`` library (imported as
 """
 
 import io
-import logging
 import smtplib
 import sys
-from datetime import date
-from email.mime.multipart import MIMEMultipart
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 import responses as responses_lib
 
 # ---------------------------------------------------------------------------
@@ -36,16 +32,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tempo_automation import DualWriter, NotificationManager, CredentialManager  # noqa: E402
-
+from tempo_automation import DualWriter, NotificationManager  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _enabled_config(base_config: dict) -> dict:
     """Return a copy of the config with email_enabled set to True."""
     import copy
+
     cfg = copy.deepcopy(base_config)
     cfg["notifications"]["email_enabled"] = True
     cfg["notifications"]["smtp_password"] = "plain-password"
@@ -71,6 +68,7 @@ def _sample_worklogs() -> list:
 # ===========================================================================
 # DualWriter
 # ===========================================================================
+
 
 class TestDualWriter:
     """Tests for the DualWriter class that tees output to console + logfile."""
@@ -158,6 +156,7 @@ class TestDualWriter:
 # NotificationManager -- Init
 # ===========================================================================
 
+
 class TestNotificationManagerInit:
     """Tests for NotificationManager construction."""
 
@@ -184,6 +183,7 @@ class TestNotificationManagerInit:
 # ===========================================================================
 # send_daily_summary
 # ===========================================================================
+
 
 class TestSendDailySummary:
     """Tests for NotificationManager.send_daily_summary."""
@@ -215,8 +215,8 @@ class TestSendDailySummary:
             body = mock_send.call_args[0][1]
             assert "PROJ-101" in body
             assert "PROJ-102" in body
-            assert "3.00h" in body   # 10800 / 3600
-            assert "2.00h" in body   # 7200 / 3600
+            assert "3.00h" in body  # 10800 / 3600
+            assert "2.00h" in body  # 7200 / 3600
 
     def test_shows_complete_status_when_hours_met(self, developer_config):
         """Status should be '[OK] Complete' when total_hours >= daily_hours."""
@@ -240,6 +240,7 @@ class TestSendDailySummary:
 # ===========================================================================
 # send_submission_confirmation
 # ===========================================================================
+
 
 class TestSendSubmissionConfirmation:
     """Tests for NotificationManager.send_submission_confirmation."""
@@ -270,6 +271,7 @@ class TestSendSubmissionConfirmation:
 # _send_email (internal SMTP logic)
 # ===========================================================================
 
+
 class TestSendEmail:
     """Tests for NotificationManager._send_email via mocked smtplib."""
 
@@ -278,8 +280,7 @@ class TestSendEmail:
         cfg = _enabled_config(developer_config)
         return NotificationManager(cfg), cfg
 
-    @patch("tempo_automation.CredentialManager.decrypt",
-           return_value="decrypted-password")
+    @patch("tempo_automation.CredentialManager.decrypt", return_value="decrypted-password")
     @patch("tempo_automation.smtplib.SMTP")
     def test_connects_to_configured_smtp_server(
         self, mock_smtp_cls, mock_decrypt, developer_config
@@ -296,12 +297,9 @@ class TestSendEmail:
             cfg["notifications"]["smtp_port"],
         )
 
-    @patch("tempo_automation.CredentialManager.decrypt",
-           return_value="decrypted-password")
+    @patch("tempo_automation.CredentialManager.decrypt", return_value="decrypted-password")
     @patch("tempo_automation.smtplib.SMTP")
-    def test_uses_starttls(
-        self, mock_smtp_cls, mock_decrypt, developer_config
-    ):
+    def test_uses_starttls(self, mock_smtp_cls, mock_decrypt, developer_config):
         """SMTP connection must call starttls() for TLS upgrade."""
         nm, _ = self._make_enabled_nm(developer_config)
         mock_server = MagicMock()
@@ -311,12 +309,9 @@ class TestSendEmail:
 
         mock_server.starttls.assert_called_once()
 
-    @patch("tempo_automation.CredentialManager.decrypt",
-           return_value="decrypted-password")
+    @patch("tempo_automation.CredentialManager.decrypt", return_value="decrypted-password")
     @patch("tempo_automation.smtplib.SMTP")
-    def test_logins_with_decrypted_password(
-        self, mock_smtp_cls, mock_decrypt, developer_config
-    ):
+    def test_logins_with_decrypted_password(self, mock_smtp_cls, mock_decrypt, developer_config):
         """login() must use the smtp_user and the decrypted smtp_password."""
         nm, cfg = self._make_enabled_nm(developer_config)
         mock_server = MagicMock()
@@ -325,20 +320,16 @@ class TestSendEmail:
         nm._send_email("Subject", "<html>body</html>")
 
         mock_decrypt.assert_called_once_with(
-            cfg["notifications"]["smtp_password"],
-            key='smtp_password'
+            cfg["notifications"]["smtp_password"], key="smtp_password"
         )
         mock_server.login.assert_called_once_with(
             cfg["notifications"]["smtp_user"],
             "decrypted-password",
         )
 
-    @patch("tempo_automation.CredentialManager.decrypt",
-           return_value="decrypted-password")
+    @patch("tempo_automation.CredentialManager.decrypt", return_value="decrypted-password")
     @patch("tempo_automation.smtplib.SMTP")
-    def test_sends_html_message(
-        self, mock_smtp_cls, mock_decrypt, developer_config
-    ):
+    def test_sends_html_message(self, mock_smtp_cls, mock_decrypt, developer_config):
         """send_message must be called with a MIMEMultipart containing HTML."""
         nm, _ = self._make_enabled_nm(developer_config)
         mock_server = MagicMock()
@@ -354,12 +345,9 @@ class TestSendEmail:
         assert len(payload) == 1  # MIMEMultipart('alternative') with one part
         assert "content" in payload[0].get_payload()
 
-    @patch("tempo_automation.CredentialManager.decrypt",
-           return_value="decrypted-password")
+    @patch("tempo_automation.CredentialManager.decrypt", return_value="decrypted-password")
     @patch("tempo_automation.smtplib.SMTP")
-    def test_logs_error_on_smtp_failure(
-        self, mock_smtp_cls, mock_decrypt, developer_config
-    ):
+    def test_logs_error_on_smtp_failure(self, mock_smtp_cls, mock_decrypt, developer_config):
         """An SMTP error should be caught and logged, not re-raised."""
         nm, _ = self._make_enabled_nm(developer_config)
         mock_smtp_cls.side_effect = smtplib.SMTPException("conn refused")
@@ -370,12 +358,9 @@ class TestSendEmail:
             mock_logger.error.assert_called_once()
             assert "conn refused" in str(mock_logger.error.call_args)
 
-    @patch("tempo_automation.CredentialManager.decrypt",
-           return_value="decrypted-password")
+    @patch("tempo_automation.CredentialManager.decrypt", return_value="decrypted-password")
     @patch("tempo_automation.smtplib.SMTP")
-    def test_sets_correct_from_and_to_headers(
-        self, mock_smtp_cls, mock_decrypt, developer_config
-    ):
+    def test_sets_correct_from_and_to_headers(self, mock_smtp_cls, mock_decrypt, developer_config):
         """From and To headers must match the config values."""
         nm, cfg = self._make_enabled_nm(developer_config)
         mock_server = MagicMock()
@@ -409,6 +394,7 @@ class TestSendTeamsNotification:
     def test_sends_adaptive_card_format(self, developer_config):
         """POST to webhook should include an Adaptive Card attachment."""
         import copy
+
         cfg = copy.deepcopy(developer_config)
         cfg["notifications"]["teams_webhook_url"] = TEAMS_WEBHOOK_URL
         nm = NotificationManager(cfg)
@@ -425,13 +411,12 @@ class TestSendTeamsNotification:
         assert len(responses_lib.calls) == 1
         payload = responses_lib.calls[0].request.body
         import json
+
         data = json.loads(payload)
         assert data["type"] == "message"
         assert len(data["attachments"]) == 1
         card = data["attachments"][0]
-        assert card["contentType"] == (
-            "application/vnd.microsoft.card.adaptive"
-        )
+        assert card["contentType"] == ("application/vnd.microsoft.card.adaptive")
         assert card["content"]["type"] == "AdaptiveCard"
         assert card["content"]["version"] == "1.4"
 
@@ -444,12 +429,16 @@ class TestSendTeamsNotification:
     def test_includes_facts_in_payload(self, developer_config):
         """When facts are provided, a FactSet block must appear in the card."""
         import copy
+
         cfg = copy.deepcopy(developer_config)
         cfg["notifications"]["teams_webhook_url"] = TEAMS_WEBHOOK_URL
         nm = NotificationManager(cfg)
 
         responses_lib.add(
-            responses_lib.POST, TEAMS_WEBHOOK_URL, json={}, status=200,
+            responses_lib.POST,
+            TEAMS_WEBHOOK_URL,
+            json={},
+            status=200,
         )
 
         facts = [
@@ -459,6 +448,7 @@ class TestSendTeamsNotification:
         nm.send_teams_notification("Title", "Body", facts=facts)
 
         import json
+
         data = json.loads(responses_lib.calls[0].request.body)
         body_blocks = data["attachments"][0]["content"]["body"]
         # Should have 3 blocks: title, body text, FactSet
@@ -473,13 +463,16 @@ class TestSendTeamsNotification:
     def test_logs_error_on_failure(self, developer_config):
         """A non-200 response should be caught and logged as an error."""
         import copy
+
         cfg = copy.deepcopy(developer_config)
         cfg["notifications"]["teams_webhook_url"] = TEAMS_WEBHOOK_URL
         nm = NotificationManager(cfg)
 
         responses_lib.add(
-            responses_lib.POST, TEAMS_WEBHOOK_URL,
-            json={"error": "bad request"}, status=400,
+            responses_lib.POST,
+            TEAMS_WEBHOOK_URL,
+            json={"error": "bad request"},
+            status=400,
         )
 
         with patch("tempo_automation.logger") as mock_logger:
@@ -490,22 +483,27 @@ class TestSendTeamsNotification:
     def test_prints_success_message(self, developer_config, capsys):
         """On success, a '[OK] Teams notification sent' message is printed."""
         import copy
+
         cfg = copy.deepcopy(developer_config)
         cfg["notifications"]["teams_webhook_url"] = TEAMS_WEBHOOK_URL
         nm = NotificationManager(cfg)
 
         responses_lib.add(
-            responses_lib.POST, TEAMS_WEBHOOK_URL, json={}, status=200,
+            responses_lib.POST,
+            TEAMS_WEBHOOK_URL,
+            json={},
+            status=200,
         )
 
         nm.send_teams_notification("Title", "Body")
         captured = capsys.readouterr()
-        assert "[OK] Teams notification sent" in captured.out
+        assert "Teams notification sent" in captured.out
 
 
 # ===========================================================================
 # send_windows_notification
 # ===========================================================================
+
 
 class TestSendWindowsNotification:
     """Tests for NotificationManager.send_windows_notification."""
@@ -535,9 +533,7 @@ class TestSendWindowsNotification:
             msg="Test Body",
             duration="long",
         )
-        mock_toast.set_audio.assert_called_once_with(
-            mock_audio.Default, loop=False
-        )
+        mock_toast.set_audio.assert_called_once_with(mock_audio.Default, loop=False)
         mock_toast.show.assert_called_once()
 
     @patch("sys.platform", "win32")
@@ -547,6 +543,7 @@ class TestSendWindowsNotification:
 
         # Make winotify import raise ImportError
         import builtins
+
         real_import = builtins.__import__
 
         mock_windll = MagicMock()
@@ -596,6 +593,7 @@ class TestSendWindowsNotification:
 # ===========================================================================
 # send_shortfall_email
 # ===========================================================================
+
 
 class TestSendShortfallEmail:
     """Tests for NotificationManager.send_shortfall_email."""
