@@ -239,7 +239,6 @@ echo [1/2] Copying distribution files...
 REM Mac zip: only essential runtime files (no docs, no examples, no README)
 copy "%SCRIPT_DIR%tempo_automation.py"  "%STAGE%\" >nul
 copy "%SCRIPT_DIR%tray_app.py"          "%STAGE%\" >nul
-copy "%SCRIPT_DIR%config_template.json" "%STAGE%\" >nul
 copy "%SCRIPT_DIR%org_holidays.json"    "%STAGE%\" >nul
 copy "%SCRIPT_DIR%requirements.txt"     "%STAGE%\" >nul
 if not exist "%STAGE%\assets" mkdir "%STAGE%\assets"

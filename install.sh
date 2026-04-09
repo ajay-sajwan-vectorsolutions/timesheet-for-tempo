@@ -260,7 +260,6 @@ mkdir -p "$INSTALL_DIR/assets"
 cp -f "$SCRIPT_DIR/tempo_automation.py"  "$INSTALL_DIR/"
 cp -f "$SCRIPT_DIR/tray_app.py"          "$INSTALL_DIR/"
 cp -f "$SCRIPT_DIR/confirm_and_run.py"   "$INSTALL_DIR/"
-cp -f "$SCRIPT_DIR/config_template.json" "$INSTALL_DIR/"
 cp -f "$SCRIPT_DIR/requirements.txt"     "$INSTALL_DIR/"
 # Copy shell wrapper templates (used as base for generation)
 [ -f "$SCRIPT_DIR/run_daily.sh" ]   && cp -f "$SCRIPT_DIR/run_daily.sh"   "$INSTALL_DIR/"
