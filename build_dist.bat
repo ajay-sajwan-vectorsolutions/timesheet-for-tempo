@@ -236,14 +236,22 @@ if exist "%STAGE%" rmdir /s /q "%STAGE%"
 mkdir "%STAGE%"
 
 echo [1/2] Copying distribution files...
-call :copy_common_files "%STAGE%"
-copy "%SCRIPT_DIR%install.sh" "%STAGE%\" >nul
-copy "%SCRIPT_DIR%confirm_and_run.py" "%STAGE%\" >nul
-copy "%SCRIPT_DIR%run_daily.sh" "%STAGE%\" >nul
-copy "%SCRIPT_DIR%run_weekly.sh" "%STAGE%\" >nul
-copy "%SCRIPT_DIR%run_monthly.sh" "%STAGE%\" >nul
-copy "%SCRIPT_DIR%setup.command" "%STAGE%\" >nul
-echo [OK] Files copied (install.sh, setup.command, confirm_and_run.py, shell wrappers)
+REM Mac zip: only essential runtime files (no docs, no examples, no README)
+copy "%SCRIPT_DIR%tempo_automation.py"  "%STAGE%\" >nul
+copy "%SCRIPT_DIR%tray_app.py"          "%STAGE%\" >nul
+copy "%SCRIPT_DIR%config_template.json" "%STAGE%\" >nul
+copy "%SCRIPT_DIR%org_holidays.json"    "%STAGE%\" >nul
+copy "%SCRIPT_DIR%requirements.txt"     "%STAGE%\" >nul
+if not exist "%STAGE%\assets" mkdir "%STAGE%\assets"
+copy "%SCRIPT_DIR%assets\favicon.ico"   "%STAGE%\assets\" >nul
+REM Mac-specific files
+copy "%SCRIPT_DIR%install.sh"           "%STAGE%\" >nul
+copy "%SCRIPT_DIR%setup.command"        "%STAGE%\" >nul
+copy "%SCRIPT_DIR%confirm_and_run.py"   "%STAGE%\" >nul
+copy "%SCRIPT_DIR%run_daily.sh"         "%STAGE%\" >nul
+copy "%SCRIPT_DIR%run_weekly.sh"        "%STAGE%\" >nul
+copy "%SCRIPT_DIR%run_monthly.sh"       "%STAGE%\" >nul
+echo [OK] Files copied (runtime + Mac scripts only, no docs/examples)
 
 echo [2/2] Creating zip...
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
