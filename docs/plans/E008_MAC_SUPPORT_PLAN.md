@@ -1,7 +1,7 @@
 # E008 - Mac Support Implementation Plan
 
 **Created:** April 9, 2026
-**Status:** PLANNED
+**Status:** IMPLEMENTED (pending Mac testing on feature/E008-mac-support branch)
 **Enhancement:** E008 (enhancements.md)
 
 ---
