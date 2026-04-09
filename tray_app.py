@@ -44,6 +44,18 @@ try:
 except ImportError:
     PYSTRAY_OK = False
 
+# Optional colorama for colored terminal output
+try:
+    import colorama
+
+    colorama.init()
+    _C_OK = colorama.Fore.GREEN
+    _C_FAIL = colorama.Fore.RED
+    _C_WARN = colorama.Fore.YELLOW
+    _C_R = colorama.Style.RESET_ALL
+except ImportError:
+    _C_OK = _C_FAIL = _C_WARN = _C_R = ""
+
 try:
     from winotify import Notification
 
@@ -74,6 +86,7 @@ def _monthly_log_file() -> Path:
 
 
 STOP_FILE = SCRIPT_DIR / "_tray_stop.signal"
+MENU_REFRESH_SIGNAL = SCRIPT_DIR / "_menu_refresh.signal"
 SHORTFALL_FILE = SCRIPT_DIR / "monthly_shortfall.json"
 SUBMITTED_FILE = SCRIPT_DIR / "monthly_submitted.json"
 
@@ -214,6 +227,7 @@ class TrayApp:
         self._anim_running = False  # flag to stop animation loop
         self._stdout_lock = threading.Lock()  # protects sys.stdout swap
         self._automation_lock = threading.Lock()  # protects self._automation
+        self._next_sync_target = None  # wall-clock target for sleep detection
 
     def _load_automation(self):
         """
@@ -295,6 +309,8 @@ class TrayApp:
         if target < now:
             target += timedelta(days=1)
 
+        self._next_sync_target = target
+
         delay = (target - now).total_seconds()
         self._timer = threading.Timer(delay, self._on_timer_fired)
         self._timer.daemon = True
@@ -345,6 +361,35 @@ class TrayApp:
     def _on_timer_fired(self):
         """Called by threading.Timer at the configured time."""
         self._reload_config()
+
+        # Guard: threading.Timer uses monotonic time which pauses during
+        # system sleep.  If the computer slept, this timer may fire hours
+        # after the configured wall-clock time.  Detect drift and
+        # re-schedule instead of running a stale sync.
+        sync_time_str = self._get_sync_time()
+        try:
+            hour, minute = map(int, sync_time_str.split(":"))
+        except (ValueError, AttributeError):
+            hour, minute = 18, 0
+        now = datetime.now()
+        expected = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        drift = abs((now - expected).total_seconds())
+        if drift > 300:  # more than 5 minutes off
+            # Save stale target before _schedule_next_sync overwrites it
+            stale_target = self._next_sync_target
+            tray_logger.info(
+                f"Timer drift detected ({drift:.0f}s from {sync_time_str}), "
+                f"re-scheduling instead of syncing"
+            )
+            self._schedule_next_sync()
+            # If today's configured time already passed, backfill any
+            # missed working days (the daily sync is idempotent).
+            if now > expected:
+                stale_date = stale_target.date() if stale_target else now.date()
+                tray_logger.info("Catchup: today's sync time already passed, backfilling")
+                self._catchup_backfill(stale_date)
+            return
+
         tray_logger.info("Timer fired - starting automatic sync")
 
         # Re-arm for tomorrow before running sync
@@ -579,6 +624,90 @@ class TrayApp:
         timer = threading.Timer(5.0, _revert)
         timer.daemon = True
         timer.start()
+
+    def _catchup_backfill(self, stale_date: date):
+        """Backfill missed working days from *stale_date* through today.
+
+        Called when the wall-clock check or drift guard detects that the
+        timer's target was stale (computer slept / was off for days).
+        Runs in a background thread, reuses TempoAutomation.backfill_range.
+        """
+
+        today = _today()
+        if stale_date >= today:
+            # Nothing to backfill -- today's catchup sync handles it
+            return
+
+        from_str = stale_date.strftime("%Y-%m-%d")
+        to_str = today.strftime("%Y-%m-%d")
+
+        if self._sync_running.is_set():
+            tray_logger.info("Catchup backfill skipped -- sync already running")
+            return
+
+        def _run():
+            self._sync_running.set()
+            self._start_sync_animation("Tempo - Syncing missed days...")
+            tray_logger.info(f"Catchup backfill started: {from_str} to {to_str}")
+
+            log_f = None
+            old_stdout = sys.stdout
+            try:
+                from tempo_automation import TempoAutomation
+
+                with self._automation_lock:
+                    self._automation = TempoAutomation(CONFIG_FILE)
+
+                log_path = _monthly_log_file()
+                log_f = open(log_path, "a", encoding="utf-8")
+                log_f.write(f"\n{'=' * 44}\n")
+                log_f.write(f"Run: {datetime.now():%Y-%m-%d %H:%M:%S} (Tray Catchup Backfill)\n")
+                log_f.write(f"{'=' * 44}\n")
+                with self._stdout_lock:
+                    sys.stdout = log_f
+
+                self._automation.backfill_range(from_str, to_str)
+
+                with self._stdout_lock:
+                    sys.stdout = old_stdout
+                log_f.close()
+                log_f = None
+
+                if self._icon:
+                    self._icon.update_menu()
+
+                self._set_icon_state("green", "Tempo - Sync complete")
+                self._show_toast(
+                    "Hours Synced for Missed Days",
+                    f"Your computer was off/asleep -- synced hours "
+                    f"for {from_str} to {to_str} "
+                    f"(skipped weekends/holidays).",
+                )
+                tray_logger.info("Catchup backfill completed successfully")
+            except Exception as e:
+                with self._stdout_lock:
+                    sys.stdout = old_stdout
+                if log_f and not log_f.closed:
+                    log_f.close()
+                error_msg = str(e)[:200]
+                self._set_icon_state("red", f"Tempo - Sync error: {error_msg}")
+                self._show_toast(
+                    "Missed Days Sync Failed",
+                    f"Could not sync hours for {from_str} to {to_str}.\nError: {error_msg}",
+                )
+                tray_logger.error(f"Catchup backfill failed: {e}", exc_info=True)
+            finally:
+                self._sync_running.clear()
+
+            def _revert():
+                if not self._sync_running.is_set() and not self._import_error:
+                    self._set_icon_state("green", "Tempo Automation")
+
+            t = threading.Timer(5.0, _revert)
+            t.daemon = True
+            t.start()
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _on_add_pto(self, icon=None, item=None):
         """Add PTO via two-step dialog: range or single day, then optional Tempo sync."""
@@ -1533,6 +1662,7 @@ class TrayApp:
         self._stop_watcher_running = True
 
         def _watch_stop_file():
+            check_counter = 0
             while self._stop_watcher_running:
                 if STOP_FILE.exists():
                     tray_logger.info("Stop signal received, shutting down")
@@ -1546,6 +1676,33 @@ class TrayApp:
                     if self._icon:
                         self._icon.stop()
                     return
+                # External processes (CLI) signal menu refresh by
+                # creating this file after changing shortfall state.
+                if MENU_REFRESH_SIGNAL.exists():
+                    try:
+                        MENU_REFRESH_SIGNAL.unlink()
+                    except OSError:
+                        pass
+                    if self._icon:
+                        self._icon.update_menu()
+                # Every ~60s, check if the timer's wall-clock target has
+                # passed (catches monotonic clock drift from system sleep).
+                check_counter += 1
+                if check_counter >= 60 and self._next_sync_target is not None:
+                    check_counter = 0
+                    now = datetime.now()
+                    if now > self._next_sync_target + timedelta(minutes=5):
+                        # Save stale target before re-scheduling
+                        stale_target = self._next_sync_target
+                        tray_logger.info(
+                            f"Wall-clock check: target "
+                            f"{stale_target:%Y-%m-%d %H:%M} passed, "
+                            f"re-scheduling"
+                        )
+                        self._schedule_next_sync()
+                        # Backfill missed days from stale target
+                        # through today (includes today if time passed).
+                        self._catchup_backfill(stale_target.date())
                 import time
 
                 time.sleep(1)
@@ -1640,10 +1797,10 @@ def register_autostart():
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_KEY, 0, winreg.KEY_SET_VALUE)
             winreg.SetValueEx(key, REG_VALUE, 0, winreg.REG_SZ, command)
             winreg.CloseKey(key)
-            print("[OK] Auto-start registered")
+            print(f"{_C_OK}[OK]{_C_R} Auto-start registered")
             tray_logger.info(f"Auto-start registered: {command}")
         except Exception as e:
-            print(f"[FAIL] Could not register auto-start: {e}")
+            print(f"{_C_FAIL}[FAIL]{_C_R} Could not register auto-start: {e}")
             tray_logger.error(f"Auto-start registration failed: {e}")
 
     elif sys.platform == "darwin":
@@ -1669,13 +1826,13 @@ def register_autostart():
             LAUNCH_AGENT_PLIST.parent.mkdir(parents=True, exist_ok=True)
             LAUNCH_AGENT_PLIST.write_text(plist_content)
             subprocess.run(["launchctl", "load", str(LAUNCH_AGENT_PLIST)], capture_output=True)
-            print(f"[OK] Auto-start registered: {LAUNCH_AGENT_PLIST}")
+            print(f"{_C_OK}[OK]{_C_R} Auto-start registered: {LAUNCH_AGENT_PLIST}")
             tray_logger.info(f"LaunchAgent registered: {LAUNCH_AGENT_PLIST}")
         except Exception as e:
-            print(f"[FAIL] Could not register auto-start: {e}")
+            print(f"{_C_FAIL}[FAIL]{_C_R} Could not register auto-start: {e}")
             tray_logger.error(f"LaunchAgent registration failed: {e}")
     else:
-        print("[!] Auto-start not supported on this platform")
+        print(f"{_C_WARN}[!]{_C_R} Auto-start not supported on this platform")
 
 
 def unregister_autostart():
@@ -1691,12 +1848,12 @@ def unregister_autostart():
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_KEY, 0, winreg.KEY_SET_VALUE)
             winreg.DeleteValue(key, REG_VALUE)
             winreg.CloseKey(key)
-            print("[OK] Auto-start removed")
+            print(f"{_C_OK}[OK]{_C_R} Auto-start removed")
             tray_logger.info("Auto-start removed")
         except FileNotFoundError:
-            print("[OK] Auto-start was not registered")
+            print(f"{_C_OK}[OK]{_C_R} Auto-start was not registered")
         except Exception as e:
-            print(f"[FAIL] Could not remove auto-start: {e}")
+            print(f"{_C_FAIL}[FAIL]{_C_R} Could not remove auto-start: {e}")
             tray_logger.error(f"Auto-start removal failed: {e}")
 
     elif sys.platform == "darwin":
@@ -1706,15 +1863,15 @@ def unregister_autostart():
                     ["launchctl", "unload", str(LAUNCH_AGENT_PLIST)], capture_output=True
                 )
                 LAUNCH_AGENT_PLIST.unlink()
-                print("[OK] Auto-start removed")
+                print(f"{_C_OK}[OK]{_C_R} Auto-start removed")
                 tray_logger.info("LaunchAgent removed")
             else:
-                print("[OK] Auto-start was not registered")
+                print(f"{_C_OK}[OK]{_C_R} Auto-start was not registered")
         except Exception as e:
-            print(f"[FAIL] Could not remove auto-start: {e}")
+            print(f"{_C_FAIL}[FAIL]{_C_R} Could not remove auto-start: {e}")
             tray_logger.error(f"LaunchAgent removal failed: {e}")
     else:
-        print("[!] Auto-start not supported on this platform")
+        print(f"{_C_WARN}[!]{_C_R} Auto-start not supported on this platform")
 
 
 def stop_app():
