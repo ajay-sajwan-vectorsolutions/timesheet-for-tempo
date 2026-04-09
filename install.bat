@@ -506,7 +506,7 @@ REM ============================================================================
 REM Test run
 REM ============================================================================
 
-echo [7/7] Test sync (optional)
+echo [7/8] Test sync (optional)
 echo.
 echo Would you like to test the automation now?
 echo This will sync today's timesheet to verify everything works.
@@ -520,6 +520,15 @@ if /i "%TEST_RUN%"=="y" (
     "%PYTHON_EXE%" tempo_automation.py
 )
 
+echo.
+
+REM ============================================================================
+REM Post-install shortfall check
+REM ============================================================================
+
+echo [8/8] Checking for missing hours this month...
+echo.
+"%PYTHON_EXE%" tempo_automation.py --post-install-check
 echo.
 
 REM ============================================================================
