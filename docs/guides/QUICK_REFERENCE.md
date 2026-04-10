@@ -50,8 +50,8 @@ python tempo_automation.py --help
 | `config.json` | Your personal configuration (gitignored) |
 | `daily-timesheet.log` | Execution output log |
 | `tempo_automation.log` | Internal runtime logs |
-| `tempo_automation.py` | Main script (5,446 lines) |
-| `tray_app.py` | System tray app (~1,533 lines) |
+| `tempo_automation.py` | Main script (5,743 lines) |
+| `tray_app.py` | System tray app (~1,938 lines) |
 
 ## Quick Fixes
 
