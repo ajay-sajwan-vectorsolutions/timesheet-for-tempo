@@ -52,7 +52,7 @@
       <div class="stat-label">On-Time Compliance</div>
     </div>
     <div class="stat-item">
-      <div class="stat-number">500</div>
+      <div class="stat-number">528</div>
       <div class="stat-label">Automated Tests</div>
     </div>
   </div>
@@ -547,13 +547,19 @@
           <span class="version-tag">v4.0</span>
           <div class="date">March 13, 2026</div>
           <h3>Enhancement &amp; QA</h3>
-          <p>Data safety (create-before-delete with rollback), pre-sync health check, retry logic (429/502/503/504), config validation, --dry-run, --backfill, --approval-status, --log-format json, weighted distribution, holiday cache with TTL, parallel worklog creation, 504 tests (71% coverage), CI/CD (GitHub Actions), ruff+pre-commit, keyring credentials (Mac/Linux)</p>
+          <p>Data safety (create-before-delete with rollback), pre-sync health check, retry logic (429/502/503/504), config validation, --dry-run, --backfill, --approval-status, --log-format json, weighted distribution, holiday cache with TTL, parallel worklog creation, 500 tests (71% coverage), CI/CD (GitHub Actions), ruff+pre-commit, keyring credentials (Mac/Linux)</p>
         </div>
         <div class="timeline-item">
           <span class="version-tag" style="background: var(--accent-cyan); color: #000;">v4.0+</span>
           <div class="date">March 24-26, 2026</div>
           <h3>Accurate Sync &amp; QA Role</h3>
-          <p>Auto-sync fires at configured time with accurate toast (hours logged / reason). Task Scheduler double-sync fix. QA role (Testing / UAT statuses). --dry-run works with --submit. 504 tests passing.</p>
+          <p>Auto-sync fires at configured time with accurate toast (hours logged / reason). Task Scheduler double-sync fix. QA role (Testing / UAT statuses). --dry-run works with --submit.</p>
+        </div>
+        <div class="timeline-item">
+          <span class="version-tag" style="background: var(--accent-cyan); color: #000;">v4.0.1</span>
+          <div class="date">March 31, 2026</div>
+          <h3>Tempo API v4 Submit Fix</h3>
+          <p>Correct submit endpoint, reviewer lookup, approval status flow, and response body error logging. 528 tests passing.</p>
         </div>
       </div>
     </div>
@@ -563,8 +569,8 @@
     <span class="badge badge-blue">Python 3.7+</span>
     <span class="badge badge-purple">Jira REST v3</span>
     <span class="badge badge-orange">Tempo API v4</span>
-    <span class="badge badge-green">504 Tests</span>
-    <span class="badge badge-blue">5,764 Lines</span>
+    <span class="badge badge-green">528 Tests</span>
+    <span class="badge badge-blue">7,268 Lines</span>
     <span class="badge badge-purple">8 Classes</span>
   </div>
 </section>
@@ -688,7 +694,7 @@ MONTHLY HOURS REPORT - February 2026<br>
     </div>
 
     <div id="tab-cli-commands" class="tab-content">
-      <h3 class="mb-2">18 CLI Commands</h3>
+      <h3 class="mb-2">22 CLI Commands</h3>
       <p class="text-muted mb-2">Full command reference: <code>python tempo_automation.py [option]</code></p>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
         <div class="code-block" style="margin: 0;">
@@ -874,7 +880,7 @@ python tempo_automation.py --submit
         <tr><td>TempoClient</td><td>157</td><td>Worklogs, submit timesheet, periods</td></tr>
         <tr><td>NotificationManager</td><td>247</td><td>SMTP email, Teams webhook, desktop toast</td></tr>
         <tr><td>TempoAutomation</td><td>2,574</td><td>Orchestration, sync, verify, backfill, overhead, approval status</td></tr>
-        <tr class="highlight-row"><td>Total</td><td>5,446</td><td>+ CLI (308 lines, 22 arguments)</td></tr>
+        <tr class="highlight-row"><td>Total</td><td>5,411</td><td>+ CLI (308 lines, 22 arguments)</td></tr>
       </tbody>
     </table>
   </div>
