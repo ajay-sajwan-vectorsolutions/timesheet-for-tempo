@@ -1,9 +1,9 @@
 # HANDOFF DOCUMENT FOR VS CODE CLAUDE
 
 > **HISTORICAL DOCUMENT** -- Written at v1.0 inception (February 3, 2026). Preserved for context only.
-> The project is now at **v4.0** (March 13, 2026) with 5,446 lines, 8 classes, 500 tests, and full
-> cross-platform support. See [README.md](../../README.md) and [SETUP_GUIDE.md](SETUP_GUIDE.md) for
-> current documentation.
+> The project is now at **v4.0.1** (March 31, 2026) with 5,743 lines in the main script, 1,938 lines
+> in the tray app, 8 classes, 528 tests, and full cross-platform support. See
+> [README.md](../../README.md) and [SETUP_GUIDE.md](SETUP_GUIDE.md) for current documentation.
 
 **Project:** Tempo Timesheet Automation
 **Status:** Core development complete, ready for customization and testing

@@ -410,8 +410,8 @@ Then delete the installation folder.
 ## Project Structure
 
 ```
-tempo_automation.py          # Main script (5,446 lines, 8 classes)
-tray_app.py                  # System tray app (~1,533 lines, cross-platform)
+tempo_automation.py          # Main script (5,743 lines, 8 classes)
+tray_app.py                  # System tray app (~1,938 lines, cross-platform)
 confirm_and_run.py           # OK/Cancel dialog for Task Scheduler (Windows)
 config.json                  # User config (gitignored, contains tokens)
 config_template.json         # Config template for new users
@@ -433,7 +433,7 @@ examples/                    # Example configs for each role
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 4.0.1 | Mar 31, 2026 | Fix timesheet submission: correct Tempo API v4 endpoints (submit, approval status, reviewer lookup), response body error logging, 528 tests |
+| 4.0.1 | Mar 31, 2026 | Fix timesheet submission: correct Tempo API v4 endpoints (submit, approval status, reviewer lookup), response body error logging, 528 tests. Post-release improvements: sleep/timer drift fix for tray auto-sync (E003), post-install shortfall detection and backfill via `--post-install-check` (E006), install.bat cleanup removing VBScript dropper and PowerShell fallbacks that triggered enterprise EDR tools (E004), Teams notification test ANSI color handling |
 | 4.0 | Mar 13, 2026 | Data safety (create-before-delete with rollback), pre-sync health check, retry logic (429/502/503/504), config validation, --dry-run mode, --backfill --from-date --to-date, --approval-status, --log-format json, weighted distribution, holiday cache with TTL, parallel worklog creation, 500 tests (71% coverage), CI/CD (GitHub Actions), ruff+pre-commit, keyring credentials (Mac/Linux) |
 | 3.9 | Feb 23, 2026 | Early timesheet submission: bypasses 7-day window when all remaining days are non-working (PTO/holidays/weekends), tray Submit menu visible mid-month when eligible |
 | 3.8 | Feb 22, 2026 | Distribution zips: build_dist.bat (Win+Python, Win Lite, Mac), install.bat auto-detects Python (embedded or system), run_*.bat regenerated with correct paths |

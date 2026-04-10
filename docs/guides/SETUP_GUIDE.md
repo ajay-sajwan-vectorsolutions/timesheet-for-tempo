@@ -25,7 +25,15 @@ Runs daily at a scheduled time and:
 - **Date-range backfill:** Use `--backfill --from-date YYYY-MM-DD --to-date YYYY-MM-DD` to fill in multiple missed days at once.
 - **Approval status:** Use `--approval-status` to check whether your timesheet for the current (or a past) month is approved.
 - **Retry logic:** Automatic retry with backoff on 429/502/503/504 API errors.
-- **500 automated tests:** 71% code coverage with CI/CD via GitHub Actions.
+- **528 automated tests:** 71% code coverage with CI/CD via GitHub Actions.
+
+## What's New in v4.0.1 (and later)
+
+- **Tempo API v4 submission fix:** Correct submit endpoint, reviewer lookup, approval status flow, and response body error logging.
+- **Sleep/timer drift fix:** Tray app now handles computer wake-from-sleep correctly -- auto-sync fires at the configured time even if the machine was asleep.
+- **Post-install shortfall check:** After install, the installer runs `--post-install-check` to detect any missing hours for the current month and offer to backfill them immediately.
+- **install.bat cleanup:** Removed VBScript dropper and PowerShell fallbacks that triggered enterprise EDR tools (Check Point Behavioral Guard). Log file date is now generated via a Python helper instead of `wmic`.
+- **Teams notification test fix:** ANSI color codes in output no longer break the Teams notification test harness.
 
 ---
 
