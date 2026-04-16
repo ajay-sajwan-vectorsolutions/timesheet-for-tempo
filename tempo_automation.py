@@ -17,6 +17,8 @@ Version: 1.0.0
 Date: February 2026
 """
 
+from __future__ import annotations
+
 import argparse
 import calendar
 import html
@@ -458,7 +460,7 @@ class ConfigManager:
                 )
             )
             valid = False
-        elif not isinstance(daily_hours, int | float):
+        elif not isinstance(daily_hours, (int, float)):  # noqa: UP038 -- Python 3.9 compat
             print(
                 _color_prefix("[FAIL] Config validation: 'schedule.daily_hours' must be a number")
             )

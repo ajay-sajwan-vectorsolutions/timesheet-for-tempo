@@ -25,6 +25,7 @@ import calendar
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -67,6 +68,28 @@ SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE = SCRIPT_DIR / "config.json"
 LOG_FILE = SCRIPT_DIR / "daily-timesheet.log"  # legacy fallback
 INTERNAL_LOG = SCRIPT_DIR / "tempo_automation.log"
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+class _AnsiStrippingFile:
+    """File wrapper that strips ANSI escape codes before writing."""
+
+    def __init__(self, f):
+        self._f = f
+
+    def write(self, text):
+        self._f.write(_ANSI_RE.sub("", text))
+
+    def flush(self):
+        self._f.flush()
+
+    def close(self):
+        self._f.close()
+
+    @property
+    def closed(self):
+        return self._f.closed
 
 
 def _monthly_log_file() -> Path:
@@ -544,7 +567,7 @@ class TrayApp:
             log_f.write(f"Run: {dt.now():%Y-%m-%d %H:%M:%S} (Tray App)\n")
             log_f.write(f"{'=' * 44}\n")
             with self._stdout_lock:
-                sys.stdout = log_f
+                sys.stdout = _AnsiStrippingFile(log_f)
 
             result = self._automation.sync_daily()
 
@@ -552,6 +575,13 @@ class TrayApp:
                 sys.stdout = old_stdout
             log_f.close()
             log_f = None
+
+            if SHORTFALL_FILE.exists():
+                try:
+                    SHORTFALL_FILE.unlink()
+                    tray_logger.info("Stale shortfall file cleared after sync")
+                except OSError:
+                    pass
 
             if self._icon:
                 self._icon.update_menu()
@@ -630,12 +660,16 @@ class TrayApp:
 
         Called when the wall-clock check or drift guard detects that the
         timer's target was stale (computer slept / was off for days).
-        Runs in a background thread, reuses TempoAutomation.backfill_range.
+        If the missed target was today, runs a normal sync for today.
+        If multiple days were missed, uses TempoAutomation.backfill_range.
         """
 
         today = _today()
-        if stale_date >= today:
-            # Nothing to backfill -- today's catchup sync handles it
+        if stale_date == today:
+            tray_logger.info("Missed target was today -- running sync now")
+            self._on_sync_now()
+            return
+        if stale_date > today:
             return
 
         from_str = stale_date.strftime("%Y-%m-%d")
@@ -664,7 +698,7 @@ class TrayApp:
                 log_f.write(f"Run: {datetime.now():%Y-%m-%d %H:%M:%S} (Tray Catchup Backfill)\n")
                 log_f.write(f"{'=' * 44}\n")
                 with self._stdout_lock:
-                    sys.stdout = log_f
+                    sys.stdout = _AnsiStrippingFile(log_f)
 
                 self._automation.backfill_range(from_str, to_str)
 
@@ -1122,7 +1156,7 @@ class TrayApp:
             log_f.write(f"{'=' * 44}\n")
             with self._stdout_lock:
                 old_stdout = sys.stdout
-                sys.stdout = log_f
+                sys.stdout = _AnsiStrippingFile(log_f)
 
             self._automation.submit_timesheet()
 
@@ -1232,13 +1266,19 @@ class TrayApp:
                 creationflags=subprocess.CREATE_NEW_CONSOLE,
             )
         elif sys.platform == "darwin":
-            cmd = (
-                f'cd "{SCRIPT_DIR}" && python3 "{script}" {cli_arg}'
-                '; echo ""; echo "Press Enter to exit..."; read'
+            import stat
+            import tempfile
+
+            cmd_file = tempfile.NamedTemporaryFile(
+                prefix="tempo_", suffix=".command", delete=False, mode="w"
             )
-            proc = subprocess.Popen(
-                ["osascript", "-e", f'tell app "Terminal" to do script "{cmd}"']
-            )
+            cmd_file.write("#!/bin/bash\n")
+            cmd_file.write(f'cd "{SCRIPT_DIR}"\n')
+            cmd_file.write(f'python3 "{script}" {cli_arg}\n')
+            cmd_file.write('echo ""\necho "Press Enter to exit..."\nread\n')
+            cmd_file.close()
+            os.chmod(cmd_file.name, os.stat(cmd_file.name).st_mode | stat.S_IXUSR)
+            proc = subprocess.Popen(["open", cmd_file.name])
         else:
             # Linux fallback
             proc = subprocess.Popen(
