@@ -666,6 +666,10 @@ class TrayApp:
 
         today = _today()
         if stale_date == today:
+            is_working, _ = self._automation.schedule_mgr.is_working_day(today.strftime("%Y-%m-%d"))
+            if not is_working:
+                tray_logger.info("Missed target was today but today is non-working -- skipping")
+                return
             tray_logger.info("Missed target was today -- running sync now")
             self._on_sync_now()
             return

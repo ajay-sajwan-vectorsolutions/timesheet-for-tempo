@@ -2985,8 +2985,8 @@ class TempoAutomation:
         is_working, reason = self.schedule_mgr.is_working_day(target_date)
         if not is_working:
             # Case 3: PTO/Holiday -- log overhead instead of skipping
-            is_off_day = reason != "Weekend"
-            if is_off_day and self.config.get("user", {}).get("role") == "developer":
+            is_off_day = not reason.startswith("Weekend")
+            if is_off_day and self.config.get("user", {}).get("role") in ("developer", "qa"):
                 if self._is_overhead_configured():
                     return self._sync_pto_overhead(target_date)
                 else:
@@ -5166,7 +5166,7 @@ class TempoAutomation:
             is_working, reason = self.schedule_mgr.is_working_day(day_str)
             if not is_working:
                 # Case 3: PTO/Holiday -- check/log overhead hours
-                is_off_day = reason != "Weekend"
+                is_off_day = not reason.startswith("Weekend")
                 if is_off_day and self._is_overhead_configured() and self.jira_client:
                     result = self._check_day_hours(day_str)
                     daily_secs = int(self.schedule_mgr.daily_hours * 3600)

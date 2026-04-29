@@ -179,7 +179,7 @@ class TestSyncDaily:
         """Weekend day -> returns immediately without touching Jira/Tempo."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend")
+        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend (Saturday)")
 
         ta.sync_daily("2026-02-21")  # Saturday
 
@@ -213,6 +213,51 @@ class TestSyncDaily:
         ta._sync_pto_overhead.assert_not_called()
         ta._warn_overhead_not_configured.assert_called_once()
         ta.notifier.send_daily_summary.assert_not_called()
+
+    def test_weekend_with_overhead_configured_does_not_log_overhead(self):
+        """Weekend + developer + overhead configured -> skip, NOT overhead log.
+
+        Regression test for bug where reason string mismatch caused weekends
+        to be treated as PTO/holidays, triggering overhead worklog creation.
+        """
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend (Saturday)")
+        ta._is_overhead_configured = MagicMock(return_value=True)
+        ta._sync_pto_overhead = MagicMock()
+
+        ta.sync_daily("2026-04-18")
+
+        ta._sync_pto_overhead.assert_not_called()
+        ta._is_overhead_configured.assert_not_called()
+        ta.jira_client.get_my_active_issues.assert_not_called()
+        ta.tempo_client.get_user_worklogs.assert_not_called()
+
+    def test_weekend_sunday_with_overhead_configured_does_not_log_overhead(self):
+        """Sunday variant of the same regression test."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend (Sunday)")
+        ta._is_overhead_configured = MagicMock(return_value=True)
+        ta._sync_pto_overhead = MagicMock()
+
+        ta.sync_daily("2026-04-19")
+
+        ta._sync_pto_overhead.assert_not_called()
+        ta._is_overhead_configured.assert_not_called()
+
+    def test_qa_role_gets_overhead_on_pto(self):
+        """QA role + PTO + overhead configured -> _sync_pto_overhead called."""
+        cfg = _dev_config()
+        cfg["user"]["role"] = "qa"
+        ta = _make_automation(cfg)
+        ta.schedule_mgr.is_working_day.return_value = (False, "PTO")
+        ta._is_overhead_configured = MagicMock(return_value=True)
+        ta._sync_pto_overhead = MagicMock()
+
+        ta.sync_daily("2026-03-10")
+
+        ta._sync_pto_overhead.assert_called_once_with("2026-03-10")
 
     def test_schedule_guard_pto_non_developer_skips(self):
         """PTO day + non-developer role -> prints skip, no API calls."""
@@ -882,7 +927,7 @@ class TestDetectMonthlyGaps:
         def is_working(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
@@ -912,7 +957,8 @@ class TestDetectMonthlyGaps:
         def is_working(date_str):
             if date_str == "2026-02-10":
                 return (True, "")
-            return (False, "Weekend")
+            d = date.fromisoformat(date_str)
+            return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
 
@@ -937,7 +983,7 @@ class TestDetectMonthlyGaps:
         def is_working(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
@@ -965,7 +1011,7 @@ class TestDetectMonthlyGaps:
                 return (False, "PTO")
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
@@ -1170,7 +1216,7 @@ class TestVerifyWeek:
         def is_working(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
@@ -1202,7 +1248,7 @@ class TestVerifyWeek:
         def is_working(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
@@ -1569,7 +1615,7 @@ class TestViewMonthlyHours:
         def weekday_schedule(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = weekday_schedule
@@ -1592,7 +1638,7 @@ class TestViewMonthlyHours:
         def schedule_with_pto(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             if date_str == "2026-02-10":
                 return (False, "PTO")
             return (True, "")
@@ -1617,7 +1663,7 @@ class TestViewMonthlyHours:
         def schedule_with_holiday(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             if date_str == "2026-02-16":
                 return (False, "Organization Holiday")
             return (True, "")
@@ -2012,7 +2058,7 @@ class TestTempoSourceOfTruth:
         def weekday_schedule(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = weekday_schedule
@@ -2522,7 +2568,7 @@ class TestDateRangeBackfill:
         def weekday_schedule(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = weekday_schedule
