@@ -25,9 +25,17 @@ Runs daily at a scheduled time and:
 - **Date-range backfill:** Use `--backfill --from-date YYYY-MM-DD --to-date YYYY-MM-DD` to fill in multiple missed days at once.
 - **Approval status:** Use `--approval-status` to check whether your timesheet for the current (or a past) month is approved.
 - **Retry logic:** Automatic retry with backoff on 429/502/503/504 API errors.
-- **528 automated tests:** 71% code coverage with CI/CD via GitHub Actions.
+- **570 automated tests:** 71% code coverage with CI/CD via GitHub Actions.
 
-## What's New in v4.0.1 (and later)
+## What's New in v4.0.2
+
+- **Weekend overhead bug fixed:** Overhead worklogs were incorrectly created on Saturdays and Sundays (April 18-26). Fixed. If you were affected, delete those weekend entries from Tempo manually.
+- **QA role overhead:** QA engineers now correctly receive overhead hours on PTO days and holidays (was developer-only).
+- **Monthly report subtotals:** `--view-monthly` now shows Working / Non-working / Weekend subtotal rows so you can see at a glance where any shortfall is coming from.
+- **PTO re-sync fix:** Adding a date already in your PTO list via the tray app now correctly offers to re-sync that date.
+- **570 automated tests** (up from 528).
+
+## What's New in v4.0.1
 
 - **Tempo API v4 submission fix:** Correct submit endpoint, reviewer lookup, approval status flow, and response body error logging.
 - **Sleep/timer drift fix:** Tray app now handles computer wake-from-sleep correctly -- auto-sync fires at the configured time even if the machine was asleep.
@@ -138,7 +146,7 @@ The wizard will ask you:
 |--------|--------------|
 | **Email** | Your work email |
 | **Full name** | Your name |
-| **Role** | Choose `1` (Developer), `2` (Product Owner), or `3` (Sales) |
+| **Role** | Choose `1` (Developer), `2` (QA), `3` (Product Owner), or `4` (Sales) |
 | **Jira URL** | Auto-configured: `lmsportal.atlassian.net` (not prompted) |
 | **Tempo API token** | Paste the Tempo token from Step 4 |
 | **Jira API token** | Paste the Jira token from Step 4 (developers only) |
@@ -154,7 +162,7 @@ This creates a `config.json` file in the same folder. **Do not share this file**
 
 ## Step 6: Test It
 
-Make sure you have at least one Jira ticket assigned to you with status **IN DEVELOPMENT** or **CODE REVIEW**.
+Make sure you have at least one Jira ticket assigned to you. Developers need a ticket in **IN DEVELOPMENT** or **CODE REVIEW**; QA engineers need one in **Testing** or **User Acceptance Testing**.
 
 Run:
 
@@ -516,7 +524,7 @@ When dates conflict, this priority order applies:
 ## Troubleshooting
 
 ### "No active tickets found"
-You don't have any tickets assigned to you with status **IN DEVELOPMENT** or **CODE REVIEW**. Check your Jira board.
+You don't have any tickets assigned to you in an active status. Developers need **IN DEVELOPMENT** or **CODE REVIEW**; QA engineers need **Testing** or **User Acceptance Testing**. Check your Jira board.
 
 ### Script runs but logs wrong hours
 Re-run the script -- it automatically deletes previous entries for that day and creates fresh ones. Safe to re-run anytime.
