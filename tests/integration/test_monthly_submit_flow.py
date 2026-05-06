@@ -132,7 +132,8 @@ def _weekday_schedule(date_str: str):
     """Simple schedule: weekdays are working, weekends are not."""
     d = date.fromisoformat(date_str)
     if d.weekday() >= 5:
-        return (False, "Weekend")
+        day_name = "Saturday" if d.weekday() == 5 else "Sunday"
+        return (False, f"Weekend ({day_name})")
     return (True, "")
 
 
@@ -477,7 +478,7 @@ class TestVerifyWeekFlow:
         def schedule_with_friday_pto(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             if d.weekday() == 4:  # Friday
                 return (False, "PTO")
             return (True, "")

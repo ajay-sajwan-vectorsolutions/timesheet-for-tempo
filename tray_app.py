@@ -666,6 +666,10 @@ class TrayApp:
 
         today = _today()
         if stale_date == today:
+            is_working, _ = self._automation.schedule_mgr.is_working_day(today.strftime("%Y-%m-%d"))
+            if not is_working:
+                tray_logger.info("Missed target was today but today is non-working -- skipping")
+                return
             tray_logger.info("Missed target was today -- running sync now")
             self._on_sync_now()
             return
@@ -797,7 +801,10 @@ class TrayApp:
                     return
                 dates = [single.strip()]
 
-            added, skipped = self._automation.schedule_mgr.add_pto(dates)
+            schedule_mgr = self._automation.schedule_mgr
+            already_pto = [d for d in dates if d in schedule_mgr.pto_days]
+            added, skipped = schedule_mgr.add_pto(dates)
+            eligible = added + already_pto
 
             if added and skipped:
                 self._show_toast(
@@ -806,16 +813,22 @@ class TrayApp:
                 )
             elif added:
                 self._show_toast("PTO Added", f"Added {len(added)} day(s): {', '.join(added)}")
+            elif already_pto:
+                self._show_toast(
+                    "PTO Already Set",
+                    f"{', '.join(already_pto)} already in your PTO list.\n"
+                    "You can re-sync to Tempo if needed.",
+                )
             else:
                 self._show_toast(
                     "No PTO Added", "\n".join(skipped) if skipped else "No valid dates entered."
                 )
 
-            if not added:
+            if not eligible:
                 return
 
             today = _today()
-            future_dates = [d for d in added if d >= today.strftime("%Y-%m-%d")]
+            future_dates = [d for d in eligible if d >= today.strftime("%Y-%m-%d")]
             if not future_dates:
                 return
 

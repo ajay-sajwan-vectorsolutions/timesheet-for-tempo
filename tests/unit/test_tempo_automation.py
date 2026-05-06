@@ -179,7 +179,7 @@ class TestSyncDaily:
         """Weekend day -> returns immediately without touching Jira/Tempo."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend")
+        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend (Saturday)")
 
         ta.sync_daily("2026-02-21")  # Saturday
 
@@ -213,6 +213,51 @@ class TestSyncDaily:
         ta._sync_pto_overhead.assert_not_called()
         ta._warn_overhead_not_configured.assert_called_once()
         ta.notifier.send_daily_summary.assert_not_called()
+
+    def test_weekend_with_overhead_configured_does_not_log_overhead(self):
+        """Weekend + developer + overhead configured -> skip, NOT overhead log.
+
+        Regression test for bug where reason string mismatch caused weekends
+        to be treated as PTO/holidays, triggering overhead worklog creation.
+        """
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend (Saturday)")
+        ta._is_overhead_configured = MagicMock(return_value=True)
+        ta._sync_pto_overhead = MagicMock()
+
+        ta.sync_daily("2026-04-18")
+
+        ta._sync_pto_overhead.assert_not_called()
+        ta._is_overhead_configured.assert_not_called()
+        ta.jira_client.get_my_active_issues.assert_not_called()
+        ta.tempo_client.get_user_worklogs.assert_not_called()
+
+    def test_weekend_sunday_with_overhead_configured_does_not_log_overhead(self):
+        """Sunday variant of the same regression test."""
+        cfg = _dev_config()
+        ta = _make_automation(cfg)
+        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend (Sunday)")
+        ta._is_overhead_configured = MagicMock(return_value=True)
+        ta._sync_pto_overhead = MagicMock()
+
+        ta.sync_daily("2026-04-19")
+
+        ta._sync_pto_overhead.assert_not_called()
+        ta._is_overhead_configured.assert_not_called()
+
+    def test_qa_role_gets_overhead_on_pto(self):
+        """QA role + PTO + overhead configured -> _sync_pto_overhead called."""
+        cfg = _dev_config()
+        cfg["user"]["role"] = "qa"
+        ta = _make_automation(cfg)
+        ta.schedule_mgr.is_working_day.return_value = (False, "PTO")
+        ta._is_overhead_configured = MagicMock(return_value=True)
+        ta._sync_pto_overhead = MagicMock()
+
+        ta.sync_daily("2026-03-10")
+
+        ta._sync_pto_overhead.assert_called_once_with("2026-03-10")
 
     def test_schedule_guard_pto_non_developer_skips(self):
         """PTO day + non-developer role -> prints skip, no API calls."""
@@ -882,7 +927,7 @@ class TestDetectMonthlyGaps:
         def is_working(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
@@ -912,7 +957,8 @@ class TestDetectMonthlyGaps:
         def is_working(date_str):
             if date_str == "2026-02-10":
                 return (True, "")
-            return (False, "Weekend")
+            d = date.fromisoformat(date_str)
+            return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
 
@@ -937,7 +983,7 @@ class TestDetectMonthlyGaps:
         def is_working(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
@@ -948,13 +994,53 @@ class TestDetectMonthlyGaps:
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             result = ta._detect_monthly_gaps(2026, 2)
 
-        # Only Feb 2-6 (Mon-Fri) -- weekends excluded
+        # Only Feb 2-6 (Mon-Fri) -- weekends excluded (no hours logged on weekends)
         for g in result.get("day_details", []):
             d = date.fromisoformat(g["date"])
             assert d.weekday() < 5
 
-    def test_pto_day_excluded_from_gap_analysis(self):
-        """PTO days are not counted as working days, so no gap is reported for them."""
+    def test_weekend_with_logged_hours_appears_in_report(self):
+        """Weekend days that have Tempo hours logged appear in day_details with expected=0."""
+        cfg = _dev_config(daily_hours=8.0)
+        ta = _make_automation(cfg)
+        # Feb 7 is a Saturday; 4h logged there
+        ta.tempo_client.get_user_worklogs.return_value = [
+            {"startDate": "2026-02-07", "timeSpentSeconds": 4 * 3600},
+        ]
+        ta.schedule_mgr.daily_hours = 8.0
+
+        def is_working(date_str):
+            d = date.fromisoformat(date_str)
+            if d.weekday() >= 5:
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
+            return (True, "")
+
+        ta.schedule_mgr.is_working_day.side_effect = is_working
+
+        with patch("tempo_automation.date") as mock_date:
+            mock_date.today.return_value = date(2026, 2, 8)
+            mock_date.fromisoformat = date.fromisoformat
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            result = ta._detect_monthly_gaps(2026, 2)
+
+        sat_entries = [g for g in result["day_details"] if g["date"] == "2026-02-07"]
+        assert len(sat_entries) == 1
+        assert sat_entries[0]["logged"] == 4.0
+        assert sat_entries[0]["expected"] == 0.0
+        assert sat_entries[0]["gap"] == 0.0
+        assert sat_entries[0]["day_type"] == "weekend"
+        # Weekend hours are tracked separately, not in the weekday actual total
+        assert result["actual"] == pytest.approx(0.0)
+        assert result["actual_weekend"] == pytest.approx(4.0)
+        # working_days count unaffected
+        assert result["working_days"] == 5
+
+    def test_pto_day_with_no_hours_is_a_gap(self):
+        """PTO days with no overhead logged ARE reported as gaps.
+
+        The full weekday count (working + PTO/holiday) drives expected hours,
+        so a PTO day with 0h is a real shortfall that fix_shortfall must address.
+        """
         cfg = _dev_config(daily_hours=8.0)
         ta = _make_automation(cfg)
         ta.tempo_client.get_user_worklogs.return_value = []
@@ -965,7 +1051,7 @@ class TestDetectMonthlyGaps:
                 return (False, "PTO")
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
@@ -976,9 +1062,13 @@ class TestDetectMonthlyGaps:
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             result = ta._detect_monthly_gaps(2026, 2)
 
-        # PTO day should not appear as a gap
+        # PTO day with 0h logged IS a gap (overhead sync should have filled it)
         gap_dates = [g["date"] for g in result["gaps"]]
-        assert "2026-02-10" not in gap_dates
+        assert "2026-02-10" in gap_dates
+        pto_entry = next(g for g in result["day_details"] if g["date"] == "2026-02-10")
+        assert pto_entry["day_type"] == "offday"
+        assert pto_entry["expected"] == 8.0
+        assert result["offday_count"] == 1
 
 
 # ===========================================================================
@@ -1170,7 +1260,7 @@ class TestVerifyWeek:
         def is_working(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
@@ -1202,7 +1292,7 @@ class TestVerifyWeek:
         def is_working(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = is_working
@@ -1429,7 +1519,11 @@ class TestViewMonthlyHours:
         day_details=None,
         expected=160.0,
         actual=160.0,
+        actual_working=None,
+        actual_offday=0.0,
+        actual_weekend=0.0,
         working_days=20,
+        offday_count=0,
         period="2026-02",
     ):
         """Build a mock _detect_monthly_gaps return value."""
@@ -1437,8 +1531,12 @@ class TestViewMonthlyHours:
             "period": period,
             "expected": expected,
             "actual": actual,
+            "actual_working": actual_working if actual_working is not None else actual,
+            "actual_offday": actual_offday,
+            "actual_weekend": actual_weekend,
             "gaps": gaps or [],
             "working_days": working_days,
+            "offday_count": offday_count,
             "day_details": day_details or [],
         }
 
@@ -1569,7 +1667,7 @@ class TestViewMonthlyHours:
         def weekday_schedule(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = weekday_schedule
@@ -1584,15 +1682,16 @@ class TestViewMonthlyHours:
         # Feb 2026: 20 weekdays
         assert gap_data["working_days"] == 20
 
-    def test_view_monthly_skips_pto(self):
-        """PTO days should be excluded from gap calculation."""
+    def test_view_monthly_pto_counts_as_offday(self):
+        """PTO days appear as offday in day_details and are NOT counted as working_days."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
+        ta.tempo_client.get_user_worklogs.return_value = []
 
         def schedule_with_pto(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             if date_str == "2026-02-10":
                 return (False, "PTO")
             return (True, "")
@@ -1606,18 +1705,23 @@ class TestViewMonthlyHours:
 
             gap_data = ta._detect_monthly_gaps(2026, 2)
 
-        # Feb 2026 has 20 weekdays, minus 1 PTO = 19
+        # Feb 2026 has 20 weekdays, minus 1 PTO = 19 working + 1 offday
         assert gap_data["working_days"] == 19
+        assert gap_data["offday_count"] == 1
+        pto_entry = next((d for d in gap_data["day_details"] if d["date"] == "2026-02-10"), None)
+        assert pto_entry is not None
+        assert pto_entry["day_type"] == "offday"
 
-    def test_view_monthly_skips_holidays(self):
-        """Org holidays should be excluded from gap calculation."""
+    def test_view_monthly_holiday_counts_as_offday(self):
+        """Org holidays appear as offday in day_details and are NOT counted as working_days."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
+        ta.tempo_client.get_user_worklogs.return_value = []
 
         def schedule_with_holiday(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             if date_str == "2026-02-16":
                 return (False, "Organization Holiday")
             return (True, "")
@@ -1631,8 +1735,12 @@ class TestViewMonthlyHours:
 
             gap_data = ta._detect_monthly_gaps(2026, 2)
 
-        # Feb 2026 has 20 weekdays, minus 1 holiday = 19
+        # Feb 2026 has 20 weekdays, minus 1 holiday = 19 working + 1 offday
         assert gap_data["working_days"] == 19
+        assert gap_data["offday_count"] == 1
+        hol_entry = next((d for d in gap_data["day_details"] if d["date"] == "2026-02-16"), None)
+        assert hol_entry is not None
+        assert hol_entry["day_type"] == "offday"
 
 
 # ===========================================================================
@@ -2012,7 +2120,7 @@ class TestTempoSourceOfTruth:
         def weekday_schedule(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = weekday_schedule
@@ -2522,7 +2630,7 @@ class TestDateRangeBackfill:
         def weekday_schedule(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = weekday_schedule

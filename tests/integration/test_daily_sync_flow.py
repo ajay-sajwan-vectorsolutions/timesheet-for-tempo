@@ -212,7 +212,7 @@ class TestDeveloperDailySyncFlow:
         """Weekend: skip entirely, no API calls at all."""
         ta = _make_automation(dev_config)
 
-        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend")
+        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend (Saturday)")
 
         ta.sync_daily("2026-02-21")  # Saturday
 
@@ -623,7 +623,7 @@ class TestPOSalesRoles:
         def weekday_schedule(date_str):
             d = date.fromisoformat(date_str)
             if d.weekday() >= 5:
-                return (False, "Weekend")
+                return (False, f"Weekend ({'Saturday' if d.weekday() == 5 else 'Sunday'})")
             return (True, "")
 
         ta.schedule_mgr.is_working_day.side_effect = weekday_schedule
