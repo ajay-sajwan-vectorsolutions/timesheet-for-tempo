@@ -251,6 +251,7 @@ class TrayApp:
         self._stdout_lock = threading.Lock()  # protects sys.stdout swap
         self._automation_lock = threading.Lock()  # protects self._automation
         self._next_sync_target = None  # wall-clock target for sleep detection
+        self._token_error: str | None = None  # "jira_token"/"tempo_token"/"unknown_token"
 
     def _load_automation(self):
         """
@@ -552,7 +553,7 @@ class TrayApp:
         try:
             # Re-create automation instance to pick up fresh config
             # (overhead, PTO, etc. may have changed since startup)
-            from tempo_automation import TempoAutomation
+            from tempo_automation import HealthCheckError, TempoAutomation
 
             with self._automation_lock:
                 self._automation = TempoAutomation(CONFIG_FILE)
@@ -633,15 +634,45 @@ class TrayApp:
                 self._show_toast("Sync Incomplete", body)
                 tray_logger.warning(f"Sync incomplete: {hours:.1f}h/{target:.1f}h reason={reason}")
                 sync_succeeded = False
+        except HealthCheckError as e:
+            with self._stdout_lock:
+                sys.stdout = old_stdout
+            if log_f and not log_f.closed:
+                log_f.close()
+            self._token_error = e.reason
+            if self._icon:
+                self._icon.update_menu()
+            label = "Jira" if e.reason == "jira_token" else "Tempo"
+            self._set_icon_state("red", f"Tempo - {label} token expired")
+            self._show_toast(
+                f"{label} Token Expired",
+                f"Your {label} API token has expired.\n"
+                "Right-click tray icon > Update Token to fix.",
+            )
+            tray_logger.error(f"Health check failed: {e.reason}")
+            sync_succeeded = False
         except Exception as e:
             with self._stdout_lock:
                 sys.stdout = old_stdout
             if log_f and not log_f.closed:
                 log_f.close()
             error_msg = str(e)[:200]
-            self._set_icon_state("red", f"Tempo - Error: {error_msg}")
-            self._show_toast("Sync Failed", f"Error: {error_msg}")
-            tray_logger.error(f"Sync failed: {e}", exc_info=True)
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 401 or "401" in error_msg:
+                self._token_error = "unknown_token"
+                if self._icon:
+                    self._icon.update_menu()
+                self._set_icon_state("red", "Tempo - Token expired")
+                self._show_toast(
+                    "Token Expired",
+                    "An API token expired during sync.\n"
+                    "Right-click tray icon > Update Token to fix.",
+                )
+                tray_logger.error(f"Mid-sync token expiry: {e}")
+            else:
+                self._set_icon_state("red", f"Tempo - Error: {error_msg}")
+                self._show_toast("Sync Failed", f"Error: {error_msg}")
+                tray_logger.error(f"Sync failed: {e}", exc_info=True)
             sync_succeeded = False
         finally:
             self._sync_running.clear()
