@@ -977,3 +977,210 @@ class TestBGColors:
             assert len(rgb) == 3, f"{color} tuple length != 3"
             for channel in rgb:
                 assert 0 <= channel <= 255, f"{color} channel {channel} out of range"
+
+
+# ===========================================================================
+# TestRunSyncTokenError
+# ===========================================================================
+
+
+class TestRunSyncTokenError:
+    """_run_sync() sets _token_error state on health-check and 401 failures."""
+
+    def _make_tray(self):
+        """Create a TrayApp with toast/icon methods mocked for synchronous testing."""
+        app = TrayApp()
+        app._show_toast = MagicMock()
+        app._set_icon_state = MagicMock()
+        app._start_sync_animation = MagicMock()
+        app._stop_sync_animation = MagicMock()
+        app._stdout_lock = threading.Lock()
+        app._automation_lock = threading.Lock()
+        app._sync_running = threading.Event()
+        return app
+
+    def test_initial_token_error_is_none(self):
+        """_token_error should be None on a fresh TrayApp instance."""
+        app = TrayApp()
+        assert app._token_error is None
+
+    def _run_sync_with_mock(self, mock_auto, tmp_path=None):
+        """Patch TempoAutomation + _monthly_log_file and call _run_sync synchronously."""
+        import tempfile
+
+        app = self._make_tray()
+        app._icon = None
+
+        log_path = Path(tempfile.mktemp(suffix=".log"))
+        with (
+            patch("tempo_automation.TempoAutomation", return_value=mock_auto),
+            patch("tray_app._monthly_log_file", return_value=log_path),
+        ):
+            app._run_sync()
+
+        # Clean up temp log if it was created
+        try:
+            log_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        return app
+
+    def test_health_check_tempo_error_sets_token_error(self):
+        """HealthCheckError with tempo_token reason sets _token_error and shows toast."""
+        from tempo_automation import HealthCheckError
+
+        mock_auto = MagicMock()
+        mock_auto.sync_daily.side_effect = HealthCheckError("tempo_token", "expired")
+
+        app = self._run_sync_with_mock(mock_auto)
+
+        assert app._token_error == "tempo_token"
+        title = app._show_toast.call_args[0][0]
+        assert "Tempo" in title
+        assert "Token Expired" in title
+
+    def test_health_check_jira_error_sets_token_error(self):
+        """HealthCheckError with jira_token reason sets _token_error and shows Jira toast."""
+        from tempo_automation import HealthCheckError
+
+        mock_auto = MagicMock()
+        mock_auto.sync_daily.side_effect = HealthCheckError("jira_token", "expired")
+
+        app = self._run_sync_with_mock(mock_auto)
+
+        assert app._token_error == "jira_token"
+        title = app._show_toast.call_args[0][0]
+        assert "Jira" in title
+
+    def test_mid_sync_401_sets_unknown_token_error(self):
+        """An HTTPError with status 401 during sync sets _token_error to unknown_token."""
+        import requests
+
+        mock_auto = MagicMock()
+        err_resp = MagicMock()
+        err_resp.status_code = 401
+        http_err = requests.exceptions.HTTPError(response=err_resp)
+        mock_auto.sync_daily.side_effect = http_err
+
+        app = self._run_sync_with_mock(mock_auto)
+
+        assert app._token_error == "unknown_token"
+        title = app._show_toast.call_args[0][0]
+        assert "Token" in title
+
+    def test_non_401_exception_shows_generic_toast(self):
+        """A non-401 exception leaves _token_error as None and shows Sync Failed toast."""
+        mock_auto = MagicMock()
+        mock_auto.sync_daily.side_effect = ValueError("something broke")
+
+        app = self._run_sync_with_mock(mock_auto)
+
+        assert app._token_error is None
+        title = app._show_toast.call_args[0][0]
+        assert title == "Sync Failed"
+
+
+class TestTokenErrorVisible:
+    """_token_error_visible() controls the Update Token menu item visibility."""
+
+    def test_hidden_when_no_error(self):
+        app = TrayApp()
+        app._token_error = None
+        assert app._token_error_visible(None) is False
+
+    def test_visible_when_tempo_token_error(self):
+        app = TrayApp()
+        app._token_error = "tempo_token"
+        assert app._token_error_visible(None) is True
+
+    def test_visible_when_jira_token_error(self):
+        app = TrayApp()
+        app._token_error = "jira_token"
+        assert app._token_error_visible(None) is True
+
+    def test_visible_when_unknown_token_error(self):
+        app = TrayApp()
+        app._token_error = "unknown_token"
+        assert app._token_error_visible(None) is True
+
+    def test_hidden_after_error_cleared(self):
+        app = TrayApp()
+        app._token_error = "tempo_token"
+        app._token_error = None
+        assert app._token_error_visible(None) is False
+
+
+class TestRunUpdateToken:
+    """_run_update_token() prompts, validates, saves, clears state."""
+
+    def _make_tray(self):
+        app = TrayApp()
+        app._show_toast = MagicMock()
+        app._set_icon_state = MagicMock()
+        app._show_input_dialog = MagicMock()
+        app._icon = None
+        app._automation_lock = threading.Lock()
+        return app
+
+    def test_cancelled_dialog_does_nothing(self):
+        app = self._make_tray()
+        app._token_error = "tempo_token"
+        app._show_input_dialog.return_value = ""
+
+        app._run_update_token()
+
+        app._show_toast.assert_not_called()
+        assert app._token_error == "tempo_token"
+
+    def test_valid_token_clears_error_and_shows_success_toast(self):
+        app = self._make_tray()
+        app._token_error = "tempo_token"
+        app._show_input_dialog.return_value = "new_valid_token"
+        mock_auto = MagicMock()
+        mock_auto.update_token.return_value = True
+        app._automation = mock_auto
+
+        with patch("tray_app.threading.Thread") as mock_thread:
+            mock_thread.return_value = MagicMock()
+            app._run_update_token()
+
+        assert app._token_error is None
+        title = app._show_toast.call_args[0][0]
+        assert "Updated" in title
+
+    def test_invalid_token_keeps_error_state(self):
+        app = self._make_tray()
+        app._token_error = "jira_token"
+        app._show_input_dialog.return_value = "bad_token"
+        mock_auto = MagicMock()
+        mock_auto.update_token.return_value = False
+        app._automation = mock_auto
+
+        app._run_update_token()
+
+        assert app._token_error == "jira_token"
+        title = app._show_toast.call_args[0][0]
+        assert "Invalid" in title
+
+    def test_jira_error_shows_jira_label_in_dialog(self):
+        app = self._make_tray()
+        app._token_error = "jira_token"
+        app._show_input_dialog.return_value = ""
+
+        app._run_update_token()
+
+        prompt, title = app._show_input_dialog.call_args[0]
+        assert "Jira" in prompt
+        assert "Jira" in title
+
+    def test_tempo_error_shows_tempo_label_in_dialog(self):
+        app = self._make_tray()
+        app._token_error = "tempo_token"
+        app._show_input_dialog.return_value = ""
+
+        app._run_update_token()
+
+        prompt, title = app._show_input_dialog.call_args[0]
+        assert "Tempo" in prompt
+        assert "Tempo" in title

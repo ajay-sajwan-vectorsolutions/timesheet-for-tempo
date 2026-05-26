@@ -63,6 +63,18 @@ elif sys.stderr.encoding != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 
+class HealthCheckError(RuntimeError):
+    """Raised when _pre_sync_health_check() detects an expired or invalid token.
+
+    Attributes:
+        reason: "jira_token", "tempo_token", or "api_error"
+    """
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+
+
 class DualWriter:
     """Writes to both the console (original stdout) and an external log file."""
 
@@ -2883,12 +2895,14 @@ class TempoAutomation:
             )
             _time.sleep(delay)
 
-    def _pre_sync_health_check(self) -> bool:
-        """Check Jira and Tempo API connectivity before mutating data.
+    def _pre_sync_health_check(self) -> str | None:
+        """Run a lightweight liveness check before any sync operation.
 
         Returns:
-            True if both APIs are reachable and authenticated,
-            False with diagnostic print if either fails.
+            None if both APIs are reachable and authenticated.
+            "jira_token"  if Jira returns 401 (expired/invalid token).
+            "tempo_token" if Tempo returns 401 (expired/invalid token).
+            "api_error"   for any other HTTP or connectivity failure.
         """
         # Check Jira API
         if self.jira_client:
@@ -2901,16 +2915,18 @@ class TempoAutomation:
                 status = e.response.status_code if e.response is not None else "unknown"
                 if status == 401:
                     msg = "[FAIL] Jira token expired (401)"
-                else:
-                    msg = f"[FAIL] Jira API error ({status})"
+                    print(msg)
+                    logger.error(f"Health check failed: {msg}")
+                    return "jira_token"
+                msg = f"[FAIL] Jira API error ({status})"
                 print(msg)
                 logger.error(f"Health check failed: {msg}")
-                return False
+                return "api_error"
             except Exception as e:
                 msg = f"[FAIL] Jira API unreachable: {e}"
                 print(msg)
                 logger.error(f"Health check failed: {msg}")
-                return False
+                return "api_error"
 
         # Check Tempo API using /work-attributes (lightweight, always available)
         if self.tempo_client.account_id or self.tempo_client.api_token:
@@ -2924,13 +2940,17 @@ class TempoAutomation:
                 hint = TempoClient._forge_error_hint(e)
                 if status == 401:
                     msg = "[FAIL] Tempo token expired (401)"
-                else:
-                    msg = f"[FAIL] Tempo API error ({status})"
+                    if hint:
+                        msg += f"\n       {hint.strip()}"
+                    print(msg)
+                    logger.error(f"Health check failed: {msg}")
+                    return "tempo_token"
+                msg = f"[FAIL] Tempo API error ({status})"
                 if hint:
                     msg += f"\n       {hint.strip()}"
                 print(msg)
                 logger.error(f"Health check failed: {msg}")
-                return False
+                return "api_error"
             except Exception as e:
                 msg = f"[FAIL] Tempo API unreachable: {e}"
                 hint = TempoClient._forge_error_hint(e)
@@ -2938,13 +2958,72 @@ class TempoAutomation:
                     msg += f"\n       {hint.strip()}"
                 print(msg)
                 logger.error(f"Health check failed: {msg}")
-                return False
+                return "api_error"
 
         # Check Forge platform connectivity (non-blocking warning)
         self._check_forge_connectivity()
 
         logger.info("Pre-sync health check passed")
-        return True
+        return None
+
+    def update_token(self, token_type: str, new_token: str) -> bool:
+        """Validate a new API token, save it encrypted to config, and hot-swap
+        the in-memory client so the next sync works without a restart.
+
+        Args:
+            token_type: "jira" or "tempo"
+            new_token:  The new plaintext token to validate and store
+
+        Returns:
+            True if the token passed validation and was saved.
+            False if validation failed (config is not modified).
+        """
+        if token_type == "tempo":
+            try:
+                url = f"{self.tempo_client.base_url}/work-attributes"
+                resp = self.tempo_client.session.get(
+                    url,
+                    headers={"Authorization": f"Bearer {new_token}"},
+                    timeout=30,
+                )
+                resp.raise_for_status()
+            except Exception as e:
+                logger.error(f"New Tempo token validation failed: {e}")
+                return False
+
+            self.config.setdefault("tempo", {})["api_token"] = new_token
+            self.config_manager.save_config(self.config)
+            self.tempo_client.api_token = new_token
+            self.tempo_client.session.headers["Authorization"] = f"Bearer {new_token}"
+            logger.info("Tempo token updated and saved successfully")
+            return True
+
+        if token_type == "jira":
+            import base64 as _b64
+
+            email = self.jira_client.email if self.jira_client else ""
+            creds = _b64.b64encode(f"{email}:{new_token}".encode()).decode()
+            try:
+                url = f"{self.jira_client.base_url}/rest/api/3/myself"
+                resp = self.jira_client.session.get(
+                    url,
+                    headers={"Authorization": f"Basic {creds}"},
+                    timeout=30,
+                )
+                resp.raise_for_status()
+            except Exception as e:
+                logger.error(f"New Jira token validation failed: {e}")
+                return False
+
+            self.config.setdefault("jira", {})["api_token"] = new_token
+            self.config_manager.save_config(self.config)
+            self.jira_client.api_token = new_token
+            self.jira_client.session.auth = (email, new_token)
+            logger.info("Jira token updated and saved successfully")
+            return True
+
+        logger.error(f"update_token: unknown token_type '{token_type}'")
+        return False
 
     def _check_forge_connectivity(self):
         """Warn if Atlassian Forge infrastructure is unreachable.
@@ -3003,9 +3082,11 @@ class TempoAutomation:
         logger.info(f"Starting daily sync for {target_date}")
 
         # Pre-sync health check
-        if not self._pre_sync_health_check():
-            print(_color_prefix("[FAIL] Aborting daily sync due to API health check failure."))
-            return
+        health_failure = self._pre_sync_health_check()
+        if health_failure is not None:
+            msg = "[FAIL] Aborting daily sync due to API health check failure."
+            print(_color_prefix(msg))
+            raise HealthCheckError(health_failure, msg)
 
         now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n{'=' * 60}")
@@ -4234,13 +4315,11 @@ class TempoAutomation:
         - If no shortfalls but not last day: reports clean status.
         """
         # Pre-sync health check
-        if not self._pre_sync_health_check():
-            print(
-                _color_prefix(
-                    "[FAIL] Aborting timesheet submission due to API health check failure."
-                )
-            )
-            return
+        health_failure = self._pre_sync_health_check()
+        if health_failure is not None:
+            msg = "[FAIL] Aborting timesheet submission due to API health check failure."
+            print(_color_prefix(msg))
+            raise HealthCheckError(health_failure, msg)
 
         today = date.today()
         last_day_num = calendar.monthrange(today.year, today.month)[1]
@@ -4922,9 +5001,11 @@ class TempoAutomation:
             return
 
         # Pre-sync health check
-        if not self._pre_sync_health_check():
-            print(_color_prefix("[FAIL] Aborting backfill due to API health check failure."))
-            return
+        health_failure = self._pre_sync_health_check()
+        if health_failure is not None:
+            msg = "[FAIL] Aborting backfill due to API health check failure."
+            print(_color_prefix(msg))
+            raise HealthCheckError(health_failure, msg)
 
         print(f"\n{'=' * 60}")
         print(f"BACKFILL: {from_date} to {to_date}")
@@ -5228,13 +5309,11 @@ class TempoAutomation:
     def verify_week(self):
         """Verify and backfill current week (Mon-Fri)."""
         # Pre-sync health check
-        if not self._pre_sync_health_check():
-            print(
-                _color_prefix(
-                    "[FAIL] Aborting weekly verification due to API health check failure."
-                )
-            )
-            return
+        health_failure = self._pre_sync_health_check()
+        if health_failure is not None:
+            msg = "[FAIL] Aborting weekly verification due to API health check failure."
+            print(_color_prefix(msg))
+            raise HealthCheckError(health_failure, msg)
 
         today = date.today()
         # Calculate Monday of current week

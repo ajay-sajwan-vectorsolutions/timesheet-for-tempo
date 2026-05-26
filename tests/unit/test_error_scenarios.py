@@ -127,7 +127,7 @@ class TestErrorScenarios:
         cfg = _dev_config()
         ta = _make_automation(cfg)
         # Health check must pass first
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta.jira_client.get_my_worklogs.side_effect = requests.exceptions.Timeout(
             "Connection timed out"
         )
@@ -142,7 +142,7 @@ class TestErrorScenarios:
         """Tempo get_user_worklogs raises Timeout -> handled."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta.jira_client.get_my_worklogs.return_value = []
         ta.tempo_client.get_user_worklogs.side_effect = requests.exceptions.Timeout(
             "Tempo timed out"
@@ -155,7 +155,7 @@ class TestErrorScenarios:
         """create_worklog returns False on 401 -> no crash, [FAIL] printed."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta.jira_client.get_my_worklogs.return_value = []
         ta.tempo_client.get_user_worklogs.return_value = []
         ta._is_overhead_configured = MagicMock(return_value=False)
@@ -176,7 +176,7 @@ class TestErrorScenarios:
 
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta.tempo_client.submit_timesheet.return_value = False
         ta._is_already_submitted = MagicMock(return_value=False)
         ta.schedule_mgr.count_working_days.return_value = 0
@@ -202,7 +202,7 @@ class TestErrorScenarios:
         """No tickets, no overhead configured -> prints warning, no error."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta.jira_client.get_my_worklogs.return_value = []
         ta.tempo_client.get_user_worklogs.return_value = []
         ta._is_overhead_configured = MagicMock(return_value=False)
@@ -220,7 +220,7 @@ class TestErrorScenarios:
         """1 ticket -> gets full 8h (minus overhead)."""
         cfg = _dev_config(daily_hours=8.0, overhead_hours=0.0)
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta.jira_client.get_my_worklogs.return_value = []
         ta.tempo_client.get_user_worklogs.return_value = []
         ta._is_overhead_configured = MagicMock(return_value=False)
@@ -248,7 +248,7 @@ class TestErrorScenarios:
         # 7 tickets: 28800//7=4114, 4114*7=28798, rem=2
         cfg = _dev_config(daily_hours=8.0, overhead_hours=0.0)
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta.jira_client.get_my_worklogs.return_value = []
         ta.tempo_client.get_user_worklogs.return_value = []
         ta._is_overhead_configured = MagicMock(return_value=False)
@@ -276,7 +276,7 @@ class TestErrorScenarios:
         """5000-char description -> truncated in output, no crash."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta.jira_client.get_my_worklogs.return_value = []
         ta.tempo_client.get_user_worklogs.return_value = []
         ta._is_overhead_configured = MagicMock(return_value=False)
@@ -315,7 +315,7 @@ class TestErrorScenarios:
         """Unicode chars in summary -> no crash (ASCII-safe output)."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta.jira_client.get_my_worklogs.return_value = []
         ta.tempo_client.get_user_worklogs.return_value = []
         ta._is_overhead_configured = MagicMock(return_value=False)
@@ -334,14 +334,17 @@ class TestErrorScenarios:
         ta.jira_client.create_worklog.assert_called_once()
 
     def test_jira_500_server_error(self, capsys):
-        """Jira 500 error during health check -> prints [FAIL], aborts sync."""
+        """Jira 500 error during health check -> prints [FAIL], raises HealthCheckError."""
+        from tempo_automation import HealthCheckError
+
         cfg = _dev_config()
         ta = _make_automation(cfg)
 
-        # Mock health check to return False (simulating 500)
-        ta._pre_sync_health_check = MagicMock(return_value=False)
+        # Mock health check to return "api_error" (simulating 500)
+        ta._pre_sync_health_check = MagicMock(return_value="api_error")
 
-        ta.sync_daily("2026-03-10")
+        with pytest.raises(HealthCheckError):
+            ta.sync_daily("2026-03-10")
 
         output = capsys.readouterr().out
         assert "[FAIL]" in output

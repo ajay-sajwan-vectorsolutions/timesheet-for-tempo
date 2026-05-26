@@ -251,6 +251,7 @@ class TrayApp:
         self._stdout_lock = threading.Lock()  # protects sys.stdout swap
         self._automation_lock = threading.Lock()  # protects self._automation
         self._next_sync_target = None  # wall-clock target for sleep detection
+        self._token_error: str | None = None  # "jira_token"/"tempo_token"/"unknown_token"
 
     def _load_automation(self):
         """
@@ -467,6 +468,11 @@ class TrayApp:
             pystray.MenuItem(
                 "Submit Timesheet", self._on_submit_timesheet, visible=self._submit_visible
             ),
+            pystray.MenuItem(
+                "Update Token",
+                self._on_update_token,
+                visible=self._token_error_visible,
+            ),
             pystray.MenuItem("Settings", self._on_settings),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Uninstall", self._on_uninstall),
@@ -524,6 +530,53 @@ class TrayApp:
 
         return True
 
+    def _token_error_visible(self, item) -> bool:
+        """Show 'Update Token' only when a token has expired."""
+        return self._token_error is not None
+
+    def _on_update_token(self, icon=None, item=None):
+        """Spawn background thread for token update dialog (pystray callback must return quickly)."""
+        thread = threading.Thread(target=self._run_update_token, daemon=True)
+        thread.start()
+
+    def _run_update_token(self):
+        """Background thread: prompt for new token, validate, save, clear error state."""
+        token_type = self._token_error or "tempo_token"
+        is_jira = "jira" in token_type
+        label = "Jira" if is_jira else "Tempo"
+
+        prompt = f"Paste your new {label} API token below:"
+
+        new_token = self._show_input_dialog(prompt, f"Update {label} Token")
+        if not new_token:
+            return  # user cancelled -- menu item stays visible
+
+        with self._automation_lock:
+            if self._automation is None:
+                self._show_toast("Error", "Automation not loaded. Run --setup first.")
+                return
+            api_type = "jira" if is_jira else "tempo"
+            success = self._automation.update_token(api_type, new_token)
+
+        if success:
+            self._token_error = None
+            if self._icon:
+                self._icon.update_menu()
+            self._set_icon_state("green", "Tempo Automation")
+            self._show_toast(
+                f"{label} Token Updated",
+                "Token validated and saved. Retrying sync now.",
+            )
+            tray_logger.info(f"{label} token updated successfully via tray")
+            thread = threading.Thread(target=self._run_sync, daemon=True)
+            thread.start()
+        else:
+            self._show_toast(
+                f"{label} Token Invalid",
+                "The token you entered failed validation.\nPlease try again with a fresh token.",
+            )
+            tray_logger.warning(f"{label} token update failed: token rejected by API")
+
     def _on_sync_now(self, icon=None, item=None):
         """Clear pending flag and start sync in a background thread."""
         self._pending_confirmation = False
@@ -552,7 +605,7 @@ class TrayApp:
         try:
             # Re-create automation instance to pick up fresh config
             # (overhead, PTO, etc. may have changed since startup)
-            from tempo_automation import TempoAutomation
+            from tempo_automation import HealthCheckError, TempoAutomation
 
             with self._automation_lock:
                 self._automation = TempoAutomation(CONFIG_FILE)
@@ -633,15 +686,45 @@ class TrayApp:
                 self._show_toast("Sync Incomplete", body)
                 tray_logger.warning(f"Sync incomplete: {hours:.1f}h/{target:.1f}h reason={reason}")
                 sync_succeeded = False
+        except HealthCheckError as e:
+            with self._stdout_lock:
+                sys.stdout = old_stdout
+            if log_f and not log_f.closed:
+                log_f.close()
+            self._token_error = e.reason
+            if self._icon:
+                self._icon.update_menu()
+            label = "Jira" if e.reason == "jira_token" else "Tempo"
+            self._set_icon_state("red", f"Tempo - {label} token expired")
+            self._show_toast(
+                f"{label} Token Expired",
+                f"Your {label} API token has expired.\n"
+                "Right-click tray icon > Update Token to fix.",
+            )
+            tray_logger.error(f"Health check failed: {e.reason}")
+            sync_succeeded = False
         except Exception as e:
             with self._stdout_lock:
                 sys.stdout = old_stdout
             if log_f and not log_f.closed:
                 log_f.close()
             error_msg = str(e)[:200]
-            self._set_icon_state("red", f"Tempo - Error: {error_msg}")
-            self._show_toast("Sync Failed", f"Error: {error_msg}")
-            tray_logger.error(f"Sync failed: {e}", exc_info=True)
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 401 or "401" in error_msg:
+                self._token_error = "unknown_token"
+                if self._icon:
+                    self._icon.update_menu()
+                self._set_icon_state("red", "Tempo - Token expired")
+                self._show_toast(
+                    "Token Expired",
+                    "An API token expired during sync.\n"
+                    "Right-click tray icon > Update Token to fix.",
+                )
+                tray_logger.error(f"Mid-sync token expiry: {e}")
+            else:
+                self._set_icon_state("red", f"Tempo - Error: {error_msg}")
+                self._show_toast("Sync Failed", f"Error: {error_msg}")
+                tray_logger.error(f"Sync failed: {e}", exc_info=True)
             sync_succeeded = False
         finally:
             self._sync_running.clear()
