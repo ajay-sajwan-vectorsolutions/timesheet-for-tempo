@@ -545,28 +545,9 @@ class TrayApp:
         is_jira = "jira" in token_type
         label = "Jira" if is_jira else "Tempo"
 
-        if is_jira:
-            instructions = (
-                "Get a new Jira token at:\n"
-                "  https://id.atlassian.com/manage-profile/security/api-tokens\n\n"
-                "1. Click 'Create API token'\n"
-                "2. Give it a name and copy the token"
-            )
-        else:
-            instructions = (
-                "Get a new Tempo token at:\n"
-                "  https://app.tempo.io -> Settings -> API Integration\n\n"
-                "1. Click 'New Token'\n"
-                "2. Give it a name and copy the token"
-            )
+        prompt = f"Paste your new {label} API token below:"
 
-        prompt = (
-            f"Your {label} API token has expired.\n\n"
-            f"{instructions}\n\n"
-            f"Paste your new {label} token below:"
-        )
-
-        new_token = self._show_input_dialog(prompt, f"Tempo Automation - Update {label} Token")
+        new_token = self._show_input_dialog(prompt, f"Update {label} Token")
         if not new_token:
             return  # user cancelled -- menu item stays visible
 

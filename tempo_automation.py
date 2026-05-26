@@ -2991,8 +2991,7 @@ class TempoAutomation:
                 logger.error(f"New Tempo token validation failed: {e}")
                 return False
 
-            encrypted = CredentialManager.encrypt(new_token, key="tempo_token")
-            self.config.setdefault("tempo", {})["api_token"] = encrypted
+            self.config.setdefault("tempo", {})["api_token"] = new_token
             self.config_manager.save_config(self.config)
             self.tempo_client.api_token = new_token
             self.tempo_client.session.headers["Authorization"] = f"Bearer {new_token}"
@@ -3016,8 +3015,7 @@ class TempoAutomation:
                 logger.error(f"New Jira token validation failed: {e}")
                 return False
 
-            encrypted = CredentialManager.encrypt(new_token, key="jira_token")
-            self.config.setdefault("jira", {})["api_token"] = encrypted
+            self.config.setdefault("jira", {})["api_token"] = new_token
             self.config_manager.save_config(self.config)
             self.jira_client.api_token = new_token
             self.jira_client.session.auth = (email, new_token)

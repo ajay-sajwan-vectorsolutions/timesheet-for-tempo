@@ -3016,6 +3016,10 @@ class TestUpdateToken:
         assert auto.tempo_client.api_token == "new_tempo_token"
         assert "new_tempo_token" in auto.tempo_client.session.headers["Authorization"]
         auto.config_manager.save_config.assert_called_once()
+        # Regression: token must be stored as plaintext, never as ENC:<base64>
+        saved = auto.config_manager.save_config.call_args[0][0]
+        assert saved["tempo"]["api_token"] == "new_tempo_token"
+        assert not saved["tempo"]["api_token"].startswith("ENC:")
 
     def test_update_tempo_token_invalid(self):
         import requests
@@ -3042,6 +3046,10 @@ class TestUpdateToken:
         assert result is True
         assert auto.jira_client.api_token == "new_jira_token"
         auto.config_manager.save_config.assert_called_once()
+        # Regression: token must be stored as plaintext, never as ENC:<base64>
+        saved = auto.config_manager.save_config.call_args[0][0]
+        assert saved["jira"]["api_token"] == "new_jira_token"
+        assert not saved["jira"]["api_token"].startswith("ENC:")
 
     def test_update_jira_token_invalid(self):
         import requests
