@@ -34,6 +34,7 @@ from datetime import date, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
+from typing import Optional
 
 import requests
 
@@ -2895,7 +2896,7 @@ class TempoAutomation:
             )
             _time.sleep(delay)
 
-    def _pre_sync_health_check(self) -> str | None:
+    def _pre_sync_health_check(self) -> Optional[str]:
         """Run a lightweight liveness check before any sync operation.
 
         Returns:
