@@ -47,7 +47,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tempo_automation import TempoAutomation  # noqa: E402
+from tempo_automation import HealthCheckError, TempoAutomation  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Core helper: build a TempoAutomation without triggering __init__
@@ -149,6 +149,30 @@ def _dev_config(
         },
         "options": {"auto_submit": True, "require_confirmation": False},
     }
+
+
+# ===========================================================================
+# HealthCheckError
+# ===========================================================================
+
+
+class TestHealthCheckError:
+    """Tests for the HealthCheckError exception class."""
+
+    def test_is_runtime_error(self):
+        """HealthCheckError should be a subclass of RuntimeError."""
+        err = HealthCheckError("jira_token", "Jira token expired")
+        assert isinstance(err, RuntimeError)
+
+    def test_reason_attribute(self):
+        """HealthCheckError should store the reason attribute."""
+        err = HealthCheckError("tempo_token", "some msg")
+        assert err.reason == "tempo_token"
+
+    def test_message_in_args(self):
+        """HealthCheckError message should be accessible via str()."""
+        err = HealthCheckError("api_error", "API unreachable")
+        assert "API unreachable" in str(err)
 
 
 # ===========================================================================

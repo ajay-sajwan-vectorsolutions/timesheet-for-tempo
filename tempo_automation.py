@@ -63,6 +63,18 @@ elif sys.stderr.encoding != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 
+class HealthCheckError(RuntimeError):
+    """Raised when _pre_sync_health_check() detects an expired or invalid token.
+
+    Attributes:
+        reason: "jira_token", "tempo_token", or "api_error"
+    """
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+
+
 class DualWriter:
     """Writes to both the console (original stdout) and an external log file."""
 
