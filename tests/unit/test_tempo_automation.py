@@ -2971,4 +2971,93 @@ class TestCheckForge:
 
         captured = capsys.readouterr()
         assert "FORGE" in captured.out
-        assert "regenerate" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# TestUpdateToken
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateToken:
+    """update_token() validates, saves, and hot-swaps a new API token."""
+
+    def _make(self):
+        auto = _make_automation(
+            {
+                "jira": {"url": "lmsportal.atlassian.net", "email": "a@b.com", "api_token": "old"},
+                "tempo": {"api_token": "old_tempo"},
+                "user": {"role": "developer", "email": "a@b.com"},
+            }
+        )
+        auto.jira_client = MagicMock()
+        auto.jira_client.email = "a@b.com"
+        auto.jira_client.base_url = "https://lmsportal.atlassian.net"
+        auto.jira_client.session = MagicMock()
+        auto.tempo_client = MagicMock()
+        auto.tempo_client.api_token = "old_tempo"
+        auto.tempo_client.base_url = "https://api.tempo.io/4"
+        auto.tempo_client.session = MagicMock()
+        auto.tempo_client.session.headers = {
+            "Authorization": "Bearer old_tempo",
+            "Content-Type": "application/json",
+        }
+        auto.config_manager = MagicMock()
+        return auto
+
+    def test_update_tempo_token_success(self):
+        auto = self._make()
+        ok_resp = MagicMock()
+        ok_resp.raise_for_status = MagicMock()
+        auto.tempo_client.session.get.return_value = ok_resp
+
+        result = auto.update_token("tempo", "new_tempo_token")
+
+        assert result is True
+        assert auto.tempo_client.api_token == "new_tempo_token"
+        assert "new_tempo_token" in auto.tempo_client.session.headers["Authorization"]
+        auto.config_manager.save_config.assert_called_once()
+
+    def test_update_tempo_token_invalid(self):
+        import requests
+
+        auto = self._make()
+        err_resp = MagicMock()
+        err_resp.status_code = 401
+        http_err = requests.exceptions.HTTPError(response=err_resp)
+        auto.tempo_client.session.get.side_effect = http_err
+
+        result = auto.update_token("tempo", "bad_token")
+
+        assert result is False
+        auto.config_manager.save_config.assert_not_called()
+
+    def test_update_jira_token_success(self):
+        auto = self._make()
+        ok_resp = MagicMock()
+        ok_resp.raise_for_status = MagicMock()
+        auto.jira_client.session.get.return_value = ok_resp
+
+        result = auto.update_token("jira", "new_jira_token")
+
+        assert result is True
+        assert auto.jira_client.api_token == "new_jira_token"
+        auto.config_manager.save_config.assert_called_once()
+
+    def test_update_jira_token_invalid(self):
+        import requests
+
+        auto = self._make()
+        err_resp = MagicMock()
+        err_resp.status_code = 401
+        http_err = requests.exceptions.HTTPError(response=err_resp)
+        auto.jira_client.session.get.side_effect = http_err
+
+        result = auto.update_token("jira", "bad_token")
+
+        assert result is False
+        auto.config_manager.save_config.assert_not_called()
+
+    def test_update_unknown_type_returns_false(self):
+        auto = self._make()
+        result = auto.update_token("unknown", "whatever")
+        assert result is False

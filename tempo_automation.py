@@ -2966,6 +2966,67 @@ class TempoAutomation:
         logger.info("Pre-sync health check passed")
         return None
 
+    def update_token(self, token_type: str, new_token: str) -> bool:
+        """Validate a new API token, save it encrypted to config, and hot-swap
+        the in-memory client so the next sync works without a restart.
+
+        Args:
+            token_type: "jira" or "tempo"
+            new_token:  The new plaintext token to validate and store
+
+        Returns:
+            True if the token passed validation and was saved.
+            False if validation failed (config is not modified).
+        """
+        if token_type == "tempo":
+            try:
+                url = f"{self.tempo_client.base_url}/work-attributes"
+                resp = self.tempo_client.session.get(
+                    url,
+                    headers={"Authorization": f"Bearer {new_token}"},
+                    timeout=30,
+                )
+                resp.raise_for_status()
+            except Exception as e:
+                logger.error(f"New Tempo token validation failed: {e}")
+                return False
+
+            encrypted = CredentialManager.encrypt(new_token, key="tempo_token")
+            self.config.setdefault("tempo", {})["api_token"] = encrypted
+            self.config_manager.save_config(self.config)
+            self.tempo_client.api_token = new_token
+            self.tempo_client.session.headers["Authorization"] = f"Bearer {new_token}"
+            logger.info("Tempo token updated and saved successfully")
+            return True
+
+        if token_type == "jira":
+            import base64 as _b64
+
+            email = self.jira_client.email if self.jira_client else ""
+            creds = _b64.b64encode(f"{email}:{new_token}".encode()).decode()
+            try:
+                url = f"{self.jira_client.base_url}/rest/api/3/myself"
+                resp = self.jira_client.session.get(
+                    url,
+                    headers={"Authorization": f"Basic {creds}"},
+                    timeout=30,
+                )
+                resp.raise_for_status()
+            except Exception as e:
+                logger.error(f"New Jira token validation failed: {e}")
+                return False
+
+            encrypted = CredentialManager.encrypt(new_token, key="jira_token")
+            self.config.setdefault("jira", {})["api_token"] = encrypted
+            self.config_manager.save_config(self.config)
+            self.jira_client.api_token = new_token
+            self.jira_client.session.auth = (email, new_token)
+            logger.info("Jira token updated and saved successfully")
+            return True
+
+        logger.error(f"update_token: unknown token_type '{token_type}'")
+        return False
+
     def _check_forge_connectivity(self):
         """Warn if Atlassian Forge infrastructure is unreachable.
 
