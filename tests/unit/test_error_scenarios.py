@@ -19,25 +19,23 @@ Tests (12):
 - test_sync_daily_weekend_skip
 """
 
-import json
-from datetime import date
-from unittest.mock import MagicMock, patch, PropertyMock
-import pytest
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
+import pytest
 import requests
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tempo_automation import TempoAutomation, JiraClient, TempoClient
-
+from tempo_automation import TempoAutomation  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helper: build a TempoAutomation without triggering __init__
 # ---------------------------------------------------------------------------
+
 
 def _dev_config(
     daily_hours: float = 8.0,
@@ -120,6 +118,7 @@ def _make_automation(config: dict) -> TempoAutomation:
 # TestErrorScenarios
 # ===========================================================================
 
+
 class TestErrorScenarios:
     """Error and failure path tests."""
 
@@ -129,8 +128,8 @@ class TestErrorScenarios:
         ta = _make_automation(cfg)
         # Health check must pass first
         ta._pre_sync_health_check = MagicMock(return_value=True)
-        ta.jira_client.get_my_worklogs.side_effect = (
-            requests.exceptions.Timeout("Connection timed out")
+        ta.jira_client.get_my_worklogs.side_effect = requests.exceptions.Timeout(
+            "Connection timed out"
         )
 
         # sync_daily should not raise -- the exception propagates up to
@@ -145,8 +144,8 @@ class TestErrorScenarios:
         ta = _make_automation(cfg)
         ta._pre_sync_health_check = MagicMock(return_value=True)
         ta.jira_client.get_my_worklogs.return_value = []
-        ta.tempo_client.get_user_worklogs.side_effect = (
-            requests.exceptions.Timeout("Tempo timed out")
+        ta.tempo_client.get_user_worklogs.side_effect = requests.exceptions.Timeout(
+            "Tempo timed out"
         )
 
         with pytest.raises(requests.exceptions.Timeout):
@@ -183,12 +182,14 @@ class TestErrorScenarios:
         ta.schedule_mgr.count_working_days.return_value = 0
 
         # Mock _detect_monthly_gaps to return no gaps so it proceeds
-        ta._detect_monthly_gaps = MagicMock(return_value={
-            "working_days": 22,
-            "expected": 176.0,
-            "actual": 176.0,
-            "gaps": [],
-        })
+        ta._detect_monthly_gaps = MagicMock(
+            return_value={
+                "working_days": 22,
+                "expected": 176.0,
+                "actual": 176.0,
+                "gaps": [],
+            }
+        )
 
         # Freeze to last day of month so submission window is open
         with freeze_time("2026-03-31"):
@@ -213,8 +214,7 @@ class TestErrorScenarios:
         ta.sync_daily("2026-03-10")
 
         output = capsys.readouterr().out
-        assert "No active tickets" in output or \
-            ta._warn_overhead_not_configured.called
+        assert "No active tickets" in output or ta._warn_overhead_not_configured.called
 
     def test_one_ticket_gets_all_hours(self, capsys):
         """1 ticket -> gets full 8h (minus overhead)."""
@@ -229,7 +229,7 @@ class TestErrorScenarios:
             {"issue_key": "PROJ-1", "issue_summary": "Solo task"},
         ]
 
-        result = ta._auto_log_jira_worklogs("2026-03-10")
+        ta._auto_log_jira_worklogs("2026-03-10")
 
         call_args = ta.jira_client.create_worklog.call_args
         assert call_args.kwargs["time_spent_seconds"] == 8 * 3600
@@ -254,8 +254,7 @@ class TestErrorScenarios:
         ta._is_overhead_configured = MagicMock(return_value=False)
         ta._is_planning_week = MagicMock(return_value=False)
         ta.jira_client.get_my_active_issues.return_value = [
-            {"issue_key": f"PROJ-{i}", "issue_summary": f"T{i}"}
-            for i in range(7)
+            {"issue_key": f"PROJ-{i}", "issue_summary": f"T{i}"} for i in range(7)
         ]
 
         ta._auto_log_jira_worklogs("2026-03-10")
@@ -353,7 +352,7 @@ class TestErrorScenarios:
         """sync on Saturday -> prints skip message, no API calls."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend")
+        ta.schedule_mgr.is_working_day.return_value = (False, "Weekend (Saturday)")
 
         ta.sync_daily("2026-03-14")  # Saturday
 

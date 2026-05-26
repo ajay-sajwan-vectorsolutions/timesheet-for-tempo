@@ -50,8 +50,8 @@ python tempo_automation.py --help
 | `config.json` | Your personal configuration (gitignored) |
 | `daily-timesheet.log` | Execution output log |
 | `tempo_automation.log` | Internal runtime logs |
-| `tempo_automation.py` | Main script (5,743 lines) |
-| `tray_app.py` | System tray app (~1,938 lines) |
+| `tempo_automation.py` | Main script (5,854 lines) |
+| `tray_app.py` | System tray app (~1,991 lines) |
 
 ## Quick Fixes
 
@@ -103,7 +103,11 @@ tail -f tempo_automation.log
 
 **Developers:**
 - Jira worklogs -> Tempo entries (automatic daily)
-- 2h overhead + remaining hours across active tickets
+- 2h overhead + remaining hours across IN DEVELOPMENT / CODE REVIEW tickets
+
+**QA Engineers:**
+- Same as developers, but uses Testing / User Acceptance Testing tickets
+- 2h overhead + remaining hours across active QA tickets
 
 **Product Owners / Sales:**
 - Manual activities from config -> Tempo entries

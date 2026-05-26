@@ -52,7 +52,7 @@
       <div class="stat-label">On-Time Compliance</div>
     </div>
     <div class="stat-item">
-      <div class="stat-number">528</div>
+      <div class="stat-number">570</div>
       <div class="stat-label">Automated Tests</div>
     </div>
   </div>
@@ -188,7 +188,7 @@
 <section id="features">
   <div class="section-label">Capabilities</div>
   <h2 class="section-title">Everything You Need. Nothing You Don't.</h2>
-  <p class="section-subtitle">Production-ready with 7,268 lines of tested Python code, 528 automated tests, and 22 CLI commands.</p>
+  <p class="section-subtitle">Production-ready with 7,845 lines of tested Python code, 570 automated tests, and 22 CLI commands.</p>
 
   <span id="roles"></span>
 
@@ -561,6 +561,18 @@
           <h3>Tempo API v4 Submit Fix</h3>
           <p>Correct submit endpoint, reviewer lookup, approval status flow, and response body error logging. 528 tests passing.</p>
         </div>
+        <div class="timeline-item">
+          <span class="version-tag" style="background: var(--accent-cyan); color: #000;">v4.0.2</span>
+          <div class="date">April 29, 2026</div>
+          <h3>Weekend Overhead Fix &amp; QA Role</h3>
+          <p>Fixed dormant bug where overhead worklogs were created on weekends. Schedule guard now uses startswith("Weekend"). QA role included in overhead eligibility. is_working_day guard added to tray catchup backfill.</p>
+        </div>
+        <div class="timeline-item">
+          <span class="version-tag" style="background: var(--accent-cyan); color: #000;">v4.0.2</span>
+          <div class="date">April 30, 2026</div>
+          <h3>Three-Type Day Model &amp; PTO Sync Fix</h3>
+          <p>Monthly report now classifies days as Working / Non-working / Weekend with separate subtotals. PTO re-sync correctly offers sync even for dates already in pto_days. 570 tests passing (+42 new).</p>
+        </div>
       </div>
     </div>
   </div>
@@ -569,8 +581,8 @@
     <span class="badge badge-blue">Python 3.7+</span>
     <span class="badge badge-purple">Jira REST v3</span>
     <span class="badge badge-orange">Tempo API v4</span>
-    <span class="badge badge-green">528 Tests</span>
-    <span class="badge badge-blue">7,268 Lines</span>
+    <span class="badge badge-green">570 Tests</span>
+    <span class="badge badge-blue">7,845 Lines</span>
     <span class="badge badge-purple">8 Classes</span>
   </div>
 </section>
@@ -650,15 +662,19 @@ MONTHLY HOURS REPORT - February 2026<br>
 &nbsp;&nbsp;2026-02-05&nbsp;&nbsp;&nbsp;Thursday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
 &nbsp;&nbsp;2026-02-06&nbsp;&nbsp;&nbsp;Friday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
 &nbsp;&nbsp;2026-02-09&nbsp;&nbsp;&nbsp;Monday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
-&nbsp;&nbsp;2026-02-10&nbsp;&nbsp;&nbsp;Tuesday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
-&nbsp;&nbsp;2026-02-11&nbsp;&nbsp;&nbsp;Wednesday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
-&nbsp;&nbsp;2026-02-12&nbsp;&nbsp;&nbsp;Thursday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
-&nbsp;&nbsp;2026-02-13&nbsp;&nbsp;&nbsp;Friday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
+&nbsp;&nbsp;2026-02-16&nbsp;&nbsp;&nbsp;Monday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
+&nbsp;&nbsp;2026-02-17&nbsp;&nbsp;&nbsp;Tuesday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-- (PTO)&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="error">[!]</span><br>
+&nbsp;&nbsp;2026-02-18&nbsp;&nbsp;&nbsp;Wednesday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="success">[OK]</span><br>
+&nbsp;&nbsp;2026-02-28&nbsp;&nbsp;&nbsp;Saturday&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;--&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br>
 &nbsp;&nbsp;...<br>
 &nbsp;&nbsp;--------------------------------------------------<br>
-&nbsp;&nbsp;TOTAL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;120.0h&nbsp;&nbsp;&nbsp;120.0h<br>
+&nbsp;&nbsp;<span class="success">Working (19)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;152.0h&nbsp;&nbsp;&nbsp;152.0h</span><br>
+&nbsp;&nbsp;<span class="error">Non-working (1)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8.0h</span><br>
+&nbsp;&nbsp;<span class="error">Weekend (8)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.0h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;--</span><br>
+&nbsp;&nbsp;--------------------------------------------------<br>
+&nbsp;&nbsp;TOTAL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;152.0h&nbsp;&nbsp;&nbsp;160.0h<br>
 <br>
-&nbsp;&nbsp;<span class="success">[OK]</span> All hours accounted for
+&nbsp;&nbsp;<span class="error">[!] Shortfall: 8.0h across 1 day(s)</span>
       </div>
     </div>
 
@@ -980,14 +996,14 @@ python tempo_automation.py --submit
     <span class="view-sep">&bull;</span>
     <span id="visitor-count" class="view-count">--</span> unique
   </div>
-  <p><strong>Tempo Timesheet Automation</strong> v4.0.1</p>
+  <p><strong>Tempo Timesheet Automation</strong> v4.0.2</p>
   <p>Built by Vector Solutions Engineering</p>
   <p style="margin-top: 0.5rem;">
     <a href="https://github.com/ajay-sajwan-vectorsolutions/timesheet-for-tempo">GitHub Repository</a>
     &nbsp;&bull;&nbsp;
     Contact: Ajay Sajwan (Front End Team Lead)
   </p>
-  <p style="margin-top: 1rem; font-size: 0.8rem;">March 2026</p>
+  <p style="margin-top: 1rem; font-size: 0.8rem;">April 2026</p>
   <p style="margin-top: 0.5rem;">
     <a href="case-study.html" style="font-size: 0.8rem;">View light theme case study &rarr;</a>
   </p>

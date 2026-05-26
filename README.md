@@ -2,7 +2,7 @@
 
 **Automate your daily Tempo timesheet entry and monthly submission -- save 15+ minutes every day.**
 
-Version 4.0.1 | Python 3.7+ | Windows + macOS
+Version 4.0.2 | Python 3.7+ | Windows + macOS
 
 <a href="https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/" target="_blank">View Presentation (Dark Theme)</a> | <a href="https://ajay-sajwan-vectorsolutions.github.io/timesheet-for-tempo/site/case-study.html" target="_blank">View Case Study (Light Theme)</a>
 
@@ -12,7 +12,7 @@ Version 4.0.1 | Python 3.7+ | Windows + macOS
 
 This automation script eliminates the manual burden of timesheet management:
 
-- **For Developers:** Automatically distributes daily hours across your active Jira tickets and logs worklogs directly in Jira. Tempo auto-syncs.
+- **For Developers & QA:** Automatically distributes daily hours across your active Jira tickets and logs worklogs directly in Jira. Tempo auto-syncs. (Developers use IN DEVELOPMENT / CODE REVIEW; QA uses Testing / UAT.)
 - **For Product Owners & Sales:** Pre-fills timesheets based on configured activities via the Tempo API.
 - **For Everyone:** Auto-submits timesheets at month-end, skips weekends/holidays/PTO, and catches missed days with weekly verification.
 
@@ -44,7 +44,7 @@ This automation script eliminates the manual burden of timesheet management:
 - **JSON logging** -- `--log-format json` for structured machine-readable output
 - **Parallel worklog creation** -- ThreadPoolExecutor for faster multi-ticket syncs
 - **Holiday cache** -- ETag/Last-Modified caching with 24h TTL for org holiday fetches
-- **500 automated tests** -- 71% code coverage (pytest + CI/CD via GitHub Actions)
+- **570 automated tests** -- 71% code coverage (pytest + CI/CD via GitHub Actions)
 
 ### Schedule Management
 - **Holiday detection** -- org holidays (always fetched from central URL, local file as fallback) + national/state holidays (100+ countries)
@@ -433,7 +433,8 @@ examples/                    # Example configs for each role
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 4.0.1 | Mar 31, 2026 | Fix timesheet submission: correct Tempo API v4 endpoints (submit, approval status, reviewer lookup), response body error logging, 528 tests. Post-release improvements: sleep/timer drift fix for tray auto-sync (E003), post-install shortfall detection and backfill via `--post-install-check` (E006), install.bat cleanup removing VBScript dropper and PowerShell fallbacks that triggered enterprise EDR tools (E004), Teams notification test ANSI color handling |
+| 4.0.2 | Apr 30, 2026 | Weekend overhead bug fixed (startswith guard), QA role overhead eligibility, three-type day model in --view-monthly (Working/Non-working/Weekend subtotals), PTO re-sync fix in tray app, 570 tests |
+| 4.0.1 | Mar 31, 2026 | Fix timesheet submission: correct Tempo API v4 endpoints (submit, approval status, reviewer lookup), response body error logging, 528 tests. Post-release: sleep/timer drift fix (E003), post-install shortfall detection via `--post-install-check` (E006), install.bat EDR hardening (E004), Teams notification ANSI handling |
 | 4.0 | Mar 13, 2026 | Data safety (create-before-delete with rollback), pre-sync health check, retry logic (429/502/503/504), config validation, --dry-run mode, --backfill --from-date --to-date, --approval-status, --log-format json, weighted distribution, holiday cache with TTL, parallel worklog creation, 500 tests (71% coverage), CI/CD (GitHub Actions), ruff+pre-commit, keyring credentials (Mac/Linux) |
 | 3.9 | Feb 23, 2026 | Early timesheet submission: bypasses 7-day window when all remaining days are non-working (PTO/holidays/weekends), tray Submit menu visible mid-month when eligible |
 | 3.8 | Feb 22, 2026 | Distribution zips: build_dist.bat (Win+Python, Win Lite, Mac), install.bat auto-detects Python (embedded or system), run_*.bat regenerated with correct paths |

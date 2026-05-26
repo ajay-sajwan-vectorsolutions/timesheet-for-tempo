@@ -2985,8 +2985,8 @@ class TempoAutomation:
         is_working, reason = self.schedule_mgr.is_working_day(target_date)
         if not is_working:
             # Case 3: PTO/Holiday -- log overhead instead of skipping
-            is_off_day = reason != "Weekend"
-            if is_off_day and self.config.get("user", {}).get("role") == "developer":
+            is_off_day = not reason.startswith("Weekend")
+            if is_off_day and self.config.get("user", {}).get("role") in ("developer", "qa"):
                 if self._is_overhead_configured():
                     return self._sync_pto_overhead(target_date)
                 else:
@@ -4431,8 +4431,11 @@ class TempoAutomation:
         gaps = []
         day_details = []
         total_expected = 0.0
-        total_actual = 0.0
+        actual_working = 0.0
+        actual_offday = 0.0
+        actual_weekend = 0.0
         working_day_count = 0
+        offday_count = 0
 
         total_days = (end_date - first_date).days + 1
         current = first_date
@@ -4442,23 +4445,58 @@ class TempoAutomation:
             day_str = current.strftime("%Y-%m-%d")
             logger.debug(f"[{day_index}/{total_days}] Checking {day_str}")
             is_working, reason = self.schedule_mgr.is_working_day(day_str)
+            logged = hours_by_date.get(day_str, 0.0)
+            is_weekend_day = reason.startswith("Weekend")
 
             if is_working:
                 working_day_count += 1
-                logged = hours_by_date.get(day_str, 0.0)
                 total_expected += daily_hours
-                total_actual += logged
+                actual_working += logged
                 gap = daily_hours - logged
-
                 detail = {
                     "date": day_str,
                     "day": current.strftime("%A"),
                     "logged": round(logged, 2),
                     "expected": daily_hours,
                     "gap": round(max(0, gap), 2),
+                    "day_type": "working",
+                    "reason": reason,
                 }
                 day_details.append(detail)
-
+                if gap > 0.5:
+                    gaps.append(detail)
+            elif is_weekend_day:
+                # Weekends: expected=0, only appears in report if hours logged
+                if logged > 0:
+                    actual_weekend += logged
+                    day_details.append(
+                        {
+                            "date": day_str,
+                            "day": current.strftime("%A"),
+                            "logged": round(logged, 2),
+                            "expected": 0.0,
+                            "gap": 0.0,
+                            "day_type": "weekend",
+                            "reason": reason,
+                        }
+                    )
+            else:
+                # Offday: PTO, holiday, etc. -- still expected=daily_hours
+                # (overhead sync should log hours here)
+                offday_count += 1
+                total_expected += daily_hours
+                actual_offday += logged
+                gap = daily_hours - logged
+                detail = {
+                    "date": day_str,
+                    "day": current.strftime("%A"),
+                    "logged": round(logged, 2),
+                    "expected": daily_hours,
+                    "gap": round(max(0, gap), 2),
+                    "day_type": "offday",
+                    "reason": reason,
+                }
+                day_details.append(detail)
                 if gap > 0.5:
                     gaps.append(detail)
 
@@ -4468,9 +4506,13 @@ class TempoAutomation:
         return {
             "period": period,
             "expected": round(total_expected, 1),
-            "actual": round(total_actual, 1),
+            "actual": round(actual_working + actual_offday, 1),
+            "actual_working": round(actual_working, 1),
+            "actual_offday": round(actual_offday, 1),
+            "actual_weekend": round(actual_weekend, 1),
             "gaps": gaps,
             "working_days": working_day_count,
+            "offday_count": offday_count,
             "day_details": day_details,
         }
 
@@ -4557,24 +4599,91 @@ class TempoAutomation:
         print(f"  {Style.DIM}{'-' * 50}{Style.RESET}")
 
         for d in gap_data["day_details"]:
-            if d["gap"] > 0.5:
-                raw_status = f"-{d['gap']:.1f}h"
-                status = f"{Style.FAIL}{raw_status}{Style.RESET}"
-            elif d["logged"] > d["expected"]:
-                over = d["logged"] - d["expected"]
-                raw_status = f"+{over:.1f}h"
-                status = f"{Style.OK}{raw_status}{Style.RESET}"
+            day_type = d.get("day_type", "working")
+            reason = d.get("reason", "")
+
+            if day_type == "weekend":
+                status = f"{Style.FAIL}[WKND]{Style.RESET}"
+                print(
+                    f"  {Style.FAIL}{d['date']:<12} {d['day']:<10}{Style.RESET} "
+                    f"{d['logged']:>6.1f}h "
+                    f"{'--':>8} "
+                    f"{_pad_styled(status, 10)}"
+                )
+            elif day_type == "offday":
+                if "PTO" in reason:
+                    label = "[PTO]"
+                elif "Holiday" in reason or "holiday" in reason:
+                    label = "[HOL]"
+                else:
+                    label = "[OFF]"
+                if d["gap"] > 0.5:
+                    raw_status = f"-{d['gap']:.1f}h"
+                    status = f"{Style.FAIL}{raw_status}{Style.RESET}"
+                else:
+                    status = f"{Style.FAIL}{label}{Style.RESET}"
+                print(
+                    f"  {Style.FAIL}{d['date']:<12} {d['day']:<10}{Style.RESET} "
+                    f"{d['logged']:>6.1f}h "
+                    f"{d['expected']:>7.1f}h "
+                    f"{_pad_styled(status, 10)}"
+                )
             else:
-                raw_status = "[OK]"
-                status = f"{Style.OK}{raw_status}{Style.RESET}"
-            print(
-                f"  {d['date']:<12} {d['day']:<10} "
-                f"{d['logged']:>6.1f}h "
-                f"{d['expected']:>7.1f}h "
-                f"{_pad_styled(status, 10)}"
-            )
+                if d["gap"] > 0.5:
+                    raw_status = f"-{d['gap']:.1f}h"
+                    status = f"{Style.FAIL}{raw_status}{Style.RESET}"
+                elif d["logged"] > d["expected"]:
+                    over = d["logged"] - d["expected"]
+                    raw_status = f"+{over:.1f}h"
+                    status = f"{Style.OK}{raw_status}{Style.RESET}"
+                else:
+                    raw_status = "[OK]"
+                    status = f"{Style.OK}{raw_status}{Style.RESET}"
+                print(
+                    f"  {d['date']:<12} {d['day']:<10} "
+                    f"{d['logged']:>6.1f}h "
+                    f"{d['expected']:>7.1f}h "
+                    f"{_pad_styled(status, 10)}"
+                )
 
         print(f"  {Style.DIM}{'-' * 50}{Style.RESET}")
+
+        # Working days subtotal
+        working_day_count = gap_data.get("working_days", 0)
+        if working_day_count > 0:
+            actual_working = gap_data.get("actual_working", 0.0)
+            working_expected = sum(
+                d["expected"] for d in gap_data["day_details"] if d.get("day_type") == "working"
+            )
+            print(
+                f"  {Style.OK}{'Working (' + str(working_day_count) + ')':<23}{Style.RESET}"
+                f" {actual_working:>6.1f}h {working_expected:>7.1f}h"
+            )
+
+        # Offday subtotal
+        offday_count = gap_data.get("offday_count", 0)
+        if offday_count > 0:
+            actual_offday = gap_data.get("actual_offday", 0.0)
+            offday_expected = sum(
+                d["expected"] for d in gap_data["day_details"] if d.get("day_type") == "offday"
+            )
+            print(
+                f"  {Style.FAIL}{'Non-working (' + str(offday_count) + ')':<23}{Style.RESET}"
+                f" {actual_offday:>6.1f}h {offday_expected:>7.1f}h"
+            )
+
+        # Weekend subtotal
+        actual_weekend = gap_data.get("actual_weekend", 0.0)
+        weekend_count = sum(1 for d in gap_data["day_details"] if d.get("day_type") == "weekend")
+        if weekend_count > 0:
+            print(
+                f"  {Style.FAIL}{'Weekend (' + str(weekend_count) + ')':<23}{Style.RESET}"
+                f" {actual_weekend:>6.1f}h {'--':>7} "
+            )
+
+        if offday_count > 0 or weekend_count > 0:
+            print(f"  {Style.DIM}{'-' * 50}{Style.RESET}")
+
         print(
             f"  {Style.BOLD}{'TOTAL':<12} {'':10} {gap_data['actual']:>6.1f}h {gap_data['expected']:>7.1f}h{Style.RESET}"
         )
@@ -5166,7 +5275,7 @@ class TempoAutomation:
             is_working, reason = self.schedule_mgr.is_working_day(day_str)
             if not is_working:
                 # Case 3: PTO/Holiday -- check/log overhead hours
-                is_off_day = reason != "Weekend"
+                is_off_day = not reason.startswith("Weekend")
                 if is_off_day and self._is_overhead_configured() and self.jira_client:
                     result = self._check_day_hours(day_str)
                     daily_secs = int(self.schedule_mgr.daily_hours * 3600)

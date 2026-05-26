@@ -591,6 +591,50 @@ class TestOnAddPto:
 
         mock_bg.assert_called_once_with(["2026-04-10"])
 
+    def test_already_in_pto_shows_resync_toast_and_offers_sync(self):
+        """When date is already in pto_days, show 'PTO Already Set' and still offer sync."""
+        app, mock_schedule, mock_auto = self._make_app_with_schedule(
+            add_pto_return=([], ["2026-04-30 already in PTO list"])
+        )
+        mock_schedule.pto_days = ["2026-04-30"]
+
+        sync_patches = self._run_sync_thread("_run_add_pto", mock_auto)
+        with (
+            sync_patches[0],
+            sync_patches[1],
+            patch.object(app, "_show_yesno_dialog", side_effect=[False, True]),
+            patch.object(app, "_show_input_dialog", return_value="2026-04-30"),
+            patch.object(app, "_show_toast") as mock_toast,
+            patch.object(app, "_sync_pto_dates_background") as mock_bg,
+            patch("tray_app._today", return_value=date(2026, 4, 1)),
+        ):
+            app._on_add_pto()
+
+        assert mock_toast.call_args_list[0][0][0] == "PTO Already Set"
+        mock_bg.assert_called_once_with(["2026-04-30"])
+
+    def test_already_in_pto_past_date_no_sync_offer(self):
+        """Already-in-pto_days past dates should not trigger the sync dialog."""
+        app, mock_schedule, mock_auto = self._make_app_with_schedule(
+            add_pto_return=([], ["2026-01-15 already in PTO list"])
+        )
+        mock_schedule.pto_days = ["2026-01-15"]
+
+        sync_patches = self._run_sync_thread("_run_add_pto", mock_auto)
+        with (
+            sync_patches[0],
+            sync_patches[1],
+            patch.object(app, "_show_yesno_dialog", side_effect=[False]) as mock_yn,
+            patch.object(app, "_show_input_dialog", return_value="2026-01-15"),
+            patch.object(app, "_show_toast"),
+            patch.object(app, "_sync_pto_dates_background") as mock_bg,
+            patch("tray_app._today", return_value=date(2026, 4, 30)),
+        ):
+            app._on_add_pto()
+
+        mock_bg.assert_not_called()
+        assert mock_yn.call_count == 1  # only the range-vs-single dialog, no sync offer
+
 
 # ===========================================================================
 # TestFindPythonw
