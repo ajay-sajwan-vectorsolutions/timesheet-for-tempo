@@ -2895,12 +2895,14 @@ class TempoAutomation:
             )
             _time.sleep(delay)
 
-    def _pre_sync_health_check(self) -> bool:
-        """Check Jira and Tempo API connectivity before mutating data.
+    def _pre_sync_health_check(self) -> str | None:
+        """Run a lightweight liveness check before any sync operation.
 
         Returns:
-            True if both APIs are reachable and authenticated,
-            False with diagnostic print if either fails.
+            None if both APIs are reachable and authenticated.
+            "jira_token"  if Jira returns 401 (expired/invalid token).
+            "tempo_token" if Tempo returns 401 (expired/invalid token).
+            "api_error"   for any other HTTP or connectivity failure.
         """
         # Check Jira API
         if self.jira_client:
@@ -2913,16 +2915,18 @@ class TempoAutomation:
                 status = e.response.status_code if e.response is not None else "unknown"
                 if status == 401:
                     msg = "[FAIL] Jira token expired (401)"
-                else:
-                    msg = f"[FAIL] Jira API error ({status})"
+                    print(msg)
+                    logger.error(f"Health check failed: {msg}")
+                    return "jira_token"
+                msg = f"[FAIL] Jira API error ({status})"
                 print(msg)
                 logger.error(f"Health check failed: {msg}")
-                return False
+                return "api_error"
             except Exception as e:
                 msg = f"[FAIL] Jira API unreachable: {e}"
                 print(msg)
                 logger.error(f"Health check failed: {msg}")
-                return False
+                return "api_error"
 
         # Check Tempo API using /work-attributes (lightweight, always available)
         if self.tempo_client.account_id or self.tempo_client.api_token:
@@ -2936,13 +2940,17 @@ class TempoAutomation:
                 hint = TempoClient._forge_error_hint(e)
                 if status == 401:
                     msg = "[FAIL] Tempo token expired (401)"
-                else:
-                    msg = f"[FAIL] Tempo API error ({status})"
+                    if hint:
+                        msg += f"\n       {hint.strip()}"
+                    print(msg)
+                    logger.error(f"Health check failed: {msg}")
+                    return "tempo_token"
+                msg = f"[FAIL] Tempo API error ({status})"
                 if hint:
                     msg += f"\n       {hint.strip()}"
                 print(msg)
                 logger.error(f"Health check failed: {msg}")
-                return False
+                return "api_error"
             except Exception as e:
                 msg = f"[FAIL] Tempo API unreachable: {e}"
                 hint = TempoClient._forge_error_hint(e)
@@ -2950,13 +2958,13 @@ class TempoAutomation:
                     msg += f"\n       {hint.strip()}"
                 print(msg)
                 logger.error(f"Health check failed: {msg}")
-                return False
+                return "api_error"
 
         # Check Forge platform connectivity (non-blocking warning)
         self._check_forge_connectivity()
 
         logger.info("Pre-sync health check passed")
-        return True
+        return None
 
     def _check_forge_connectivity(self):
         """Warn if Atlassian Forge infrastructure is unreachable.

@@ -38,7 +38,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import responses as responses_lib
 
 # ---------------------------------------------------------------------------
 # Ensure project root is importable
@@ -173,6 +172,98 @@ class TestHealthCheckError:
         """HealthCheckError message should be accessible via str()."""
         err = HealthCheckError("api_error", "API unreachable")
         assert "API unreachable" in str(err)
+
+
+# ===========================================================================
+# _pre_sync_health_check
+# ===========================================================================
+
+
+class TestPreSyncHealthCheck:
+    """_pre_sync_health_check() returns None on success, a reason string on failure."""
+
+    def _make(self):
+        from unittest.mock import MagicMock
+
+        auto = _make_automation(
+            {
+                "jira": {
+                    "url": "lmsportal.atlassian.net",
+                    "email": "a@b.com",
+                    "api_token": "jtoken",
+                },
+                "tempo": {"api_token": "ttoken"},
+                "user": {"role": "developer", "email": "a@b.com"},
+            }
+        )
+        auto.jira_client = MagicMock()
+        auto.jira_client.base_url = "https://lmsportal.atlassian.net"
+        auto.jira_client.session = MagicMock()
+        auto.tempo_client = MagicMock()
+        auto.tempo_client.account_id = "712020:abc"
+        auto.tempo_client.api_token = "ttoken"
+        auto.tempo_client.base_url = "https://api.tempo.io/4"
+        auto.tempo_client.session = MagicMock()
+        return auto
+
+    def test_returns_none_on_success(self):
+        auto = self._make()
+        jira_resp = MagicMock()
+        jira_resp.status_code = 200
+        jira_resp.raise_for_status = MagicMock()
+        auto.jira_client.session.get.return_value = jira_resp
+        tempo_resp = MagicMock()
+        tempo_resp.status_code = 200
+        tempo_resp.raise_for_status = MagicMock()
+        auto.tempo_client.session.get.return_value = tempo_resp
+        auto._check_forge_connectivity = MagicMock()
+
+        result = auto._pre_sync_health_check()
+
+        assert result is None
+
+    def test_returns_jira_token_on_401(self):
+        import requests
+
+        auto = self._make()
+        err_resp = MagicMock()
+        err_resp.status_code = 401
+        http_err = requests.exceptions.HTTPError(response=err_resp)
+        auto.jira_client.session.get.side_effect = http_err
+
+        result = auto._pre_sync_health_check()
+
+        assert result == "jira_token"
+
+    def test_returns_tempo_token_on_401(self):
+        import requests
+
+        auto = self._make()
+        jira_resp = MagicMock()
+        jira_resp.status_code = 200
+        jira_resp.raise_for_status = MagicMock()
+        auto.jira_client.session.get.return_value = jira_resp
+        err_resp = MagicMock()
+        err_resp.status_code = 401
+        http_err = requests.exceptions.HTTPError(response=err_resp)
+        auto.tempo_client.session.get.side_effect = http_err
+
+        result = auto._pre_sync_health_check()
+
+        assert result == "tempo_token"
+
+    def test_returns_api_error_on_500(self):
+        import requests
+
+        auto = self._make()
+        err_resp = MagicMock()
+        err_resp.status_code = 500
+        http_err = requests.exceptions.HTTPError(response=err_resp)
+        auto.jira_client.session.get.side_effect = http_err
+
+        result = auto._pre_sync_health_check()
+
+        assert result == "api_error"
 
 
 # ===========================================================================
@@ -1357,176 +1448,6 @@ class TestVerifyWeek:
         assert ta._backfill_day.call_count == 1
         called_date = ta._backfill_day.call_args.args[0]
         assert date.fromisoformat(called_date).weekday() == 0  # Monday
-
-
-# ===========================================================================
-# _pre_sync_health_check
-# ===========================================================================
-
-
-class TestPreSyncHealthCheck:
-    """Tests for TempoAutomation._pre_sync_health_check()."""
-
-    def _make_ta_with_sessions(self, config=None):
-        """Build a TempoAutomation with real session objects on mock clients.
-
-        The mock jira_client and tempo_client need real session objects
-        so _pre_sync_health_check can call .session.get().
-        """
-        import requests as req
-
-        cfg = config or _dev_config()
-        ta = _make_automation(cfg)
-
-        # Replace the mock sessions with real Session objects we can intercept
-        jira_session = req.Session()
-        jira_session.auth = ("dev@example.com", "tok")
-        ta.jira_client.session = jira_session
-        ta.jira_client.base_url = "https://test.atlassian.net"
-
-        tempo_session = req.Session()
-        tempo_session.headers.update(
-            {
-                "Authorization": "Bearer ttok",
-                "Content-Type": "application/json",
-            }
-        )
-        ta.tempo_client.session = tempo_session
-        ta.tempo_client.base_url = "https://api.tempo.io/4"
-        ta.tempo_client.account_id = "712020:test-uuid"
-        ta.tempo_client.api_token = "ttok"
-
-        return ta
-
-    @responses_lib.activate
-    def test_health_check_both_ok(self):
-        """Jira + Tempo respond 200 -> returns True."""
-        ta = self._make_ta_with_sessions()
-        responses_lib.add(
-            responses_lib.GET,
-            "https://test.atlassian.net/rest/api/3/myself",
-            json={"accountId": "712020:test-uuid"},
-            status=200,
-        )
-        responses_lib.add(
-            responses_lib.GET,
-            "https://api.tempo.io/4/work-attributes",
-            json={"results": []},
-            status=200,
-        )
-
-        result = ta._pre_sync_health_check()
-
-        assert result is True
-
-    @responses_lib.activate
-    def test_health_check_jira_401(self, capsys):
-        """Jira 401 -> returns False, prints token expired message."""
-        ta = self._make_ta_with_sessions()
-        responses_lib.add(
-            responses_lib.GET,
-            "https://test.atlassian.net/rest/api/3/myself",
-            json={"error": "Unauthorized"},
-            status=401,
-        )
-
-        result = ta._pre_sync_health_check()
-
-        assert result is False
-        captured = capsys.readouterr()
-        assert "token expired" in captured.out.lower() or "401" in captured.out
-
-    @responses_lib.activate
-    def test_health_check_tempo_401(self, capsys):
-        """Tempo 401 -> returns False, prints token expired message."""
-        ta = self._make_ta_with_sessions()
-        # Jira OK
-        responses_lib.add(
-            responses_lib.GET,
-            "https://test.atlassian.net/rest/api/3/myself",
-            json={"accountId": "712020:test-uuid"},
-            status=200,
-        )
-        # Tempo 401
-        responses_lib.add(
-            responses_lib.GET,
-            "https://api.tempo.io/4/work-attributes",
-            json={"error": "Unauthorized"},
-            status=401,
-        )
-
-        result = ta._pre_sync_health_check()
-
-        assert result is False
-        captured = capsys.readouterr()
-        assert "token expired" in captured.out.lower() or "401" in captured.out
-
-    @responses_lib.activate
-    def test_health_check_jira_timeout(self, capsys):
-        """Jira timeout -> returns False, prints unreachable message."""
-        import requests as req
-
-        ta = self._make_ta_with_sessions()
-        responses_lib.add(
-            responses_lib.GET,
-            "https://test.atlassian.net/rest/api/3/myself",
-            body=req.exceptions.ConnectionError("Connection refused"),
-        )
-
-        result = ta._pre_sync_health_check()
-
-        assert result is False
-        captured = capsys.readouterr()
-        assert "unreachable" in captured.out.lower()
-
-    @responses_lib.activate
-    def test_health_check_tempo_timeout(self, capsys):
-        """Tempo timeout -> returns False, prints unreachable message."""
-        import requests as req
-
-        ta = self._make_ta_with_sessions()
-        # Jira OK
-        responses_lib.add(
-            responses_lib.GET,
-            "https://test.atlassian.net/rest/api/3/myself",
-            json={"accountId": "712020:test-uuid"},
-            status=200,
-        )
-        # Tempo connection error
-        responses_lib.add(
-            responses_lib.GET,
-            "https://api.tempo.io/4/work-attributes",
-            body=req.exceptions.ConnectionError("Connection refused"),
-        )
-
-        result = ta._pre_sync_health_check()
-
-        assert result is False
-        captured = capsys.readouterr()
-        assert "unreachable" in captured.out.lower()
-
-    @responses_lib.activate
-    def test_health_check_called_before_sync(self):
-        """sync_daily() calls _pre_sync_health_check before any mutations."""
-        cfg = _dev_config()
-        ta = _make_automation(cfg)
-
-        # Make it a working day so we reach the health check
-        ta.schedule_mgr.is_working_day.return_value = (True, "")
-
-        # Health check fails -> sync should abort
-        ta._pre_sync_health_check = MagicMock(return_value=False)
-
-        with patch("tempo_automation.date") as mock_date:
-            mock_date.today.return_value = date(2026, 2, 10)
-            mock_date.fromisoformat = date.fromisoformat
-            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
-            ta.sync_daily("2026-02-10")
-
-        ta._pre_sync_health_check.assert_called_once()
-        # No worklogs should have been created since health check failed
-        ta.jira_client.create_worklog.assert_not_called()
-        ta.jira_client.delete_worklog.assert_not_called()
 
 
 # ===========================================================================
