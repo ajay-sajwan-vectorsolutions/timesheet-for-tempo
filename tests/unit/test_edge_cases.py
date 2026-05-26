@@ -15,24 +15,24 @@ Tests (8):
 - test_config_pto_duplicate_dates
 """
 
-import json
 import calendar
-from datetime import date, datetime
-from unittest.mock import MagicMock, patch
-import pytest
 import sys
+from datetime import date
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tempo_automation import TempoAutomation, ScheduleManager, main
-
+from tempo_automation import TempoAutomation, main  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helper: build a TempoAutomation without triggering __init__
 # ---------------------------------------------------------------------------
+
 
 def _dev_config(
     daily_hours: float = 8.0,
@@ -116,6 +116,7 @@ def _make_automation(config: dict) -> TempoAutomation:
 # TestDateEdgeCases
 # ===========================================================================
 
+
 class TestDateEdgeCases:
     """Date boundary and config edge case tests."""
 
@@ -127,7 +128,7 @@ class TestDateEdgeCases:
 
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta._is_overhead_configured = MagicMock(return_value=False)
         ta._is_planning_week = MagicMock(return_value=False)
         ta.jira_client.get_my_active_issues.return_value = [
@@ -164,23 +165,22 @@ class TestDateEdgeCases:
         """Last day of month correctly identified via calendar.monthrange."""
         # Verify the pattern used in the codebase
         test_cases = [
-            (2026, 2, 28),   # Feb non-leap
-            (2028, 2, 29),   # Feb leap
-            (2026, 4, 30),   # April
+            (2026, 2, 28),  # Feb non-leap
+            (2028, 2, 29),  # Feb leap
+            (2026, 4, 30),  # April
             (2026, 12, 31),  # December
         ]
         for year, month, expected_last in test_cases:
             _, last_day = calendar.monthrange(year, month)
             assert last_day == expected_last, (
-                f"Expected last day of {year}-{month:02d} to be "
-                f"{expected_last}, got {last_day}"
+                f"Expected last day of {year}-{month:02d} to be {expected_last}, got {last_day}"
             )
 
     def test_future_date_sync(self, capsys):
         """Syncing a future date does not crash."""
         cfg = _dev_config()
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta._is_overhead_configured = MagicMock(return_value=False)
         ta._is_planning_week = MagicMock(return_value=False)
         ta.jira_client.get_my_active_issues.return_value = [
@@ -195,7 +195,7 @@ class TestDateEdgeCases:
 
     def test_invalid_date_format_cli(self):
         """'2026/03/13' raises SystemExit from argparse validation."""
-        with patch('sys.argv', ['prog', '--date', '2026/03/13']):
+        with patch("sys.argv", ["prog", "--date", "2026/03/13"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             # argparse exits with code 2 on invalid arguments
@@ -219,7 +219,7 @@ class TestDateEdgeCases:
         """daily_hours: 0 -> total_seconds is 0, no worklogs created."""
         cfg = _dev_config(daily_hours=0.0)
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta.jira_client.get_my_worklogs.return_value = []
         ta.tempo_client.get_user_worklogs.return_value = []
         ta._is_overhead_configured = MagicMock(return_value=False)
@@ -228,7 +228,7 @@ class TestDateEdgeCases:
             {"issue_key": "PROJ-1", "issue_summary": "Task"},
         ]
 
-        result = ta._auto_log_jira_worklogs("2026-03-10")
+        ta._auto_log_jira_worklogs("2026-03-10")
 
         # With 0 daily hours, remaining_seconds <= 0, should return early
         # No worklogs should be created for active tickets

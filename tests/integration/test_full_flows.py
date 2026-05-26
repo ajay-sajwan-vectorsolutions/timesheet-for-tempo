@@ -14,11 +14,10 @@ Tests (6):
 - test_e2e_no_active_tickets_overhead_fallback
 """
 
-import json
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -28,10 +27,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from tempo_automation import TempoAutomation  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Helper: build a TempoAutomation without triggering __init__
 # ---------------------------------------------------------------------------
+
 
 def _dev_config(
     daily_hours: float = 8.0,
@@ -41,8 +40,7 @@ def _dev_config(
 ) -> dict:
     """Minimal developer config for integration tests."""
     return {
-        "user": {"email": "dev@example.com", "role": "developer",
-                 "name": "Test Dev"},
+        "user": {"email": "dev@example.com", "role": "developer", "name": "Test Dev"},
         "jira": {
             "url": "test.atlassian.net",
             "email": "dev@example.com",
@@ -119,6 +117,7 @@ def _make_automation(config: dict) -> TempoAutomation:
 # TestEndToEndFlows
 # ===========================================================================
 
+
 @pytest.mark.integration
 class TestEndToEndFlows:
     """End-to-end flow integration tests."""
@@ -127,7 +126,7 @@ class TestEndToEndFlows:
         """Full developer daily sync: health check, fetch, distribute, notify."""
         cfg = _dev_config(daily_hours=8.0)
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta._is_overhead_configured = MagicMock(return_value=False)
         ta._is_planning_week = MagicMock(return_value=False)
 
@@ -142,9 +141,7 @@ class TestEndToEndFlows:
         ta._pre_sync_health_check.assert_called_once()
 
         # Worklogs fetched for the target date
-        ta.jira_client.get_my_worklogs.assert_called_with(
-            "2026-03-10", "2026-03-10"
-        )
+        ta.jira_client.get_my_worklogs.assert_called_with("2026-03-10", "2026-03-10")
 
         # Active issues fetched
         ta.jira_client.get_my_active_issues.assert_called_once()
@@ -183,11 +180,13 @@ class TestEndToEndFlows:
         ta._check_day_hours = MagicMock(side_effect=check_day)
 
         # Mock _backfill_day
-        ta._backfill_day = MagicMock(return_value={
-            "created_count": 1,
-            "hours_added": 4.0,
-            "method": "stories",
-        })
+        ta._backfill_day = MagicMock(
+            return_value={
+                "created_count": 1,
+                "hours_added": 4.0,
+                "method": "stories",
+            }
+        )
 
         # Mock schedule_mgr for each weekday
         def is_working(d):
@@ -211,25 +210,29 @@ class TestEndToEndFlows:
 
         cfg = _dev_config(daily_hours=8.0)
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta._is_already_submitted = MagicMock(return_value=False)
         ta.schedule_mgr.count_working_days.return_value = 0
 
         # Mock _detect_monthly_gaps to return no gaps
-        ta._detect_monthly_gaps = MagicMock(return_value={
-            "working_days": 22,
-            "expected": 176.0,
-            "actual": 176.0,
-            "gaps": [],
-        })
+        ta._detect_monthly_gaps = MagicMock(
+            return_value={
+                "working_days": 22,
+                "expected": 176.0,
+                "actual": 176.0,
+                "gaps": [],
+            }
+        )
 
         # Mock the period lookup
-        ta.tempo_client.get_periods.return_value = [{
-            "key": "2026-03",
-            "dateFrom": "2026-03-01",
-            "dateTo": "2026-03-31",
-            "status": "OPEN",
-        }]
+        ta.tempo_client.get_periods.return_value = [
+            {
+                "key": "2026-03",
+                "dateFrom": "2026-03-01",
+                "dateTo": "2026-03-31",
+                "status": "OPEN",
+            }
+        ]
 
         # Freeze to last day of month so submission window is open
         with freeze_time("2026-03-31"):
@@ -242,7 +245,7 @@ class TestEndToEndFlows:
         """Add PTO -> sync skips, remove PTO -> sync works."""
         cfg = _dev_config(daily_hours=8.0)
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta._is_overhead_configured = MagicMock(return_value=False)
         ta._is_planning_week = MagicMock(return_value=False)
 
@@ -270,19 +273,23 @@ class TestEndToEndFlows:
             overhead_hours=2.0,
             pi_identifier="PI.26.2.APR.17",
             stories=[
-                {"issue_key": "OVERHEAD-10", "summary": "Ceremonies",
-                 "hours": 2},
+                {"issue_key": "OVERHEAD-10", "summary": "Ceremonies", "hours": 2},
             ],
         )
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta._is_planning_week = MagicMock(return_value=False)
 
         # _log_overhead_hours returns the overhead worklog
-        ta._log_overhead_hours = MagicMock(return_value=[
-            {"issue_key": "OVERHEAD-10", "issue_summary": "Ceremonies",
-             "time_spent_seconds": 7200},
-        ])
+        ta._log_overhead_hours = MagicMock(
+            return_value=[
+                {
+                    "issue_key": "OVERHEAD-10",
+                    "issue_summary": "Ceremonies",
+                    "time_spent_seconds": 7200,
+                },
+            ]
+        )
 
         ta.jira_client.get_my_active_issues.return_value = [
             {"issue_key": "PROJ-1", "issue_summary": "Active task"},
@@ -310,22 +317,26 @@ class TestEndToEndFlows:
             overhead_hours=0.0,
             pi_identifier="PI.26.2.APR.17",
             stories=[
-                {"issue_key": "OVERHEAD-10", "summary": "Ceremonies",
-                 "hours": 2},
+                {"issue_key": "OVERHEAD-10", "summary": "Ceremonies", "hours": 2},
             ],
         )
         ta = _make_automation(cfg)
-        ta._pre_sync_health_check = MagicMock(return_value=True)
+        ta._pre_sync_health_check = MagicMock(return_value=None)
         ta._is_planning_week = MagicMock(return_value=False)
 
         ta.jira_client.get_my_worklogs.return_value = []
         ta.tempo_client.get_user_worklogs.return_value = []
         ta.jira_client.get_my_active_issues.return_value = []
 
-        ta._log_overhead_hours = MagicMock(return_value=[
-            {"issue_key": "OVERHEAD-10", "issue_summary": "Ceremonies",
-             "time_spent_seconds": 28800},
-        ])
+        ta._log_overhead_hours = MagicMock(
+            return_value=[
+                {
+                    "issue_key": "OVERHEAD-10",
+                    "issue_summary": "Ceremonies",
+                    "time_spent_seconds": 28800,
+                },
+            ]
+        )
 
         result = ta._auto_log_jira_worklogs("2026-03-10")
 
@@ -334,6 +345,4 @@ class TestEndToEndFlows:
 
         # All hours went to overhead
         ta._log_overhead_hours.assert_called()
-        assert any(
-            wl["issue_key"] == "OVERHEAD-10" for wl in result
-        )
+        assert any(wl["issue_key"] == "OVERHEAD-10" for wl in result)

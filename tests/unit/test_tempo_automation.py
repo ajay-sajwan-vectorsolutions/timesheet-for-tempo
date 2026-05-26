@@ -265,6 +265,33 @@ class TestPreSyncHealthCheck:
 
         assert result == "api_error"
 
+    def test_sync_daily_raises_health_check_error_on_token_expiry(self):
+        import requests
+
+        from tempo_automation import HealthCheckError
+
+        auto = self._make()
+        auto.schedule_mgr = MagicMock()
+        auto.schedule_mgr.is_working_day.return_value = (True, "")
+        err_resp = MagicMock()
+        err_resp.status_code = 401
+        http_err = requests.exceptions.HTTPError(response=err_resp)
+        auto.jira_client.session.get.side_effect = http_err
+
+        with pytest.raises(HealthCheckError) as exc_info:
+            auto.sync_daily()
+
+        assert exc_info.value.reason == "jira_token"
+
+    def test_sync_daily_returns_none_on_nonworking_day(self):
+        auto = self._make()
+        auto.schedule_mgr = MagicMock()
+        auto.schedule_mgr.is_working_day.return_value = (False, "Weekend")
+
+        result = auto.sync_daily()
+
+        assert result is None
+
 
 # ===========================================================================
 # sync_daily

@@ -34,7 +34,6 @@ from datetime import date, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Optional
 
 import requests
 
@@ -2896,7 +2895,7 @@ class TempoAutomation:
             )
             _time.sleep(delay)
 
-    def _pre_sync_health_check(self) -> Optional[str]:
+    def _pre_sync_health_check(self) -> str | None:
         """Run a lightweight liveness check before any sync operation.
 
         Returns:
@@ -3024,9 +3023,11 @@ class TempoAutomation:
         logger.info(f"Starting daily sync for {target_date}")
 
         # Pre-sync health check
-        if not self._pre_sync_health_check():
-            print(_color_prefix("[FAIL] Aborting daily sync due to API health check failure."))
-            return
+        health_failure = self._pre_sync_health_check()
+        if health_failure is not None:
+            msg = "[FAIL] Aborting daily sync due to API health check failure."
+            print(_color_prefix(msg))
+            raise HealthCheckError(health_failure, msg)
 
         now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n{'=' * 60}")
@@ -4255,13 +4256,11 @@ class TempoAutomation:
         - If no shortfalls but not last day: reports clean status.
         """
         # Pre-sync health check
-        if not self._pre_sync_health_check():
-            print(
-                _color_prefix(
-                    "[FAIL] Aborting timesheet submission due to API health check failure."
-                )
-            )
-            return
+        health_failure = self._pre_sync_health_check()
+        if health_failure is not None:
+            msg = "[FAIL] Aborting timesheet submission due to API health check failure."
+            print(_color_prefix(msg))
+            raise HealthCheckError(health_failure, msg)
 
         today = date.today()
         last_day_num = calendar.monthrange(today.year, today.month)[1]
@@ -4943,9 +4942,11 @@ class TempoAutomation:
             return
 
         # Pre-sync health check
-        if not self._pre_sync_health_check():
-            print(_color_prefix("[FAIL] Aborting backfill due to API health check failure."))
-            return
+        health_failure = self._pre_sync_health_check()
+        if health_failure is not None:
+            msg = "[FAIL] Aborting backfill due to API health check failure."
+            print(_color_prefix(msg))
+            raise HealthCheckError(health_failure, msg)
 
         print(f"\n{'=' * 60}")
         print(f"BACKFILL: {from_date} to {to_date}")
@@ -5249,13 +5250,11 @@ class TempoAutomation:
     def verify_week(self):
         """Verify and backfill current week (Mon-Fri)."""
         # Pre-sync health check
-        if not self._pre_sync_health_check():
-            print(
-                _color_prefix(
-                    "[FAIL] Aborting weekly verification due to API health check failure."
-                )
-            )
-            return
+        health_failure = self._pre_sync_health_check()
+        if health_failure is not None:
+            msg = "[FAIL] Aborting weekly verification due to API health check failure."
+            print(_color_prefix(msg))
+            raise HealthCheckError(health_failure, msg)
 
         today = date.today()
         # Calculate Monday of current week
