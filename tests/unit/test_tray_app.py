@@ -1109,3 +1109,78 @@ class TestTokenErrorVisible:
         app._token_error = "tempo_token"
         app._token_error = None
         assert app._token_error_visible(None) is False
+
+
+class TestRunUpdateToken:
+    """_run_update_token() prompts, validates, saves, clears state."""
+
+    def _make_tray(self):
+        app = TrayApp()
+        app._show_toast = MagicMock()
+        app._set_icon_state = MagicMock()
+        app._show_input_dialog = MagicMock()
+        app._icon = None
+        app._automation_lock = threading.Lock()
+        return app
+
+    def test_cancelled_dialog_does_nothing(self):
+        app = self._make_tray()
+        app._token_error = "tempo_token"
+        app._show_input_dialog.return_value = ""
+
+        app._run_update_token()
+
+        app._show_toast.assert_not_called()
+        assert app._token_error == "tempo_token"
+
+    def test_valid_token_clears_error_and_shows_success_toast(self):
+        app = self._make_tray()
+        app._token_error = "tempo_token"
+        app._show_input_dialog.return_value = "new_valid_token"
+        mock_auto = MagicMock()
+        mock_auto.update_token.return_value = True
+        app._automation = mock_auto
+
+        with patch("tray_app.threading.Thread") as mock_thread:
+            mock_thread.return_value = MagicMock()
+            app._run_update_token()
+
+        assert app._token_error is None
+        title = app._show_toast.call_args[0][0]
+        assert "Updated" in title
+
+    def test_invalid_token_keeps_error_state(self):
+        app = self._make_tray()
+        app._token_error = "jira_token"
+        app._show_input_dialog.return_value = "bad_token"
+        mock_auto = MagicMock()
+        mock_auto.update_token.return_value = False
+        app._automation = mock_auto
+
+        app._run_update_token()
+
+        assert app._token_error == "jira_token"
+        title = app._show_toast.call_args[0][0]
+        assert "Invalid" in title
+
+    def test_jira_error_shows_jira_label_in_dialog(self):
+        app = self._make_tray()
+        app._token_error = "jira_token"
+        app._show_input_dialog.return_value = ""
+
+        app._run_update_token()
+
+        prompt, title = app._show_input_dialog.call_args[0]
+        assert "Jira" in prompt
+        assert "Jira" in title
+
+    def test_tempo_error_shows_tempo_label_in_dialog(self):
+        app = self._make_tray()
+        app._token_error = "tempo_token"
+        app._show_input_dialog.return_value = ""
+
+        app._run_update_token()
+
+        prompt, title = app._show_input_dialog.call_args[0]
+        assert "Tempo" in prompt
+        assert "Tempo" in title

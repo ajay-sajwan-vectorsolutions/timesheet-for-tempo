@@ -535,8 +535,66 @@ class TrayApp:
         return self._token_error is not None
 
     def _on_update_token(self, icon=None, item=None):
-        """Spawn background thread for token update dialog."""
-        pass
+        """Spawn background thread for token update dialog (pystray callback must return quickly)."""
+        thread = threading.Thread(target=self._run_update_token, daemon=True)
+        thread.start()
+
+    def _run_update_token(self):
+        """Background thread: prompt for new token, validate, save, clear error state."""
+        token_type = self._token_error or "tempo_token"
+        is_jira = "jira" in token_type
+        label = "Jira" if is_jira else "Tempo"
+
+        if is_jira:
+            instructions = (
+                "Get a new Jira token at:\n"
+                "  https://id.atlassian.com/manage-profile/security/api-tokens\n\n"
+                "1. Click 'Create API token'\n"
+                "2. Give it a name and copy the token"
+            )
+        else:
+            instructions = (
+                "Get a new Tempo token at:\n"
+                "  https://app.tempo.io -> Settings -> API Integration\n\n"
+                "1. Click 'New Token'\n"
+                "2. Give it a name and copy the token"
+            )
+
+        prompt = (
+            f"Your {label} API token has expired.\n\n"
+            f"{instructions}\n\n"
+            f"Paste your new {label} token below:"
+        )
+
+        new_token = self._show_input_dialog(prompt, f"Tempo Automation - Update {label} Token")
+        if not new_token:
+            return  # user cancelled -- menu item stays visible
+
+        with self._automation_lock:
+            if self._automation is None:
+                self._show_toast("Error", "Automation not loaded. Run --setup first.")
+                return
+            api_type = "jira" if is_jira else "tempo"
+            success = self._automation.update_token(api_type, new_token)
+
+        if success:
+            self._token_error = None
+            if self._icon:
+                self._icon.update_menu()
+            self._set_icon_state("green", "Tempo Automation")
+            self._show_toast(
+                f"{label} Token Updated",
+                "Token validated and saved. Retrying sync now.",
+            )
+            tray_logger.info(f"{label} token updated successfully via tray")
+            thread = threading.Thread(target=self._run_sync, daemon=True)
+            thread.start()
+        else:
+            self._show_toast(
+                f"{label} Token Invalid",
+                "The token you entered failed validation.\nPlease try again with a fresh token.",
+            )
+            tray_logger.warning(f"{label} token update failed: token rejected by API")
 
     def _on_sync_now(self, icon=None, item=None):
         """Clear pending flag and start sync in a background thread."""
