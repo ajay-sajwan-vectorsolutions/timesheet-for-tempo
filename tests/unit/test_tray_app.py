@@ -1079,3 +1079,33 @@ class TestRunSyncTokenError:
         assert app._token_error is None
         title = app._show_toast.call_args[0][0]
         assert title == "Sync Failed"
+
+
+class TestTokenErrorVisible:
+    """_token_error_visible() controls the Update Token menu item visibility."""
+
+    def test_hidden_when_no_error(self):
+        app = TrayApp()
+        app._token_error = None
+        assert app._token_error_visible(None) is False
+
+    def test_visible_when_tempo_token_error(self):
+        app = TrayApp()
+        app._token_error = "tempo_token"
+        assert app._token_error_visible(None) is True
+
+    def test_visible_when_jira_token_error(self):
+        app = TrayApp()
+        app._token_error = "jira_token"
+        assert app._token_error_visible(None) is True
+
+    def test_visible_when_unknown_token_error(self):
+        app = TrayApp()
+        app._token_error = "unknown_token"
+        assert app._token_error_visible(None) is True
+
+    def test_hidden_after_error_cleared(self):
+        app = TrayApp()
+        app._token_error = "tempo_token"
+        app._token_error = None
+        assert app._token_error_visible(None) is False

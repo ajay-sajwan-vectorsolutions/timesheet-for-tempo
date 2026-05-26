@@ -468,6 +468,11 @@ class TrayApp:
             pystray.MenuItem(
                 "Submit Timesheet", self._on_submit_timesheet, visible=self._submit_visible
             ),
+            pystray.MenuItem(
+                "Update Token",
+                self._on_update_token,
+                visible=self._token_error_visible,
+            ),
             pystray.MenuItem("Settings", self._on_settings),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Uninstall", self._on_uninstall),
@@ -524,6 +529,14 @@ class TrayApp:
                 pass
 
         return True
+
+    def _token_error_visible(self, item) -> bool:
+        """Show 'Update Token' only when a token has expired."""
+        return self._token_error is not None
+
+    def _on_update_token(self, icon=None, item=None):
+        """Spawn background thread for token update dialog."""
+        pass
 
     def _on_sync_now(self, icon=None, item=None):
         """Clear pending flag and start sync in a background thread."""
